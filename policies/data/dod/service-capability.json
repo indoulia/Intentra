@@ -1,0 +1,195 @@
+{
+  "profile_id": "service-capability",
+  "description": "An API or service with no user-facing surface. Criteria 8 and 14 are NOT_APPLICABLE by construction rather than by convenience.",
+  "criteria": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    9,
+    10,
+    11,
+    12,
+    13,
+    15,
+    16,
+    17,
+    18
+  ],
+  "critical_criteria": [
+    1,
+    3,
+    4,
+    5,
+    6,
+    7,
+    9,
+    10,
+    12,
+    13,
+    17
+  ],
+  "not_applicable_by_default": [
+    {
+      "criterion": 8,
+      "reason": "a service with no user-facing surface has no UI to present truth"
+    },
+    {
+      "criterion": 14,
+      "reason": "there is no surface to exercise empty, loading, partial, stale and error states on"
+    }
+  ],
+  "evidence_requirements": {
+    "1": {
+      "kinds": [
+        "file",
+        "document",
+        "ticket",
+        "query"
+      ],
+      "note": "package contents; for criterion 16, documentation compared against the code it describes rather than against the diff"
+    },
+    "2": {
+      "kinds": [
+        "git",
+        "command",
+        "file"
+      ],
+      "note": "diff review against the approved architecture and the plan's work-unit list"
+    },
+    "3": {
+      "kinds": [
+        "file",
+        "git",
+        "command"
+      ],
+      "note": "static analysis plus the capability graph; self-assertion is never evidence"
+    },
+    "4": {
+      "kinds": [
+        "file",
+        "git",
+        "command"
+      ],
+      "note": "static analysis plus the capability graph; self-assertion is never evidence"
+    },
+    "5": {
+      "kinds": [
+        "git",
+        "command",
+        "file"
+      ],
+      "note": "diff review against the approved architecture and the plan's work-unit list"
+    },
+    "6": {
+      "kinds": [
+        "file",
+        "git",
+        "command"
+      ],
+      "note": "static analysis plus the capability graph; self-assertion is never evidence"
+    },
+    "7": {
+      "kinds": [
+        "query",
+        "http",
+        "log",
+        "command"
+      ],
+      "note": "a traced real record, with the trace recorded"
+    },
+    "9": {
+      "kinds": [
+        "command"
+      ],
+      "note": "test execution output, not a claim about tests"
+    },
+    "10": {
+      "kinds": [
+        "file",
+        "document",
+        "ticket",
+        "query"
+      ],
+      "note": "package contents; for criterion 16, documentation compared against the code it describes rather than against the diff"
+    },
+    "11": {
+      "kinds": [
+        "log",
+        "metric",
+        "query",
+        "http"
+      ],
+      "note": "observed logs, metrics or traces from a running system"
+    },
+    "12": {
+      "kinds": [
+        "command"
+      ],
+      "note": "test execution output, not a claim about tests"
+    },
+    "13": {
+      "kinds": [
+        "query",
+        "http",
+        "log",
+        "command"
+      ],
+      "note": "a traced real record, with the trace recorded"
+    },
+    "15": {
+      "kinds": [
+        "log",
+        "metric",
+        "query",
+        "http"
+      ],
+      "note": "production observations, under authorization"
+    },
+    "16": {
+      "kinds": [
+        "file",
+        "document",
+        "ticket",
+        "query"
+      ],
+      "note": "package contents; for criterion 16, documentation compared against the code it describes rather than against the diff"
+    },
+    "17": {
+      "kinds": [
+        "file",
+        "git",
+        "command"
+      ],
+      "note": "static analysis plus the capability graph; self-assertion is never evidence"
+    },
+    "18": {
+      "kinds": [
+        "file",
+        "document",
+        "ticket",
+        "query"
+      ],
+      "note": "package contents; for criterion 16, documentation compared against the code it describes rather than against the diff"
+    }
+  },
+  "applies_when": {
+    "capability_kinds": [
+      "service",
+      "api"
+    ],
+    "work_item_types": [
+      "FEATURE",
+      "STORY",
+      "DEFECT"
+    ],
+    "requires_access": [
+      "repository",
+      "git",
+      "runtime"
+    ]
+  }
+}

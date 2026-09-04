@@ -823,7 +823,9 @@ contains three stages and never touches code.
 
 **Why the Epic cannot become one pipeline:** `epic.coordinate` has no `IMPLEMENTATION` node,
 and the floor forbids adding one for type `EPIC`. An Orchestrator that would prefer a single
-linear run has no expressible way to ask for it.
+linear run has no expressible way to ask for it. Its graph does contain a `VALIDATION` stage
+for the Epic's own outcome (amendment A-14), which is non-mutating and is what makes the
+verdict below computable rather than owed to nobody.
 
 **Epic completion:** all four children terminal permits `COMPLETION`; the Epic's own outcome
 is then judged separately. If the four shipped but nobody can demonstrate an unattended

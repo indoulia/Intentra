@@ -89,6 +89,81 @@ ones with no provenance.
 
 ---
 
+## WP-2 — policy data and the loader
+
+### I-11 · `policies/` reads its own data directory, and that is the whole exception
+
+The policy loader touches the filesystem. KERNEL_BOUNDARY rule 5 sends all outside-world
+access through adapters, and this is a stated exception rather than a hole in it: the adapters
+exist to reach the *target repository* and external systems under path confinement and a call
+log, and policy loading is AgentOS reading its own installation at startup. Routing it through
+the adapters would be circular, because path confinement reads `paths.json`.
+
+The exception is kept honest three ways. It is one file, `policies/src/data-source.ts`. That
+file resolves the policy data root once and refuses any path that escapes it — the same rule
+the repository adapter applies to a worktree, applied here because a confinement claim needs
+an enforcement point wherever it is made. And `tools/bin/conformance.mjs` holds a list of
+named I/O exceptions with the decision that permits each, fails on any file not on it, and
+fails again on any entry that has become stale.
+
+### I-12 · "before" and "after" in the workflow floor are dominance, not position
+
+`MERGE requires VALIDATION and AUTHORIZATION before it` cannot mean "earlier in a list",
+because the graph branches. It means **every forward route from the entry to `MERGE` passes
+through them** — graph dominance — and the "after" rules are post-dominance.
+
+This is not a reading imposed on the documents; it is the only reading that holds. It is also
+what caught a real defect while authoring `change_request.land`: the summary in
+WORKFLOW_STATE_MACHINE 3.2 routes an approved PR `PR_REVIEW → AUTHORIZATION → MERGE`, and
+entered at `PR_REVIEW` with an already-approved PR that route reaches `MERGE` without AgentOS
+having validated anything. Resumption does not save it — the DoD would compute `INCOMPLETE`
+at `COMPLETION` and route back, but the merge has already happened by then, which is precisely
+what the floor exists to prevent. The template therefore routes approval through `VALIDATION`
+before `AUTHORIZATION`. Templates are policy data rather than frozen text, so this is an
+authoring decision and not an amendment.
+
+### I-13 · Excluding an optional stage requires the template to carry a bypass
+
+Excluding a stage removes it and every edge incident to it. A template whose optional stage
+sits on the only route through is a template that becomes disconnected when the stage is
+excluded — mid-run, on a graph nobody checked. So the loader checks well-formedness for the
+full template **and for every graph a legal exclusion produces**, which forces each optional
+stage to be wrapped in a complementary branch pair: `A → X when P`, `A → B when NOT P`,
+`X → B`.
+
+Two consequences follow. Optional stages sharing one applicability predicate form one
+exclusion **group** and are excluded together — which is why `DEPLOY` and
+`PRODUCTION_VALIDATION` cannot be separated, and a deploy nobody validates afterwards is
+unexpressible. And when exclusion leaves a lone `branch` edge, it is rewritten as an
+`advance`: the stage was excluded because its predicate is `FALSE`, so the surviving arm no
+longer represents a decision.
+
+### I-14 · An optional stage with no applicability predicate cannot be excluded by a proposal
+
+Exclusion requires the kernel to evaluate a predicate `FALSE`. A stage with no predicate has
+nothing to evaluate, so no proposal can exclude it — and the loader's exclusion groups skip
+it. `investigation.readonly` marks both `AUDIT` and `ROOT_CAUSE` optional, but only `AUDIT`
+carries a predicate. That asymmetry is deliberate: the `COMPLETION`-only parameterization of
+WORKFLOW_STATE_MACHINE 5.3 is admitted by the *kernel* from observed reality, never proposed
+by an agent.
+
+### I-15 · A template must be able to supply its own profile's critical criteria
+
+`NOT_VALIDATED` is never `MET`, and `INCOMPLETE` is what a critical criterion not met
+produces. So a template whose default profile makes critical a criterion that no stage in that
+template owns can only ever compute `INCOMPLETE`, route back to a stage that does not exist,
+and never terminate. The loader checks it.
+
+Non-critical criteria are the opposite case and are allowed to come out `NOT_VALIDATED`: that
+is `COMPLETE_WITH_GAPS`, which is a terminal verdict requiring human acknowledgement, and it
+is exactly what DEFINITION_OF_DONE section 7 asks for when an Epic's children all shipped and
+its outcome has no supporting evidence.
+
+Applying this check is what raised amendment A-14: `epic.coordinate` had no stage the Validator
+owns, so the Epic's own outcome verdict was owed to nobody.
+
+---
+
 ## Cross-cutting
 
 ### I-7 · Ports live in `contracts/`, and the kernel's outward edges are injected

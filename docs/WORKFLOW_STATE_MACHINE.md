@@ -110,7 +110,19 @@ dod_criteria       which DoD criteria this stage supplies verdicts for
 `mutating` is load-bearing in three places: the safe-prefix computation under ambiguity, the
 resume rule in section 5, and the `AUTONOMOUS_INTAKE_EXECUTION` gate. Read-only stages are
 `AUDIT`, `ROOT_CAUSE`, `ARCHITECTURE`, `PLAN`, `VALIDATION` (non-production layers),
-`STRUCTURAL_REAUDIT`, `UX_REVIEW`, `PR_REVIEW`, `REVIEW_TRIAGE` and `DECOMPOSITION`.
+`STRUCTURAL_REAUDIT`, `UX_REVIEW`, `PR_REVIEW`, `REVIEW_TRIAGE`, `DECOMPOSITION` and
+`COMPLETION`.
+
+**At stage granularity, `mutating` means authoritative state outside AgentOS's own ledger.**
+The operation-level flag in [REPOSITORY_ADAPTER.md](REPOSITORY_ADAPTER.md) section 2.3
+includes AgentOS run state, and rightly: an adapter operation that writes `state/` is a
+mutation and is refused. A *stage* is different — every stage writes run state, because that
+is what the event log is — so a stage flag counting the ledger would be `true` for all twenty
+and would gate nothing. `COMPLETION` writes the outcome record and the work item lifecycle and
+touches nothing else, which is why it belongs in the list above (amendment A-12). Without it
+`investigation.readonly` would not be "entirely non-mutating" as section 3.2 states, its risk
+class could not be `READ_ONLY` as section 3.6 defines it, and read-only work would not be
+ungated for every trust class as section 9 of the resolution document requires.
 
 ### 2.4 Mapping from v0.2
 
@@ -167,7 +179,6 @@ known set is arithmetic.
   "optional_stages": ["ARCHITECTURE", "UX_REVIEW"],
   "edges": [
     { "from": "AUDIT", "to": "ROOT_CAUSE", "when": "always", "kind": "advance" },
-    { "from": "ROOT_CAUSE", "to": "BLOCKED", "when": "envelope.BLOCKED", "kind": "escalate" },
     { "from": "ROOT_CAUSE", "to": "ARCHITECTURE", "when": "architecture.required", "kind": "branch" },
     { "from": "ROOT_CAUSE", "to": "PLAN", "when": "NOT architecture.required", "kind": "branch" },
     { "from": "VALIDATION", "to": "REWORK", "when": "envelope.REJECTED", "kind": "loop",
@@ -181,10 +192,16 @@ known set is arithmetic.
 ```
 
 The `edges` list above is abbreviated to the edges worth reading; a real template also carries
-the ordinary advance edges between the remaining stages and the escalation edge from every
-stage to `BLOCKED`. `description` is required (amendment A-7): a template is human-authored
-policy data, and a reviewer reading `policies/workflows/` needs to know what each one is for
-without reconstructing it from the stage list.
+the ordinary advance edges between the remaining stages and the terminal edge from
+`COMPLETION`. It carries **no** edge to `BLOCKED`: any stage may transition to `BLOCKED`
+(section 4.1), so that transition is kernel-owned and universal rather than per-template. The
+`escalate` kind exists for the case where a template must *override* the default routing —
+`PRODUCTION_VALIDATION` on failure goes to `BLOCKED` rather than to `REWORK`, and that has to
+be said in the template because it contradicts what `REJECTED` would otherwise do.
+
+`description` is required (amendment A-7): a template is human-authored policy data, and a
+reviewer reading `policies/workflows/` needs to know what each one is for without
+reconstructing it from the stage list.
 
 ### 3.2 The template set
 
@@ -200,9 +217,15 @@ touching the kernel.
   AUTHORIZATION → MERGE → COMPLETION`.
 - **`feature.standard`** — story plus mandatory `ARCHITECTURE` and `DEPLOY` /
   `PRODUCTION_VALIDATION` where `production.applicable`.
-- **`epic.coordinate`** — `DECOMPOSITION → CHILD_COORDINATION → COMPLETION`. **Contains no
-  `IMPLEMENTATION` stage**, which is how "do not turn an Epic into one enormous linear
-  workflow" is enforced structurally rather than advised.
+- **`epic.coordinate`** — `DECOMPOSITION → CHILD_COORDINATION → VALIDATION → COMPLETION`.
+  **Contains no `IMPLEMENTATION` stage**, which is how "do not turn an Epic into one enormous
+  linear workflow" is enforced structurally rather than advised. `VALIDATION` is present for
+  the Epic's *own* outcome and not for its children's:
+  [DEFINITION_OF_DONE.md](DEFINITION_OF_DONE.md) section 7 requires that outcome to be
+  evaluated against its own profile with evidence, and the Validator is the only role that
+  supplies an outcome verdict — so without the stage that obligation had no one to discharge
+  it and every Epic would have computed `INCOMPLETE` forever (amendment A-14). It is
+  non-mutating, so the Epic still never touches code.
 - **`change_request.land`** — for an existing PR: `PR_REVIEW ⇄ REVIEW_TRIAGE →
   COMMENT_RESOLUTION → IMPLEMENTATION → VALIDATION → PR_REVIEW → AUTHORIZATION → MERGE →
   COMPLETION`. Entry is computed, not fixed (section 5).
@@ -396,6 +419,13 @@ adapters only):
 - **`reality.pr_open`** / **`reality.pr_merged`** / **`reality.pr_approved`**
 - **`reality.pr_has_unresolved_comments`** — unresolved review threads on the current head
 - **`reality.ci_green`** — CI passed for the current head SHA, within the freshness window
+- **`reality.children_exist`** — the work item has at least one child, whatever its state.
+  This is `DECOMPOSITION`'s `satisfied_by`, and it is a different question from the next one:
+  in the partially completed Epic of
+  [INTENT_AND_WORK_ITEM_RESOLUTION.md](INTENT_AND_WORK_ITEM_RESOLUTION.md) section 12 G,
+  `DECOMPOSITION` is `COMPLETED_PRIOR` while `children_all_terminal` is `FALSE`. Without it
+  the resume walk had no predicate for a stage the resolution document states is skipped
+  (amendment A-13).
 - **`reality.children_all_terminal`** — every child work item is `ACHIEVED`, `ABANDONED` or
   `SUPERSEDED`
 - **`reality.outcome_already_satisfied`** — the desired outcome holds, observably, now

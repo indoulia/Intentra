@@ -1,0 +1,31 @@
+{
+  "version": "1.0",
+  "loops": {
+    "rework": { "per_run": 3, "per_work_item": 6 },
+    "architecture": { "per_run": 2, "per_work_item": 4 },
+    "review": { "per_run": 5, "per_work_item": 10 },
+    "discovery": { "per_run": 8, "per_work_item": 16 }
+  },
+  "reresolution": 1,
+  "decomposition": { "max_children": 12, "max_depth": 2 },
+  "cost": { "run_usd": 25, "work_item_usd": 100, "dispatch_usd": 5 },
+  "wall_clock_ms": { "run": 7200000, "dispatch": 900000 },
+  "dispatches": { "per_run": 40, "per_work_item": 120 },
+  "dispatch_retries": 2,
+  "model_escalations_per_dispatch": 1,
+  "max_turns_per_dispatch": 40,
+  "lease_timeout_ms": 1800000,
+  "authorization_window_ms": 86400000,
+  "question_window_ms": 86400000,
+  "freshness_windows_ms": {
+    "git": 300000,
+    "runtime": 300000,
+    "repository": 14400000,
+    "intent": 86400000,
+    "agentos": 86400000
+  },
+  "read_call_log_granularity": {
+    "aggregate_identical_within_ms": 1000,
+    "max_aggregated": 500
+  }
+}

@@ -1,0 +1,140 @@
+{
+  "profile_id": "fix",
+  "description": "A defect repair inside an existing capability. Criteria narrow to the change and its blast radius, plus a regression test that fails without the fix - which is what criterion 12 means here and why it is critical.",
+  "criteria": [
+    1,
+    2,
+    5,
+    6,
+    9,
+    10,
+    12,
+    13,
+    16,
+    17
+  ],
+  "critical_criteria": [
+    5,
+    12,
+    13,
+    17
+  ],
+  "not_applicable_by_default": [
+    {
+      "criterion": 3,
+      "reason": "a repair inside an existing capability does not reassign canonical ownership; if it would, that is an ARCHITECTURE decision and not a fix"
+    },
+    {
+      "criterion": 4,
+      "reason": "the source and data contracts are the ones already in place"
+    },
+    {
+      "criterion": 8,
+      "reason": "the surface is unchanged unless the fix is in it, in which case the ui profile applies to that work unit"
+    },
+    {
+      "criterion": 14,
+      "reason": "as criterion 8"
+    },
+    {
+      "criterion": 18,
+      "reason": "the outcome is the restoration of stated behaviour, not a new one"
+    }
+  ],
+  "evidence_requirements": {
+    "1": {
+      "kinds": [
+        "file",
+        "document",
+        "ticket",
+        "query"
+      ],
+      "note": "package contents; for criterion 16, documentation compared against the code it describes rather than against the diff"
+    },
+    "2": {
+      "kinds": [
+        "git",
+        "command",
+        "file"
+      ],
+      "note": "diff review against the approved architecture and the plan's work-unit list"
+    },
+    "5": {
+      "kinds": [
+        "git",
+        "command",
+        "file"
+      ],
+      "note": "diff review against the approved architecture and the plan's work-unit list"
+    },
+    "6": {
+      "kinds": [
+        "file",
+        "git",
+        "command"
+      ],
+      "note": "static analysis plus the capability graph; self-assertion is never evidence"
+    },
+    "9": {
+      "kinds": [
+        "command"
+      ],
+      "note": "test execution output, not a claim about tests"
+    },
+    "10": {
+      "kinds": [
+        "file",
+        "document",
+        "ticket",
+        "query"
+      ],
+      "note": "package contents; for criterion 16, documentation compared against the code it describes rather than against the diff"
+    },
+    "12": {
+      "kinds": [
+        "command"
+      ],
+      "note": "test execution output, not a claim about tests"
+    },
+    "13": {
+      "kinds": [
+        "query",
+        "http",
+        "log",
+        "command"
+      ],
+      "note": "a traced real record, with the trace recorded"
+    },
+    "16": {
+      "kinds": [
+        "file",
+        "document",
+        "ticket",
+        "query"
+      ],
+      "note": "package contents; for criterion 16, documentation compared against the code it describes rather than against the diff"
+    },
+    "17": {
+      "kinds": [
+        "file",
+        "git",
+        "command"
+      ],
+      "note": "static analysis plus the capability graph; self-assertion is never evidence"
+    }
+  },
+  "applies_when": {
+    "capability_kinds": [
+      "any"
+    ],
+    "work_item_types": [
+      "DEFECT",
+      "INCIDENT",
+      "CHANGE_REQUEST"
+    ],
+    "requires_access": [
+      "repository",
+      "git"
+    ]
+  }
+}

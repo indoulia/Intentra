@@ -1,0 +1,109 @@
+{
+  "template_id": "change_request.land",
+  "version": "1.0",
+  "description": "A proposed change already exists and the outcome is that it lands. Entry is computed from Current Reality rather than fixed. Approval routes through VALIDATION before AUTHORIZATION rather than straight to it: the floor requires VALIDATION before MERGE, and a graph where an approved PR could reach MERGE without AgentOS having validated anything would satisfy the floor on paper and not in fact. STRUCTURAL_REAUDIT is present because DoD criterion 17 - the change introduced no new orphan - is owned by the Auditor's second pass, and a template that cannot supply a critical criterion of its own DoD profile is a template that can never complete.",
+  "applies_to": {
+    "types": [
+      "CHANGE_REQUEST"
+    ]
+  },
+  "entry": "PR_REVIEW",
+  "stages": [
+    "PR_REVIEW",
+    "REVIEW_TRIAGE",
+    "COMMENT_RESOLUTION",
+    "IMPLEMENTATION",
+    "VALIDATION",
+    "STRUCTURAL_REAUDIT",
+    "REWORK",
+    "AUTHORIZATION",
+    "MERGE",
+    "COMPLETION"
+  ],
+  "optional_stages": [],
+  "edges": [
+    {
+      "from": "PR_REVIEW",
+      "to": "REVIEW_TRIAGE",
+      "when": "reality.pr_has_unresolved_comments",
+      "kind": "loop",
+      "counter": "review",
+      "cap": "budgets.loops.review"
+    },
+    {
+      "from": "PR_REVIEW",
+      "to": "VALIDATION",
+      "when": "reality.pr_approved",
+      "kind": "advance"
+    },
+    {
+      "from": "REVIEW_TRIAGE",
+      "to": "COMMENT_RESOLUTION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "COMMENT_RESOLUTION",
+      "to": "IMPLEMENTATION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "IMPLEMENTATION",
+      "to": "VALIDATION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "VALIDATION",
+      "to": "REWORK",
+      "when": "envelope.REJECTED",
+      "kind": "loop",
+      "counter": "rework",
+      "cap": "budgets.loops.rework"
+    },
+    {
+      "from": "REWORK",
+      "to": "IMPLEMENTATION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "VALIDATION",
+      "to": "STRUCTURAL_REAUDIT",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "STRUCTURAL_REAUDIT",
+      "to": "AUTHORIZATION",
+      "when": "reality.pr_approved",
+      "kind": "branch"
+    },
+    {
+      "from": "STRUCTURAL_REAUDIT",
+      "to": "PR_REVIEW",
+      "when": "NOT reality.pr_approved",
+      "kind": "branch"
+    },
+    {
+      "from": "AUTHORIZATION",
+      "to": "MERGE",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "MERGE",
+      "to": "COMPLETION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "COMPLETION",
+      "to": "COMPLETE",
+      "when": "always",
+      "kind": "terminal"
+    }
+  ],
+  "dod_profile_default": "fix"
+}

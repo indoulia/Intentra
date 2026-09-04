@@ -1,0 +1,96 @@
+{
+  "version": "1.0",
+  "rules": [
+    {
+      "id": "merge-requires-validation-and-authorization",
+      "description": "A graph containing MERGE must contain VALIDATION and AUTHORIZATION before it. Merging into a protected branch is gated on blast radius, not on importance.",
+      "trigger": { "kind": "contains_stage", "stage": "MERGE" },
+      "requires": [
+        { "stage": "VALIDATION", "position": "before", "relative_to": "MERGE" },
+        { "stage": "AUTHORIZATION", "position": "before", "relative_to": "MERGE" }
+      ],
+      "forbids": [],
+      "keyed_on": "graph"
+    },
+    {
+      "id": "deploy-requires-validation-authorization-and-production-validation",
+      "description": "A graph containing DEPLOY must contain VALIDATION and AUTHORIZATION before it and PRODUCTION_VALIDATION after it. A deploy nobody checked afterwards is a deploy nobody knows the outcome of.",
+      "trigger": { "kind": "contains_stage", "stage": "DEPLOY" },
+      "requires": [
+        { "stage": "VALIDATION", "position": "before", "relative_to": "DEPLOY" },
+        { "stage": "AUTHORIZATION", "position": "before", "relative_to": "DEPLOY" },
+        { "stage": "PRODUCTION_VALIDATION", "position": "after", "relative_to": "DEPLOY" }
+      ],
+      "forbids": [],
+      "keyed_on": "graph"
+    },
+    {
+      "id": "implementation-requires-validation",
+      "description": "A graph containing IMPLEMENTATION must contain VALIDATION after it. Verification of a typo fix sounds absurd and catches the case where the model edited the wrong file.",
+      "trigger": { "kind": "contains_stage", "stage": "IMPLEMENTATION" },
+      "requires": [
+        { "stage": "VALIDATION", "position": "after", "relative_to": "IMPLEMENTATION" }
+      ],
+      "forbids": [],
+      "keyed_on": "graph"
+    },
+    {
+      "id": "defect-requires-root-cause",
+      "description": "A DEFECT requires ROOT_CAUSE before IMPLEMENTATION. A defect fixed without a root cause is a symptom patched, which principle 9 forbids.",
+      "trigger": { "kind": "work_item_type", "type": "DEFECT" },
+      "requires": [
+        { "stage": "ROOT_CAUSE", "position": "before", "relative_to": "IMPLEMENTATION" }
+      ],
+      "forbids": [],
+      "keyed_on": "type"
+    },
+    {
+      "id": "epic-forbids-implementation",
+      "description": "An EPIC's graph contains no IMPLEMENTATION. This is how 'do not turn an Epic into one enormous linear workflow' is enforced structurally rather than advised: an Orchestrator that would prefer a single linear run has no expressible way to ask for it.",
+      "trigger": { "kind": "work_item_type", "type": "EPIC" },
+      "requires": [],
+      "forbids": ["IMPLEMENTATION"],
+      "keyed_on": "type"
+    },
+    {
+      "id": "contract-boundary-requires-architecture",
+      "description": "Where architecture.required evaluates TRUE, the graph must contain ARCHITECTURE. Evaluated by the kernel over the scope and the observed contract boundaries, never claimed by the agent.",
+      "trigger": { "kind": "predicate_true", "predicate": "architecture.required" },
+      "requires": [
+        { "stage": "ARCHITECTURE", "position": "present", "relative_to": null }
+      ],
+      "forbids": [],
+      "keyed_on": "scope"
+    },
+    {
+      "id": "ui-surface-requires-ux-review",
+      "description": "Where ux.required evaluates TRUE, the graph must contain UX_REVIEW. The cost of an unnecessary review is tokens; the cost of a skipped one is a defect reaching production behind a green run.",
+      "trigger": { "kind": "predicate_true", "predicate": "ux.required" },
+      "requires": [
+        { "stage": "UX_REVIEW", "position": "present", "relative_to": null }
+      ],
+      "forbids": [],
+      "keyed_on": "scope"
+    },
+    {
+      "id": "regression-requires-root-cause",
+      "description": "Where regression.suspected evaluates TRUE, ROOT_CAUSE must precede IMPLEMENTATION whatever the work item was called. This is the one rule keyed on reality rather than on type, and it exists because every other rule here inherits the type's correctness: a defect misclassified as a TASK selects task.direct, which has no ROOT_CAUSE stage, and the rule that would have required one is keyed on the type that was wrong.",
+      "trigger": { "kind": "predicate_true", "predicate": "regression.suspected" },
+      "requires": [
+        { "stage": "ROOT_CAUSE", "position": "before", "relative_to": "IMPLEMENTATION" }
+      ],
+      "forbids": [],
+      "keyed_on": "reality"
+    },
+    {
+      "id": "completion-is-the-sole-predecessor-of-complete",
+      "description": "Every template requires COMPLETION as the sole predecessor of COMPLETE. A run cannot reach a terminal COMPLETE without the DoD arithmetic having run.",
+      "trigger": { "kind": "always" },
+      "requires": [
+        { "stage": "COMPLETION", "position": "sole_predecessor_of_complete", "relative_to": null }
+      ],
+      "forbids": [],
+      "keyed_on": "graph"
+    }
+  ]
+}

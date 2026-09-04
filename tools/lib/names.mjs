@@ -169,6 +169,7 @@ export const TYPE_NAMES = {
   'policy#pathPolicy': 'PathPolicy',
   'policy#gatePolicy': 'GatePolicy',
   'policy#dodPolicySet': 'DodPolicySet',
+  'policy#executionPolicy': 'ExecutionPolicy',
   'policy#agentPolicy': 'AgentPolicy',
 
   'rejection#violationCode': 'ViolationCode',

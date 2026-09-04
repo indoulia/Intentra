@@ -1,0 +1,334 @@
+{
+  "version": "1.0",
+  "stages": [
+    {
+      "stage": "AUDIT",
+      "mutating": false,
+      "default_agent": "auditor",
+      "required_outputs": [
+        "capability_graph",
+        "findings_report",
+        "orphan_inventory"
+      ],
+      "exit_condition": "a capability graph covering the work item scope exists, every finding carries evidence, and coverage states what was not examined",
+      "satisfied_by": null,
+      "gates_possible": [],
+      "dod_criteria": [
+        3,
+        4
+      ],
+      "applicability_predicate": "audit.applicable"
+    },
+    {
+      "stage": "ROOT_CAUSE",
+      "mutating": false,
+      "default_agent": "auditor",
+      "required_outputs": [
+        "root_cause",
+        "evidence_chain"
+      ],
+      "exit_condition": "the observed behaviour is explained by a cause established from evidence, or a blocker states why it cannot be",
+      "satisfied_by": null,
+      "gates_possible": [],
+      "dod_criteria": [],
+      "applicability_predicate": null
+    },
+    {
+      "stage": "ARCHITECTURE",
+      "mutating": false,
+      "default_agent": "architect",
+      "required_outputs": [
+        "target_architecture",
+        "contracts",
+        "decisions",
+        "failure_semantics"
+      ],
+      "exit_condition": "the target architecture, its delta from current, canonical ownership and failure semantics are recorded, with rejected alternatives",
+      "satisfied_by": null,
+      "gates_possible": [],
+      "dod_criteria": [
+        2,
+        18
+      ],
+      "applicability_predicate": "architecture.required"
+    },
+    {
+      "stage": "PLAN",
+      "mutating": false,
+      "default_agent": "architect",
+      "required_outputs": [
+        "plan"
+      ],
+      "exit_condition": "an ordered list of work units exists and every unit names an applicable DoD profile",
+      "satisfied_by": null,
+      "gates_possible": [],
+      "dod_criteria": [],
+      "applicability_predicate": null
+    },
+    {
+      "stage": "DECOMPOSITION",
+      "mutating": false,
+      "default_agent": "architect",
+      "required_outputs": [
+        "decomposition"
+      ],
+      "exit_condition": "every proposed child is independently completable, within the breadth and depth bounds, and its dependencies form no cycle",
+      "satisfied_by": "reality.children_exist",
+      "gates_possible": [],
+      "dod_criteria": [],
+      "applicability_predicate": null
+    },
+    {
+      "stage": "CHILD_COORDINATION",
+      "mutating": true,
+      "default_agent": "orchestrator",
+      "required_outputs": [
+        "child_states"
+      ],
+      "exit_condition": "every child work item is terminal, or no child can progress",
+      "satisfied_by": "reality.children_all_terminal",
+      "gates_possible": [
+        "COST_CEILING_EXCEEDED"
+      ],
+      "dod_criteria": [],
+      "applicability_predicate": null
+    },
+    {
+      "stage": "IMPLEMENTATION",
+      "mutating": true,
+      "default_agent": "implementer",
+      "required_outputs": [
+        "artifacts_changed",
+        "tests",
+        "deviations"
+      ],
+      "exit_condition": "every planned work unit is built on a working branch, with tests, and the artifacts changed reconcile against the mutation events",
+      "satisfied_by": "reality.implementation_present",
+      "gates_possible": [
+        "CREDENTIAL_OR_SECURITY_CHANGE",
+        "DESTRUCTIVE_MIGRATION",
+        "IRREVERSIBLE_DATA_MUTATION",
+        "SCOPE_EXPANSION",
+        "AUTONOMOUS_INTAKE_EXECUTION",
+        "COST_CEILING_EXCEEDED"
+      ],
+      "dod_criteria": [],
+      "applicability_predicate": null
+    },
+    {
+      "stage": "VALIDATION",
+      "mutating": false,
+      "default_agent": "validator",
+      "required_outputs": [
+        "layer_verdicts",
+        "not_validated_statement",
+        "capability_trace"
+      ],
+      "exit_condition": "every applicable layer has a verdict with evidence, and every layer not run says why",
+      "satisfied_by": "reality.tests_present",
+      "gates_possible": [],
+      "dod_criteria": [
+        5,
+        7,
+        9,
+        10,
+        11,
+        12,
+        13
+      ],
+      "applicability_predicate": null
+    },
+    {
+      "stage": "STRUCTURAL_REAUDIT",
+      "mutating": false,
+      "default_agent": "auditor",
+      "required_outputs": [
+        "structural_findings"
+      ],
+      "exit_condition": "the blast radius of the change has been re-examined for new orphans, and documentation has been compared against the code it describes",
+      "satisfied_by": null,
+      "gates_possible": [],
+      "dod_criteria": [
+        6,
+        16,
+        17
+      ],
+      "applicability_predicate": null
+    },
+    {
+      "stage": "UX_REVIEW",
+      "mutating": false,
+      "default_agent": "product-ux",
+      "required_outputs": [
+        "ux_verdict",
+        "states_exercised"
+      ],
+      "exit_condition": "a verdict exists and every state claimed exercised has a call-log-anchored observation",
+      "satisfied_by": null,
+      "gates_possible": [],
+      "dod_criteria": [
+        8,
+        14
+      ],
+      "applicability_predicate": "ux.required"
+    },
+    {
+      "stage": "REWORK",
+      "mutating": true,
+      "default_agent": "implementer",
+      "required_outputs": [
+        "rework_plan"
+      ],
+      "exit_condition": "every rejection finding is addressed or a blocker states why it cannot be",
+      "satisfied_by": null,
+      "gates_possible": [
+        "SCOPE_EXPANSION",
+        "COST_CEILING_EXCEEDED"
+      ],
+      "dod_criteria": [],
+      "applicability_predicate": null
+    },
+    {
+      "stage": "PR_PREPARATION",
+      "mutating": true,
+      "default_agent": "production",
+      "required_outputs": [
+        "pr_ref",
+        "pr_body"
+      ],
+      "exit_condition": "a pull request exists for the working branch, or its body is prepared and recorded per policy",
+      "satisfied_by": "reality.pr_open",
+      "gates_possible": [
+        "EXTERNAL_COMMUNICATION",
+        "AUTONOMOUS_INTAKE_EXECUTION"
+      ],
+      "dod_criteria": [],
+      "applicability_predicate": null
+    },
+    {
+      "stage": "PR_REVIEW",
+      "mutating": false,
+      "default_agent": "production",
+      "required_outputs": [
+        "review_state"
+      ],
+      "exit_condition": "the review state for the current head is read, and every thread is either resolved or routed",
+      "satisfied_by": "reality.pr_approved",
+      "gates_possible": [],
+      "dod_criteria": [],
+      "applicability_predicate": null
+    },
+    {
+      "stage": "REVIEW_TRIAGE",
+      "mutating": false,
+      "default_agent": "orchestrator",
+      "required_outputs": [
+        "triage"
+      ],
+      "exit_condition": "every unresolved review thread has a proposed reading and a remediation scope",
+      "satisfied_by": null,
+      "gates_possible": [
+        "SCOPE_EXPANSION"
+      ],
+      "dod_criteria": [],
+      "applicability_predicate": null
+    },
+    {
+      "stage": "COMMENT_RESOLUTION",
+      "mutating": true,
+      "default_agent": "implementer",
+      "required_outputs": [
+        "artifacts_changed",
+        "resolved_threads"
+      ],
+      "exit_condition": "every in-scope thread is addressed on the working branch",
+      "satisfied_by": null,
+      "gates_possible": [
+        "SCOPE_EXPANSION",
+        "COST_CEILING_EXCEEDED"
+      ],
+      "dod_criteria": [],
+      "applicability_predicate": null
+    },
+    {
+      "stage": "AUTHORIZATION",
+      "mutating": true,
+      "default_agent": "production",
+      "required_outputs": [
+        "authorization_request"
+      ],
+      "exit_condition": "a grant exists for every gate this run must cross, or the run is blocked on a denial or a timeout",
+      "satisfied_by": null,
+      "gates_possible": [
+        "MERGE_PROTECTED",
+        "DEPLOY_PRODUCTION",
+        "PRODUCTION_WRITE"
+      ],
+      "dod_criteria": [],
+      "applicability_predicate": null
+    },
+    {
+      "stage": "MERGE",
+      "mutating": true,
+      "default_agent": "production",
+      "required_outputs": [
+        "merge_ref"
+      ],
+      "exit_condition": "the change is merged into the target branch and the merge commit is recorded",
+      "satisfied_by": "reality.pr_merged",
+      "gates_possible": [
+        "MERGE_PROTECTED"
+      ],
+      "dod_criteria": [],
+      "applicability_predicate": null
+    },
+    {
+      "stage": "DEPLOY",
+      "mutating": true,
+      "default_agent": "production",
+      "required_outputs": [
+        "deployment_ref",
+        "rollback_plan"
+      ],
+      "exit_condition": "the change is present in the named environment and a verified rollback exists",
+      "satisfied_by": "reality.deployed",
+      "gates_possible": [
+        "DEPLOY_PRODUCTION",
+        "PRODUCTION_WRITE"
+      ],
+      "dod_criteria": [],
+      "applicability_predicate": "production.applicable"
+    },
+    {
+      "stage": "PRODUCTION_VALIDATION",
+      "mutating": true,
+      "default_agent": "validator",
+      "required_outputs": [
+        "production_evidence"
+      ],
+      "exit_condition": "the Validator's production layer has a verdict from production observations, or states what remains unverified and why",
+      "satisfied_by": "reality.outcome_already_satisfied",
+      "gates_possible": [
+        "PRODUCTION_WRITE"
+      ],
+      "dod_criteria": [
+        15
+      ],
+      "applicability_predicate": "production.applicable"
+    },
+    {
+      "stage": "COMPLETION",
+      "mutating": false,
+      "default_agent": "orchestrator",
+      "required_outputs": [
+        "completion_report",
+        "run_narrative"
+      ],
+      "exit_condition": "the DoD verdict is computed from the collected per-criterion verdicts and recorded with the outcome",
+      "satisfied_by": null,
+      "gates_possible": [],
+      "dod_criteria": [],
+      "applicability_predicate": null
+    }
+  ]
+}

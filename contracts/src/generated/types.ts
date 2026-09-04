@@ -1904,6 +1904,24 @@ export type DodPolicySet = {
 };
 
 /**
+ * policies/execution.json. Which risk classes this installation may execute. Milestone 1 is a
+ * read-only AgentOS that discovers and audits and mutates nothing, and this is where that is
+ * stated as data rather than as an absence of code: the mutation frameworks are built and no
+ * mutating operation is registered, and this file is what refuses a mutating workflow if one
+ * ever were.
+ */
+export type ExecutionPolicy = {
+  readonly version: NonEmptyString;
+  readonly mutation_enabled: boolean;
+  /**
+   * A workflow whose derived risk class is not listed is inadmissible, and the kernel falls
+   * back to the most conservative admissible template with the restriction logged.
+   */
+  readonly admissible_risk_classes: readonly RiskClass[];
+  readonly rationale: NonEmptyString;
+};
+
+/**
  * Which proposals and statuses each role may make, and in which stages. Enforced as
  * cross-field rules on envelope receipt.
  */

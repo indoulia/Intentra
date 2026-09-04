@@ -1,0 +1,75 @@
+{
+  "version": "1.0",
+  "always_verify": [
+    "critical_or_high_finding",
+    "authorization_request",
+    "dod_criterion_met",
+    "fact_contradicting_existing_assertion"
+  ],
+  "sample_rate": 0.2,
+  "sample_minimum_per_envelope": 1,
+  "mismatch_threshold_per_envelope": 2,
+  "authorization_mismatch_threshold": 1,
+  "comparators": [
+    {
+      "kind": "file",
+      "comparator": "normalized_exact_match",
+      "requires_predicate": false,
+      "note": "whitespace and line-ending normalization only; nothing that could make two different files compare equal"
+    },
+    {
+      "kind": "git",
+      "comparator": "normalized_exact_match",
+      "requires_predicate": false,
+      "note": "a SHA, a branch name or a ref listing compares exactly"
+    },
+    {
+      "kind": "command",
+      "comparator": "normalized_exact_match",
+      "requires_predicate": false,
+      "note": "command output, normalized for whitespace and ordering only"
+    },
+    {
+      "kind": "query",
+      "comparator": "normalized_exact_match",
+      "requires_predicate": false,
+      "note": "a query result set, normalized for row ordering"
+    },
+    {
+      "kind": "http",
+      "comparator": "normalized_exact_match",
+      "requires_predicate": false,
+      "note": "status and body, normalized for whitespace and header ordering"
+    },
+    {
+      "kind": "log",
+      "comparator": "predicate_reevaluation",
+      "requires_predicate": true,
+      "note": "the kernel re-evaluates the predicate the observation satisfied rather than comparing a volatile raw value; a log line that has since rotated would otherwise mismatch for the wrong reason"
+    },
+    {
+      "kind": "metric",
+      "comparator": "predicate_reevaluation",
+      "requires_predicate": true,
+      "note": "same reason: error_rate < 0.01 is checkable a minute later, the exact value is not"
+    },
+    {
+      "kind": "ticket",
+      "comparator": "identifier_plus_content_hash",
+      "requires_predicate": false,
+      "note": "a changed hash is a MISMATCH and the version difference is recorded. This same comparator, applied to the intake's own locator, is the source-drift check"
+    },
+    {
+      "kind": "document",
+      "comparator": "identifier_plus_content_hash",
+      "requires_predicate": false,
+      "note": "as ticket"
+    },
+    {
+      "kind": "screenshot",
+      "comparator": "not_kernel_verifiable",
+      "requires_predicate": false,
+      "note": "pixels are not comparable mechanically. The content cannot be checked, but the provenance can: the adapter call that produced it is confirmed to have happened, against that URL, in that state, at that time, from the call log"
+    }
+  ]
+}

@@ -55,6 +55,7 @@ import type {
   GatePolicy,
   DodPolicySet,
   AgentPolicy,
+  ExecutionPolicy,
   AgentSpec,
   SkillEntry,
   ModelEntry,
@@ -113,6 +114,7 @@ const DEF_VALIDATORS: ReadonlyArray<readonly [keyof typeof SCHEMA_ID, string]> =
   ['policy', 'gatePolicy'],
   ['policy', 'dodPolicySet'],
   ['policy', 'agentPolicy'],
+  ['policy', 'executionPolicy'],
   ['registry', 'agentSpec'],
   ['registry', 'skillEntry'],
   ['registry', 'modelEntry'],
@@ -269,6 +271,7 @@ export const validators = {
   gatePolicy: validator<GatePolicy>('policy', 'gatePolicy'),
   dodPolicySet: validator<DodPolicySet>('policy', 'dodPolicySet'),
   agentPolicy: validator<AgentPolicy>('policy', 'agentPolicy'),
+  executionPolicy: validator<ExecutionPolicy>('policy', 'executionPolicy'),
 
   agentSpec: validator<AgentSpec>('registry', 'agentSpec'),
   skillEntry: validator<SkillEntry>('registry', 'skillEntry'),

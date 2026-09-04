@@ -1,0 +1,138 @@
+{
+  "version": "1.0",
+  "resolution_confidence_threshold": 0.6,
+  "types": [
+    {
+      "type": "EPIC",
+      "description": "A coordinating parent; its outcome is achieved through children.",
+      "minimum_evidence": [
+        {
+          "requirement": "external_item_of_this_type",
+          "kinds": ["ticket"],
+          "note": "the project-management system says this item is an Epic"
+        },
+        {
+          "requirement": "child_items_exist",
+          "kinds": ["ticket"],
+          "note": "child items already exist under it"
+        }
+      ],
+      "satisfied_by": "ANY",
+      "candidate_dod_profiles": ["internal-capability", "service-capability", "data-capability"]
+    },
+    {
+      "type": "FEATURE",
+      "description": "A capability that does not exist yet.",
+      "minimum_evidence": [
+        {
+          "requirement": "no_capability_record_intersecting_scope",
+          "kinds": ["file", "git"],
+          "note": "no capability record intersects the described behaviour and no code implements it, which is what separates a FEATURE from a DEFECT"
+        }
+      ],
+      "satisfied_by": "ALL",
+      "candidate_dod_profiles": ["service-capability", "data-capability", "ui-capability", "internal-capability"]
+    },
+    {
+      "type": "STORY",
+      "description": "A bounded slice of a feature, independently completable.",
+      "minimum_evidence": [
+        {
+          "requirement": "external_item_of_this_type",
+          "kinds": ["ticket"],
+          "note": "the project-management system says this item is a Story"
+        },
+        {
+          "requirement": "named_path_exists",
+          "kinds": ["file"],
+          "note": "or the described slice resolves to paths that exist, which bounds it"
+        }
+      ],
+      "satisfied_by": "ANY",
+      "candidate_dod_profiles": ["service-capability", "data-capability", "ui-capability", "internal-capability"]
+    },
+    {
+      "type": "DEFECT",
+      "description": "An existing capability behaves incorrectly.",
+      "minimum_evidence": [
+        {
+          "requirement": "capability_record_intersecting_scope",
+          "kinds": ["file", "git", "query", "http"],
+          "note": "the capability being complained about exists; a complaint about something never built is not a defect"
+        },
+        {
+          "requirement": "reproduction_or_incorrect_behaviour_report",
+          "kinds": ["ticket", "log", "query", "http", "command"],
+          "note": "something describes incorrect behaviour, specifically"
+        }
+      ],
+      "satisfied_by": "ALL",
+      "candidate_dod_profiles": ["fix"]
+    },
+    {
+      "type": "TASK",
+      "description": "Bounded work making no capability claim: a chore, a config change, documentation, cleanup.",
+      "minimum_evidence": [
+        {
+          "requirement": "named_path_exists",
+          "kinds": ["file"],
+          "note": "the work names something that exists, which is what makes it bounded"
+        }
+      ],
+      "satisfied_by": "ALL",
+      "candidate_dod_profiles": ["documentation", "internal-capability"]
+    },
+    {
+      "type": "INCIDENT",
+      "description": "Production is wrong right now; containment precedes correctness.",
+      "minimum_evidence": [
+        {
+          "requirement": "runtime_or_production_observation",
+          "kinds": ["log", "metric", "query", "http"],
+          "note": "nobody declares an incident by writing the word. A user report is not a runtime observation, however urgent it sounds; if a runtime probe later observes the failure, the kernel records a re-resolution and the type is upgraded with evidence"
+        }
+      ],
+      "satisfied_by": "ALL",
+      "candidate_dod_profiles": ["fix"]
+    },
+    {
+      "type": "INVESTIGATION",
+      "description": "The deliverable is understanding; change is not assumed.",
+      "minimum_evidence": [
+        {
+          "requirement": "none",
+          "kinds": [],
+          "note": "an investigation asserts nothing about the system, so it needs no evidence to be admissible. Its template mutates nothing, which is what makes that safe"
+        }
+      ],
+      "satisfied_by": "NONE",
+      "candidate_dod_profiles": ["audit"]
+    },
+    {
+      "type": "CHANGE_REQUEST",
+      "description": "A proposed change already exists and the outcome is that it lands. An orphan PR - one serving no work item AgentOS knows about - resolves here.",
+      "minimum_evidence": [
+        {
+          "requirement": "existing_change_proposal",
+          "kinds": ["git"],
+          "note": "the pull request or patch it is about exists and was read through the adapter"
+        }
+      ],
+      "satisfied_by": "ALL",
+      "candidate_dod_profiles": ["fix"]
+    },
+    {
+      "type": "UNKNOWN",
+      "description": "Resolution did not establish a type. Routes to investigation.readonly, which is the safe thing to do when you do not know what you are looking at.",
+      "minimum_evidence": [
+        {
+          "requirement": "none",
+          "kinds": [],
+          "note": "UNKNOWN is what a type asserted without its minimum evidence is downgraded to, so it can require none. The claimed type is recorded"
+        }
+      ],
+      "satisfied_by": "NONE",
+      "candidate_dod_profiles": ["audit"]
+    }
+  ]
+}

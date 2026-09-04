@@ -1,0 +1,41 @@
+{
+  "template_id": "investigation.readonly",
+  "version": "1.0",
+  "description": "Entirely non-mutating; the deliverable is findings. applies_to is every type by design, so the admissible set is never empty and the fallback always has something to fall back to - a template set whose intersection with some work item is empty would leave the kernel choosing between guessing and refusing. This is the target of UNKNOWN type and of ambiguity rung 3. ROOT_CAUSE carries no applicability predicate, so no Orchestrator proposal can exclude it; the COMPLETION-only parameterization of WORKFLOW_STATE_MACHINE 5.3 is admitted by the kernel from observed reality, never proposed.",
+  "applies_to": {
+    "types": [
+      "*"
+    ]
+  },
+  "entry": "AUDIT",
+  "stages": [
+    "AUDIT",
+    "ROOT_CAUSE",
+    "COMPLETION"
+  ],
+  "optional_stages": [
+    "AUDIT",
+    "ROOT_CAUSE"
+  ],
+  "edges": [
+    {
+      "from": "AUDIT",
+      "to": "ROOT_CAUSE",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "ROOT_CAUSE",
+      "to": "COMPLETION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "COMPLETION",
+      "to": "COMPLETE",
+      "when": "always",
+      "kind": "terminal"
+    }
+  ],
+  "dod_profile_default": "audit"
+}

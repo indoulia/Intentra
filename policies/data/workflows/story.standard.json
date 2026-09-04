@@ -1,0 +1,169 @@
+{
+  "template_id": "story.standard",
+  "version": "1.0",
+  "description": "A bounded slice of a feature, independently completable. Audit first because the slice lands inside a system that already exists; architecture only where a contract boundary is touched, which the kernel evaluates rather than the agent claiming.",
+  "applies_to": {
+    "types": [
+      "STORY"
+    ]
+  },
+  "entry": "AUDIT",
+  "stages": [
+    "AUDIT",
+    "ARCHITECTURE",
+    "PLAN",
+    "IMPLEMENTATION",
+    "VALIDATION",
+    "STRUCTURAL_REAUDIT",
+    "UX_REVIEW",
+    "REWORK",
+    "PR_PREPARATION",
+    "PR_REVIEW",
+    "REVIEW_TRIAGE",
+    "COMMENT_RESOLUTION",
+    "AUTHORIZATION",
+    "MERGE",
+    "COMPLETION"
+  ],
+  "optional_stages": [
+    "ARCHITECTURE",
+    "UX_REVIEW"
+  ],
+  "edges": [
+    {
+      "from": "AUDIT",
+      "to": "ARCHITECTURE",
+      "when": "architecture.required",
+      "kind": "branch"
+    },
+    {
+      "from": "AUDIT",
+      "to": "PLAN",
+      "when": "NOT architecture.required",
+      "kind": "branch"
+    },
+    {
+      "from": "ARCHITECTURE",
+      "to": "PLAN",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "PLAN",
+      "to": "IMPLEMENTATION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "IMPLEMENTATION",
+      "to": "VALIDATION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "IMPLEMENTATION",
+      "to": "ARCHITECTURE",
+      "when": "envelope.BLOCKED_BY_ARCHITECTURE",
+      "kind": "loop",
+      "counter": "architecture",
+      "cap": "budgets.loops.architecture"
+    },
+    {
+      "from": "VALIDATION",
+      "to": "REWORK",
+      "when": "envelope.REJECTED",
+      "kind": "loop",
+      "counter": "rework",
+      "cap": "budgets.loops.rework"
+    },
+    {
+      "from": "REWORK",
+      "to": "IMPLEMENTATION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "VALIDATION",
+      "to": "STRUCTURAL_REAUDIT",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "STRUCTURAL_REAUDIT",
+      "to": "UX_REVIEW",
+      "when": "ux.required",
+      "kind": "branch"
+    },
+    {
+      "from": "STRUCTURAL_REAUDIT",
+      "to": "PR_PREPARATION",
+      "when": "NOT ux.required",
+      "kind": "branch"
+    },
+    {
+      "from": "UX_REVIEW",
+      "to": "REWORK",
+      "when": "envelope.REJECTED",
+      "kind": "loop",
+      "counter": "rework",
+      "cap": "budgets.loops.rework"
+    },
+    {
+      "from": "UX_REVIEW",
+      "to": "PR_PREPARATION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "PR_PREPARATION",
+      "to": "PR_REVIEW",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "PR_REVIEW",
+      "to": "REVIEW_TRIAGE",
+      "when": "reality.pr_has_unresolved_comments",
+      "kind": "loop",
+      "counter": "review",
+      "cap": "budgets.loops.review"
+    },
+    {
+      "from": "PR_REVIEW",
+      "to": "AUTHORIZATION",
+      "when": "reality.pr_approved",
+      "kind": "advance"
+    },
+    {
+      "from": "REVIEW_TRIAGE",
+      "to": "COMMENT_RESOLUTION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "COMMENT_RESOLUTION",
+      "to": "IMPLEMENTATION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "AUTHORIZATION",
+      "to": "MERGE",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "MERGE",
+      "to": "COMPLETION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "COMPLETION",
+      "to": "COMPLETE",
+      "when": "always",
+      "kind": "terminal"
+    }
+  ],
+  "dod_profile_default": "service-capability"
+}

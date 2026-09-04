@@ -1,0 +1,64 @@
+{
+  "version": "1.0",
+  "hosts": [
+    {
+      "host": "host.cli",
+      "can_assert_principal": true,
+      "trust_class": "OPERATOR",
+      "sources": ["NATURAL_LANGUAGE"]
+    }
+  ],
+  "default_trust_class": "EXTERNAL",
+  "pre_granted_autonomous_intake": [],
+  "instruction_markers": [
+    {
+      "attempt": "NAME_TEMPLATE",
+      "patterns": [
+        "\\b(use|run|apply|select)\\s+(the\\s+)?(task\\.direct|defect\\.standard|story\\.standard|feature\\.standard|epic\\.coordinate|change_request\\.land|investigation\\.readonly|incident\\.contain|documentation\\.direct)\\b",
+        "\\btemplate\\s*[:=]\\s*\\S+"
+      ]
+    },
+    {
+      "attempt": "REQUEST_STAGE",
+      "patterns": [
+        "\\b(skip|bypass|omit)\\s+(the\\s+)?(audit|root.cause|architecture|plan|validation|review|authorization|ux.review)\\b",
+        "\\bgo\\s+(straight|directly)\\s+to\\s+(implementation|merge|deploy)\\b",
+        "\\bstart\\s+(at|from)\\s+(implementation|merge|deploy|pr.review)\\b"
+      ]
+    },
+    {
+      "attempt": "SET_CONFIDENCE",
+      "patterns": [
+        "\\bconfidence\\s*[:=]\\s*(FACT|INFERENCE|UNKNOWN)\\b",
+        "\\btreat\\s+this\\s+as\\s+(a\\s+)?(fact|verified|proven)\\b"
+      ]
+    },
+    {
+      "attempt": "SET_TRUST_CLASS",
+      "patterns": ["\\btrust_class\\s*[:=]\\s*(OPERATOR|INTERNAL|EXTERNAL)\\b"]
+    },
+    {
+      "attempt": "WIDEN_SCOPE",
+      "patterns": [
+        "\\bscope\\s*[:=]\\s*\\*\\*",
+        "\\b(also|while you are (here|there))\\s+(fix|change|refactor|update)\\b",
+        "\\bacross\\s+the\\s+(whole|entire)\\s+(repo|repository|codebase)\\b"
+      ]
+    },
+    {
+      "attempt": "CLAIM_AUTHORIZATION",
+      "patterns": [
+        "\\b(approved|authorized|authorised|pre.approved|sign.?ed off)\\b",
+        "\\byou\\s+(have|are given)\\s+(permission|authorization|authorisation)\\b",
+        "\\bgo\\s+ahead\\s+and\\s+(merge|deploy|drop|delete)\\b"
+      ]
+    },
+    {
+      "attempt": "CANCEL_RUN",
+      "patterns": [
+        "\\b(stop|abort|cancel|halt)\\s+(the\\s+)?(run|work|this)\\b",
+        "\\bdo\\s+not\\s+(do|proceed with)\\s+this\\b"
+      ]
+    }
+  ]
+}

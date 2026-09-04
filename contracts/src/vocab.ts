@@ -124,9 +124,14 @@ export const SCHEMA_IDS: readonly string[] = Object.freeze(
 /**
  * The stages a template may contain that do not mutate authoritative state.
  *
+ * At stage granularity `mutating` means authoritative state *outside AgentOS's own ledger*
+ * (WORKFLOW_STATE_MACHINE 2.3, amendment A-12): every stage writes run state, so a flag that
+ * counted the ledger would be true for all twenty and would gate nothing. `COMPLETION`
+ * writes the outcome record and the work item lifecycle and touches nothing else.
+ *
  * Declared in `policies/stages.json` per stage; this list exists so the contract layer can
- * state what WORKFLOW_STATE_MACHINE 2.3 names, and the policy loader asserts the two agree.
- * A disagreement is a policy-authoring defect and fails at load.
+ * state what the state machine names, and the policy loader asserts the two agree. A
+ * disagreement is a policy-authoring defect and fails at load.
  */
 export const READ_ONLY_STAGES: readonly TemplateStage[] = Object.freeze([
   'AUDIT',
@@ -139,6 +144,7 @@ export const READ_ONLY_STAGES: readonly TemplateStage[] = Object.freeze([
   'PR_REVIEW',
   'REVIEW_TRIAGE',
   'DECOMPOSITION',
+  'COMPLETION',
 ]);
 
 /** Exhaustiveness helper: a `never` argument the compiler rejects if a case is missed. */

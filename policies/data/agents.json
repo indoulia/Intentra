@@ -1,0 +1,83 @@
+{
+  "version": "1.0",
+  "roles": [
+    {
+      "role": "orchestrator",
+      "may_propose": ["workflow", "triage", "cancellation", "dispatch", "arbitration", "authorization_request"],
+      "proposal_stages": {
+        "workflow": ["WORKFLOW_SELECTED"],
+        "triage": ["REVIEW_TRIAGE"],
+        "cancellation": ["CHILD_COORDINATION"],
+        "dispatch": ["*"],
+        "arbitration": ["*"],
+        "authorization_request": ["*"]
+      },
+      "may_return_statuses": ["COMPLETE", "PARTIAL", "BLOCKED", "FAILED"],
+      "permitted_adapters": [],
+      "read_only": true
+    },
+    {
+      "role": "context-discovery",
+      "may_propose": ["work_item"],
+      "proposal_stages": { "work_item": ["RESOLUTION"] },
+      "may_return_statuses": ["COMPLETE", "PARTIAL", "BLOCKED", "FAILED"],
+      "permitted_adapters": ["repo", "git", "pm", "runtime", "host"],
+      "read_only": true
+    },
+    {
+      "role": "auditor",
+      "may_propose": ["authorization_request"],
+      "proposal_stages": { "authorization_request": ["AUDIT", "ROOT_CAUSE", "STRUCTURAL_REAUDIT"] },
+      "may_return_statuses": ["COMPLETE", "PARTIAL", "BLOCKED", "FAILED"],
+      "permitted_adapters": ["repo", "git", "pm", "runtime", "host"],
+      "read_only": true
+    },
+    {
+      "role": "architect",
+      "may_propose": ["decomposition", "authorization_request"],
+      "proposal_stages": {
+        "decomposition": ["DECOMPOSITION"],
+        "authorization_request": ["ARCHITECTURE", "PLAN"]
+      },
+      "may_return_statuses": ["COMPLETE", "PARTIAL", "BLOCKED", "FAILED"],
+      "permitted_adapters": ["repo", "git"],
+      "read_only": true
+    },
+    {
+      "role": "implementer",
+      "may_propose": ["authorization_request"],
+      "proposal_stages": {
+        "authorization_request": ["IMPLEMENTATION", "REWORK", "COMMENT_RESOLUTION"]
+      },
+      "may_return_statuses": ["COMPLETE", "PARTIAL", "BLOCKED", "BLOCKED_BY_ARCHITECTURE", "FAILED"],
+      "permitted_adapters": ["repo", "git", "runtime"],
+      "read_only": false
+    },
+    {
+      "role": "validator",
+      "may_propose": ["authorization_request"],
+      "proposal_stages": { "authorization_request": ["VALIDATION", "PRODUCTION_VALIDATION"] },
+      "may_return_statuses": ["COMPLETE", "PARTIAL", "BLOCKED", "FAILED", "REJECTED"],
+      "permitted_adapters": ["repo", "git", "runtime"],
+      "read_only": false
+    },
+    {
+      "role": "product-ux",
+      "may_propose": [],
+      "proposal_stages": {},
+      "may_return_statuses": ["COMPLETE", "PARTIAL", "BLOCKED", "FAILED", "REJECTED"],
+      "permitted_adapters": ["repo", "runtime"],
+      "read_only": false
+    },
+    {
+      "role": "production",
+      "may_propose": ["authorization_request"],
+      "proposal_stages": {
+        "authorization_request": ["PR_PREPARATION", "PR_REVIEW", "AUTHORIZATION", "MERGE", "DEPLOY", "PRODUCTION_VALIDATION"]
+      },
+      "may_return_statuses": ["COMPLETE", "PARTIAL", "BLOCKED", "FAILED"],
+      "permitted_adapters": ["git", "runtime"],
+      "read_only": false
+    }
+  ]
+}

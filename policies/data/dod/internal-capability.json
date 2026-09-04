@@ -1,0 +1,136 @@
+{
+  "profile_id": "internal-capability",
+  "description": "Tooling or infrastructure, and the profile for work that makes no capability claim at all - which is why a TASK has somewhere to land. The capability-chain criteria are NOT_APPLICABLE with a stated reason rather than quietly omitted, because the distinction between 'this does not apply' and 'we did not check' is the one this whole model exists to keep.",
+  "criteria": [
+    1,
+    2,
+    5,
+    9,
+    12,
+    16,
+    17
+  ],
+  "critical_criteria": [
+    1,
+    5,
+    12
+  ],
+  "not_applicable_by_default": [
+    {
+      "criterion": 3,
+      "reason": "work making no capability claim owns no canonical entity"
+    },
+    {
+      "criterion": 4,
+      "reason": "there is no source or data contract to specify"
+    },
+    {
+      "criterion": 6,
+      "reason": "there is no writer-reader chain to connect"
+    },
+    {
+      "criterion": 7,
+      "reason": "no API exposes this"
+    },
+    {
+      "criterion": 8,
+      "reason": "there is no user-facing surface"
+    },
+    {
+      "criterion": 10,
+      "reason": "no value crosses a persistence boundary"
+    },
+    {
+      "criterion": 11,
+      "reason": "there is no capability for an operator to observe working"
+    },
+    {
+      "criterion": 13,
+      "reason": "there is no capability chain to trace a real record through"
+    },
+    {
+      "criterion": 14,
+      "reason": "there is no surface to exercise"
+    },
+    {
+      "criterion": 15,
+      "reason": "nothing is deployed"
+    },
+    {
+      "criterion": 18,
+      "reason": "there is no user-visible outcome to state or to learn about"
+    }
+  ],
+  "evidence_requirements": {
+    "1": {
+      "kinds": [
+        "file",
+        "document",
+        "ticket",
+        "query"
+      ],
+      "note": "package contents; for criterion 16, documentation compared against the code it describes rather than against the diff"
+    },
+    "2": {
+      "kinds": [
+        "git",
+        "command",
+        "file"
+      ],
+      "note": "diff review against the approved architecture and the plan's work-unit list"
+    },
+    "5": {
+      "kinds": [
+        "git",
+        "command",
+        "file"
+      ],
+      "note": "diff review against the approved architecture and the plan's work-unit list"
+    },
+    "9": {
+      "kinds": [
+        "command"
+      ],
+      "note": "test execution output, not a claim about tests"
+    },
+    "12": {
+      "kinds": [
+        "command"
+      ],
+      "note": "test execution output, not a claim about tests"
+    },
+    "16": {
+      "kinds": [
+        "file",
+        "document",
+        "ticket",
+        "query"
+      ],
+      "note": "package contents; for criterion 16, documentation compared against the code it describes rather than against the diff"
+    },
+    "17": {
+      "kinds": [
+        "file",
+        "git",
+        "command"
+      ],
+      "note": "static analysis plus the capability graph; self-assertion is never evidence"
+    }
+  },
+  "applies_when": {
+    "capability_kinds": [
+      "tooling",
+      "infrastructure",
+      "none"
+    ],
+    "work_item_types": [
+      "TASK",
+      "STORY",
+      "EPIC"
+    ],
+    "requires_access": [
+      "repository",
+      "git"
+    ]
+  }
+}

@@ -1,0 +1,131 @@
+{
+  "version": "1.0",
+  "criteria": [
+    {
+      "criterion": 1,
+      "name": "Context understood",
+      "owner_role": "context-discovery",
+      "owner_pass": "only",
+      "evidence_class": "knowledge"
+    },
+    {
+      "criterion": 2,
+      "name": "Architecture coherent",
+      "owner_role": "architect",
+      "owner_pass": "only",
+      "evidence_class": "implementation"
+    },
+    {
+      "criterion": 3,
+      "name": "Canonical ownership",
+      "owner_role": "auditor",
+      "owner_pass": "first",
+      "evidence_class": "structural"
+    },
+    {
+      "criterion": 4,
+      "name": "Source and data contracts",
+      "owner_role": "auditor",
+      "owner_pass": "first",
+      "evidence_class": "structural"
+    },
+    {
+      "criterion": 5,
+      "name": "Implementation complete",
+      "owner_role": "validator",
+      "owner_pass": "only",
+      "evidence_class": "implementation"
+    },
+    {
+      "criterion": 6,
+      "name": "Writers and readers connected",
+      "owner_role": "auditor",
+      "owner_pass": "second",
+      "evidence_class": "structural"
+    },
+    {
+      "criterion": 7,
+      "name": "API returns real data and preserves semantics",
+      "owner_role": "validator",
+      "owner_pass": "only",
+      "evidence_class": "capability"
+    },
+    {
+      "criterion": 8,
+      "name": "UI exists and presents truth",
+      "owner_role": "product-ux",
+      "owner_pass": "only",
+      "evidence_class": "ux"
+    },
+    {
+      "criterion": 9,
+      "name": "Failure states handled explicitly",
+      "owner_role": "validator",
+      "owner_pass": "only",
+      "evidence_class": "behavioural"
+    },
+    {
+      "criterion": 10,
+      "name": "Provenance",
+      "owner_role": "validator",
+      "owner_pass": "only",
+      "evidence_class": "knowledge"
+    },
+    {
+      "criterion": 11,
+      "name": "Observability",
+      "owner_role": "validator",
+      "owner_pass": "only",
+      "evidence_class": "runtime"
+    },
+    {
+      "criterion": 12,
+      "name": "Tests exist, assert on real behaviour, and fail when the capability breaks",
+      "owner_role": "validator",
+      "owner_pass": "only",
+      "evidence_class": "behavioural"
+    },
+    {
+      "criterion": 13,
+      "name": "Capability validation: a real record traced end to end",
+      "owner_role": "validator",
+      "owner_pass": "only",
+      "evidence_class": "capability"
+    },
+    {
+      "criterion": 14,
+      "name": "UX validation, including empty, loading, partial, stale and error states",
+      "owner_role": "product-ux",
+      "owner_pass": "only",
+      "evidence_class": "ux"
+    },
+    {
+      "criterion": 15,
+      "name": "Production validation",
+      "owner_role": "validator",
+      "owner_pass": "only",
+      "evidence_class": "production"
+    },
+    {
+      "criterion": 16,
+      "name": "Documentation reflects what was built and is not contradicted by the code",
+      "owner_role": "auditor",
+      "owner_pass": "second",
+      "evidence_class": "knowledge"
+    },
+    {
+      "criterion": 17,
+      "name": "No known orphan capability introduced",
+      "owner_role": "auditor",
+      "owner_pass": "second",
+      "evidence_class": "structural"
+    },
+    {
+      "criterion": 18,
+      "name": "Outcome and learning path",
+      "owner_role": "architect",
+      "owner_pass": "only",
+      "evidence_class": "knowledge"
+    }
+  ]
+}

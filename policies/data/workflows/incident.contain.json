@@ -1,0 +1,109 @@
+{
+  "template_id": "incident.contain",
+  "version": "1.0",
+  "description": "Production is wrong right now. Containment precedes correctness: ROOT_CAUSE runs first because containing the wrong thing makes it worse, then every mutating stage is gated. Production validation failure escalates to BLOCKED rather than falling back into REWORK - the code is already live, so the next decision is a rollback decision, and that is a human's. STRUCTURAL_REAUDIT is present because DoD criterion 17 - the change introduced no new orphan - is owned by the Auditor's second pass, and a template that cannot supply a critical criterion of its own DoD profile is a template that can never complete.",
+  "applies_to": {
+    "types": [
+      "INCIDENT"
+    ]
+  },
+  "entry": "ROOT_CAUSE",
+  "stages": [
+    "ROOT_CAUSE",
+    "AUTHORIZATION",
+    "IMPLEMENTATION",
+    "VALIDATION",
+    "STRUCTURAL_REAUDIT",
+    "REWORK",
+    "PR_PREPARATION",
+    "MERGE",
+    "DEPLOY",
+    "PRODUCTION_VALIDATION",
+    "COMPLETION"
+  ],
+  "optional_stages": [],
+  "edges": [
+    {
+      "from": "ROOT_CAUSE",
+      "to": "AUTHORIZATION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "AUTHORIZATION",
+      "to": "IMPLEMENTATION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "IMPLEMENTATION",
+      "to": "VALIDATION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "VALIDATION",
+      "to": "REWORK",
+      "when": "envelope.REJECTED",
+      "kind": "loop",
+      "counter": "rework",
+      "cap": "budgets.loops.rework"
+    },
+    {
+      "from": "REWORK",
+      "to": "IMPLEMENTATION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "VALIDATION",
+      "to": "STRUCTURAL_REAUDIT",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "STRUCTURAL_REAUDIT",
+      "to": "PR_PREPARATION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "PR_PREPARATION",
+      "to": "MERGE",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "MERGE",
+      "to": "DEPLOY",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "DEPLOY",
+      "to": "PRODUCTION_VALIDATION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "PRODUCTION_VALIDATION",
+      "to": "COMPLETION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "PRODUCTION_VALIDATION",
+      "to": "BLOCKED",
+      "when": "envelope.REJECTED",
+      "kind": "escalate",
+      "blocker_kind": "AUTHORIZATION_REQUIRED"
+    },
+    {
+      "from": "COMPLETION",
+      "to": "COMPLETE",
+      "when": "always",
+      "kind": "terminal"
+    }
+  ],
+  "dod_profile_default": "fix"
+}

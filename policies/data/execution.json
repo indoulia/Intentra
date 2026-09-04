@@ -1,0 +1,6 @@
+{
+  "version": "1.0",
+  "mutation_enabled": false,
+  "admissible_risk_classes": ["READ_ONLY"],
+  "rationale": "Milestone 1 ships a read-only AgentOS that discovers and audits and mutates nothing. That is the point rather than a limitation: the whole resolution and workflow-selection layer can be exercised and judged before AgentOS can write anything, at zero risk to any repository. The mutation, reversal, idempotency and grant frameworks are all built and exercised by fixtures; no mutating adapter operation is registered; and this file is what refuses a mutating workflow if one ever were. Enabling milestone 2 is a change here plus registering operations, not a change to the kernel."
+}

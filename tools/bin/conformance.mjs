@@ -147,8 +147,24 @@ check(
 
 const IO_MODULES = /from '(node:fs|node:fs\/promises|node:child_process|node:http|node:https|node:net|node:dgram)'/;
 
+/*
+ * The exceptions, each named with the decision that permits it. A file not on this list that
+ * imports an I/O module is a boundary violation; the list itself is short on purpose, because
+ * "all outside-world access goes through adapters" is only true if the exceptions are
+ * countable.
+ */
+const IO_EXCEPTIONS = new Map([
+  ['policies/src/data-source.ts',
+    "decision I-11: the policy loader reads AgentOS's own installation at startup, and "
+    + 'routing it through the adapters would be circular because path confinement reads '
+    + 'paths.json. Confined to the policy data root, and it is one file.'],
+  ['agents/src/substrate/claude-agent-sdk.ts',
+    "decision D-2: the substrate is the transport to the agent execution host, and D-2's "
+    + 'reversal clause wants swapping it to be a one-file change.'],
+]);
+
 check(
-  'only adapters/ and state/ reach the filesystem, a process or the network',
+  'only adapters/, state/ and the named exceptions reach the filesystem, a process or the network',
   'KERNEL_BOUNDARY dependency rule 5',
   () => {
     const offenders = [];
@@ -157,15 +173,36 @@ check(
        * run store, which the kernel is the only writer to and which is files by decision D-3. */
       if (pkg === 'adapters' || pkg === 'state') continue;
       for (const [file, text] of readAll(pkg)) {
-        /* The substrate is the one place a subprocess is launched: it is the transport to the
-         * agent execution host, and D-2's reversal clause wants it isolated to one file. */
-        if (file.startsWith('agents/src/substrate/')) continue;
+        if (IO_EXCEPTIONS.has(file)) continue;
         if (IO_MODULES.test(text)) offenders.push(file);
       }
     }
     return offenders.length === 0
       ? true
-      : `these files import an I/O module directly: ${offenders.join(', ')}`;
+      : `these files import an I/O module directly and are not a named exception: ${offenders.join(', ')}`;
+  },
+);
+
+check(
+  'every named I/O exception still exists and still needs to be one',
+  'IMPLEMENTATION_DECISIONS I-11, ARCHITECTURE_FREEZE D-2',
+  () => {
+    const stale = [];
+    for (const [file] of IO_EXCEPTIONS) {
+      const pkg = file.split('/')[0];
+      const sources = readAll(pkg);
+      /* A package with no source yet cannot have a stale exception. The exception is
+       * declared ahead of the file it names so that the file lands into a check rather
+       * than past one. */
+      if (sources.length === 0) continue;
+      const found = sources.find(([name]) => name === file);
+      if (found === undefined) {
+        stale.push(`${file} does not exist, so its exception should be removed`);
+      } else if (!IO_MODULES.test(found[1])) {
+        stale.push(`${file} does not do I/O, so its exception should be removed`);
+      }
+    }
+    return stale.length === 0 ? true : stale.join('; ');
   },
 );
 

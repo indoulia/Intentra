@@ -1,0 +1,45 @@
+{
+  "template_id": "epic.coordinate",
+  "version": "1.0",
+  "description": "An Epic coordinates; it does not implement. The node set contains no IMPLEMENTATION stage, which is how 'do not turn an Epic into one enormous linear workflow' is enforced structurally rather than advised: an Orchestrator that would prefer a single linear run has no expressible way to ask for it. VALIDATION is present for the Epic's own outcome and not for its children's: DEFINITION_OF_DONE section 7 requires that outcome to be evaluated against its own profile with evidence, and the Validator is the only role that supplies an outcome verdict. It is non-mutating, so the Epic still never touches code. There is no REWORK stage, so a REJECTED verdict on an Epic's outcome has no edge and becomes BLOCKED - which is right: an Epic whose children all shipped and whose outcome nobody can demonstrate is a decision for a human, not a lap of rework.",
+  "applies_to": {
+    "types": [
+      "EPIC"
+    ]
+  },
+  "entry": "DECOMPOSITION",
+  "stages": [
+    "DECOMPOSITION",
+    "CHILD_COORDINATION",
+    "VALIDATION",
+    "COMPLETION"
+  ],
+  "optional_stages": [],
+  "edges": [
+    {
+      "from": "DECOMPOSITION",
+      "to": "CHILD_COORDINATION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "CHILD_COORDINATION",
+      "to": "VALIDATION",
+      "when": "reality.children_all_terminal",
+      "kind": "advance"
+    },
+    {
+      "from": "VALIDATION",
+      "to": "COMPLETION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "COMPLETION",
+      "to": "COMPLETE",
+      "when": "always",
+      "kind": "terminal"
+    }
+  ],
+  "dod_profile_default": "internal-capability"
+}

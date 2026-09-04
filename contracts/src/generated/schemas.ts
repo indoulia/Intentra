@@ -7067,6 +7067,37 @@ export const POLICY_SCHEMA: JsonSchemaObject = {
       ],
       "additionalProperties": false
     },
+    "executionPolicy": {
+      "description": "policies/execution.json. Which risk classes this installation may execute. Milestone 1 is a read-only AgentOS that discovers and audits and mutates nothing, and this is where that is stated as data rather than as an absence of code: the mutation frameworks are built and no mutating operation is registered, and this file is what refuses a mutating workflow if one ever were.",
+      "type": "object",
+      "properties": {
+        "version": {
+          "$ref": "common.json#/$defs/nonEmptyString"
+        },
+        "mutation_enabled": {
+          "type": "boolean"
+        },
+        "admissible_risk_classes": {
+          "description": "A workflow whose derived risk class is not listed is inadmissible, and the kernel falls back to the most conservative admissible template with the restriction logged.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "common.json#/$defs/riskClass"
+          }
+        },
+        "rationale": {
+          "$ref": "common.json#/$defs/nonEmptyString"
+        }
+      },
+      "required": [
+        "version",
+        "mutation_enabled",
+        "admissible_risk_classes",
+        "rationale"
+      ],
+      "additionalProperties": false
+    },
     "agentPolicy": {
       "description": "Which proposals and statuses each role may make, and in which stages. Enforced as cross-field rules on envelope receipt.",
       "type": "object",

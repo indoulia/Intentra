@@ -1,0 +1,108 @@
+{
+  "version": "1.0",
+  "deny": [
+    {
+      "id": "agentos_installation",
+      "description": "The AgentOS installation directory. An agent that can edit the kernel can bypass every check in it.",
+      "kind": "installation_relative",
+      "patterns": ["**"]
+    },
+    {
+      "id": "agentos_state",
+      "description": "state/ and everything under it. Agents produce envelopes; the kernel persists them. An agent that can write run state can rewrite history.",
+      "kind": "installation_relative",
+      "patterns": ["state/**", "state"]
+    },
+    {
+      "id": "agentos_policies",
+      "description": "policies/. Policy is data the kernel enforces; an agent that can edit a policy can raise its own cap and open its own gate.",
+      "kind": "installation_relative",
+      "patterns": ["policies/**", "policies"]
+    },
+    {
+      "id": "agentos_contracts",
+      "description": "contracts/. Contracts are the stable surface; an agent that can edit a schema can make its own malformed output valid.",
+      "kind": "installation_relative",
+      "patterns": ["contracts/**", "contracts"]
+    },
+    {
+      "id": "host_credential_stores",
+      "description": "Credential stores and the user's home configuration. Credentials are referenced by name and location, never captured.",
+      "kind": "home_relative",
+      "patterns": [
+        ".ssh/**",
+        ".aws/**",
+        ".azure/**",
+        ".config/gcloud/**",
+        ".kube/**",
+        ".docker/config.json",
+        ".npmrc",
+        ".netrc",
+        ".git-credentials",
+        ".gnupg/**",
+        ".claude/**",
+        ".claude.json",
+        ".gitconfig",
+        "AppData/Roaming/npm/**",
+        "AppData/Local/Microsoft/Credentials/**"
+      ]
+    },
+    {
+      "id": "os_credential_paths",
+      "description": "Absolute paths that hold system credentials or keys on any supported platform.",
+      "kind": "absolute",
+      "patterns": [
+        "/etc/shadow",
+        "/etc/passwd",
+        "/etc/sudoers",
+        "/etc/ssl/private/**",
+        "/root/**",
+        "/var/run/secrets/**",
+        "C:/Windows/System32/config/**",
+        "C:/ProgramData/Microsoft/Crypto/**"
+      ]
+    },
+    {
+      "id": "secret_bearing_names",
+      "description": "Names that carry secrets wherever they appear, including inside a worktree. Refused for read as well as write: the security floor is never expose or copy a secret, not merely never change one.",
+      "kind": "name_anywhere",
+      "patterns": [
+        ".env",
+        ".env.*",
+        "id_rsa",
+        "id_ed25519",
+        "id_ecdsa",
+        "*.pem",
+        "*.key",
+        "*.pfx",
+        "*.p12",
+        "*.jks",
+        "*.keystore",
+        "credentials.json",
+        "service-account*.json",
+        "secrets.yaml",
+        "secrets.yml"
+      ]
+    }
+  ],
+  "scratch_roots": [
+    "**/.agentos-scratch/**",
+    "**/node_modules/**",
+    "**/target/**",
+    "**/build/**",
+    "**/dist/**",
+    "**/.pytest_cache/**",
+    "**/coverage/**",
+    "**/.coverage",
+    "**/htmlcov/**",
+    "**/TestResults/**",
+    "**/obj/**",
+    "**/bin/Debug/**",
+    "**/bin/Release/**",
+    "**/__pycache__/**",
+    "**/.gradle/**",
+    "**/.next/**",
+    "**/.turbo/**",
+    "**/*.tsbuildinfo"
+  ]
+}

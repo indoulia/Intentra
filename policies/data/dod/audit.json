@@ -1,0 +1,54 @@
+{
+  "profile_id": "audit",
+  "description": "The deliverable is findings. Done means findings are evidence-backed, coverage is stated and every unknown is recorded. The criteria are exactly the three an audit path can supply - context understood, canonical ownership, source and data contracts - because a profile demanding a verdict no stage in its template owns is a profile that can never complete.",
+  "criteria": [
+    1,
+    3,
+    4
+  ],
+  "critical_criteria": [
+    1,
+    3,
+    4
+  ],
+  "not_applicable_by_default": [],
+  "evidence_requirements": {
+    "1": {
+      "kinds": [
+        "file",
+        "document",
+        "ticket",
+        "query"
+      ],
+      "note": "package contents; for criterion 16, documentation compared against the code it describes rather than against the diff"
+    },
+    "3": {
+      "kinds": [
+        "file",
+        "git",
+        "command"
+      ],
+      "note": "static analysis plus the capability graph; self-assertion is never evidence"
+    },
+    "4": {
+      "kinds": [
+        "file",
+        "git",
+        "command"
+      ],
+      "note": "static analysis plus the capability graph; self-assertion is never evidence"
+    }
+  },
+  "applies_when": {
+    "capability_kinds": [
+      "any"
+    ],
+    "work_item_types": [
+      "*"
+    ],
+    "requires_access": [
+      "repository",
+      "git"
+    ]
+  }
+}

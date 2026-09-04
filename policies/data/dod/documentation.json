@@ -1,0 +1,55 @@
+{
+  "profile_id": "documentation",
+  "description": "Done means accurate against the code as verified, not merely written. Criterion 16 is the point of the profile and is supplied by the Auditor's second pass, never by the agent that wrote the documentation.",
+  "criteria": [
+    1,
+    5,
+    16
+  ],
+  "critical_criteria": [
+    5,
+    16
+  ],
+  "not_applicable_by_default": [],
+  "evidence_requirements": {
+    "1": {
+      "kinds": [
+        "file",
+        "document",
+        "ticket",
+        "query"
+      ],
+      "note": "package contents; for criterion 16, documentation compared against the code it describes rather than against the diff"
+    },
+    "5": {
+      "kinds": [
+        "git",
+        "command",
+        "file"
+      ],
+      "note": "diff review against the approved architecture and the plan's work-unit list"
+    },
+    "16": {
+      "kinds": [
+        "file",
+        "document",
+        "ticket",
+        "query"
+      ],
+      "note": "package contents; for criterion 16, documentation compared against the code it describes rather than against the diff"
+    }
+  },
+  "applies_when": {
+    "capability_kinds": [
+      "documentation",
+      "none"
+    ],
+    "work_item_types": [
+      "TASK",
+      "STORY"
+    ],
+    "requires_access": [
+      "repository"
+    ]
+  }
+}

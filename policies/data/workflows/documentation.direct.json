@@ -1,0 +1,81 @@
+{
+  "template_id": "documentation.direct",
+  "version": "1.0",
+  "description": "A documentation change. Structurally task.direct, and separate because done means accurate against the code as verified rather than merely written, which is a different DoD profile and therefore a different evidence bar. STRUCTURAL_REAUDIT is present because criterion 16 - documentation not contradicted by the code - is owned by the Auditor's second pass, and having a documentation change judged by an agent other than the one that wrote it is the whole point of that criterion.",
+  "applies_to": {
+    "types": [
+      "TASK"
+    ]
+  },
+  "entry": "IMPLEMENTATION",
+  "stages": [
+    "IMPLEMENTATION",
+    "VALIDATION",
+    "STRUCTURAL_REAUDIT",
+    "REWORK",
+    "PR_PREPARATION",
+    "AUTHORIZATION",
+    "MERGE",
+    "COMPLETION"
+  ],
+  "optional_stages": [],
+  "edges": [
+    {
+      "from": "IMPLEMENTATION",
+      "to": "VALIDATION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "VALIDATION",
+      "to": "REWORK",
+      "when": "envelope.REJECTED",
+      "kind": "loop",
+      "counter": "rework",
+      "cap": "budgets.loops.rework"
+    },
+    {
+      "from": "REWORK",
+      "to": "IMPLEMENTATION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "VALIDATION",
+      "to": "STRUCTURAL_REAUDIT",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "STRUCTURAL_REAUDIT",
+      "to": "PR_PREPARATION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "PR_PREPARATION",
+      "to": "AUTHORIZATION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "AUTHORIZATION",
+      "to": "MERGE",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "MERGE",
+      "to": "COMPLETION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "COMPLETION",
+      "to": "COMPLETE",
+      "when": "always",
+      "kind": "terminal"
+    }
+  ],
+  "dod_profile_default": "documentation"
+}

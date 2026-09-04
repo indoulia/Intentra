@@ -1,0 +1,74 @@
+{
+  "template_id": "task.direct",
+  "version": "1.0",
+  "description": "The tiny-change path: bounded work making no capability claim. No audit, no architecture, no root cause - not skipped by an agent's judgment, simply not in the graph. VALIDATION is still required after IMPLEMENTATION, which sounds absurd for a typo and catches the case where the model edited the wrong file.",
+  "applies_to": {
+    "types": [
+      "TASK"
+    ]
+  },
+  "entry": "IMPLEMENTATION",
+  "stages": [
+    "IMPLEMENTATION",
+    "VALIDATION",
+    "REWORK",
+    "PR_PREPARATION",
+    "AUTHORIZATION",
+    "MERGE",
+    "COMPLETION"
+  ],
+  "optional_stages": [],
+  "edges": [
+    {
+      "from": "IMPLEMENTATION",
+      "to": "VALIDATION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "VALIDATION",
+      "to": "REWORK",
+      "when": "envelope.REJECTED",
+      "kind": "loop",
+      "counter": "rework",
+      "cap": "budgets.loops.rework"
+    },
+    {
+      "from": "REWORK",
+      "to": "IMPLEMENTATION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "VALIDATION",
+      "to": "PR_PREPARATION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "PR_PREPARATION",
+      "to": "AUTHORIZATION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "AUTHORIZATION",
+      "to": "MERGE",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "MERGE",
+      "to": "COMPLETION",
+      "when": "always",
+      "kind": "advance"
+    },
+    {
+      "from": "COMPLETION",
+      "to": "COMPLETE",
+      "when": "always",
+      "kind": "terminal"
+    }
+  ],
+  "dod_profile_default": "internal-capability"
+}

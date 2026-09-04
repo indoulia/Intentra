@@ -1,0 +1,135 @@
+{
+  "version": "1.0",
+  "predicates": [
+    {
+      "name": "audit.applicable",
+      "family": "applicability",
+      "description": "The capability registry contains a record whose scope intersects the work item scope, or the repository has any commit history.",
+      "reads": ["capabilities.records", "git_state.commit_count"],
+      "freshness_class": "repository",
+      "evaluator": "auditApplicable"
+    },
+    {
+      "name": "architecture.required",
+      "family": "applicability",
+      "description": "A planned or actual change touches a declared contract boundary — api_map, source_map, a schema or migration path — or would change canonical ownership in domain_model, or an audit finding is categorized structural.",
+      "reads": ["api_map.endpoints", "source_map.sources", "domain_model.ownership", "findings.categories", "mutations.paths"],
+      "freshness_class": "repository",
+      "evaluator": "architectureRequired"
+    },
+    {
+      "name": "ux.required",
+      "family": "applicability",
+      "description": "context.ui_map is non-empty and a mutation event touches a path under a ui_map surface, or an API whose consumers include a ui_map surface changed shape.",
+      "reads": ["ui_map.surfaces", "api_map.consumers", "mutations.paths"],
+      "freshness_class": "repository",
+      "evaluator": "uxRequired"
+    },
+    {
+      "name": "production.applicable",
+      "family": "applicability",
+      "description": "The discovered environments include one classified production and the work item scope reaches it.",
+      "reads": ["runtime_state.environments", "work_item.scope"],
+      "freshness_class": "runtime",
+      "evaluator": "productionApplicable"
+    },
+
+    {
+      "name": "reality.implementation_present",
+      "family": "reality",
+      "description": "A branch or commit within scope implements the work.",
+      "reads": ["current_reality.implementation_present"],
+      "freshness_class": "git",
+      "evaluator": "realityAssertionTruthy"
+    },
+    {
+      "name": "reality.tests_present",
+      "family": "reality",
+      "description": "Tests covering the scope exist and executed.",
+      "reads": ["current_reality.tests_present"],
+      "freshness_class": "git",
+      "evaluator": "realityAssertionTruthy"
+    },
+    {
+      "name": "reality.pr_open",
+      "family": "reality",
+      "description": "A pull request for this work item's branch exists and is open.",
+      "reads": ["current_reality.pr"],
+      "freshness_class": "git",
+      "evaluator": "prOpen"
+    },
+    {
+      "name": "reality.pr_merged",
+      "family": "reality",
+      "description": "The pull request is merged.",
+      "reads": ["current_reality.pr", "current_reality.merge_state"],
+      "freshness_class": "git",
+      "evaluator": "prMerged"
+    },
+    {
+      "name": "reality.pr_approved",
+      "family": "reality",
+      "description": "The pull request is approved for its current head.",
+      "reads": ["current_reality.reviews", "current_reality.pr"],
+      "freshness_class": "git",
+      "evaluator": "prApproved"
+    },
+    {
+      "name": "reality.pr_has_unresolved_comments",
+      "family": "reality",
+      "description": "Unresolved review threads exist on the current head.",
+      "reads": ["current_reality.reviews"],
+      "freshness_class": "git",
+      "evaluator": "prHasUnresolvedComments"
+    },
+    {
+      "name": "reality.ci_green",
+      "family": "reality",
+      "description": "CI passed for the current head SHA, within the freshness window.",
+      "reads": ["current_reality.ci", "current_reality.pr"],
+      "freshness_class": "git",
+      "evaluator": "ciGreen"
+    },
+    {
+      "name": "reality.children_exist",
+      "family": "reality",
+      "description": "The work item has at least one child, whatever its state. DECOMPOSITION's satisfied_by, and a different question from children_all_terminal.",
+      "reads": ["current_reality.children"],
+      "freshness_class": "agentos",
+      "evaluator": "childrenExist"
+    },
+    {
+      "name": "reality.children_all_terminal",
+      "family": "reality",
+      "description": "Every child work item is ACHIEVED, ABANDONED or SUPERSEDED.",
+      "reads": ["current_reality.children"],
+      "freshness_class": "agentos",
+      "evaluator": "childrenAllTerminal"
+    },
+    {
+      "name": "reality.outcome_already_satisfied",
+      "family": "reality",
+      "description": "The desired outcome holds, observably, now.",
+      "reads": ["current_reality.outcome_evidence"],
+      "freshness_class": "runtime",
+      "evaluator": "realityAssertionTruthy"
+    },
+    {
+      "name": "reality.deployed",
+      "family": "reality",
+      "description": "The change is present in a named environment.",
+      "reads": ["current_reality.deployment"],
+      "freshness_class": "runtime",
+      "evaluator": "deployed"
+    },
+
+    {
+      "name": "regression.suspected",
+      "family": "reality",
+      "description": "reality.outcome_already_satisfied is FALSE and the work item scope intersects a capability record whose status is WORKING or PROVEN. It reads as: something that demonstrably used to work does not now. The one floor rule keyed on reality rather than on type, because a rule keyed on a resolved field can only be as good as the resolution.",
+      "reads": ["current_reality.outcome_evidence", "capabilities.records", "work_item.scope"],
+      "freshness_class": "runtime",
+      "evaluator": "regressionSuspected"
+    }
+  ]
+}

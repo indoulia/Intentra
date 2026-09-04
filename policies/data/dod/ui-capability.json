@@ -1,0 +1,182 @@
+{
+  "profile_id": "ui-capability",
+  "description": "A user-facing surface. Criterion 14 is mandatory. Source and ingestion may be NOT_APPLICABLE where the capability only consumes an existing API, which is a judgment the Product/UX and Validator verdicts record rather than a default.",
+  "criteria": [
+    1,
+    2,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    16,
+    17,
+    18
+  ],
+  "critical_criteria": [
+    1,
+    5,
+    7,
+    8,
+    9,
+    12,
+    14,
+    17
+  ],
+  "not_applicable_by_default": [],
+  "evidence_requirements": {
+    "1": {
+      "kinds": [
+        "file",
+        "document",
+        "ticket",
+        "query"
+      ],
+      "note": "package contents; for criterion 16, documentation compared against the code it describes rather than against the diff"
+    },
+    "2": {
+      "kinds": [
+        "git",
+        "command",
+        "file"
+      ],
+      "note": "diff review against the approved architecture and the plan's work-unit list"
+    },
+    "4": {
+      "kinds": [
+        "file",
+        "git",
+        "command"
+      ],
+      "note": "static analysis plus the capability graph; self-assertion is never evidence"
+    },
+    "5": {
+      "kinds": [
+        "git",
+        "command",
+        "file"
+      ],
+      "note": "diff review against the approved architecture and the plan's work-unit list"
+    },
+    "6": {
+      "kinds": [
+        "file",
+        "git",
+        "command"
+      ],
+      "note": "static analysis plus the capability graph; self-assertion is never evidence"
+    },
+    "7": {
+      "kinds": [
+        "query",
+        "http",
+        "log",
+        "command"
+      ],
+      "note": "a traced real record, with the trace recorded"
+    },
+    "8": {
+      "kinds": [
+        "screenshot",
+        "http",
+        "command"
+      ],
+      "note": "the Product/UX verdict with the states actually exercised; screenshots alone are never enough, because a screenshot's content is not kernel-verifiable"
+    },
+    "9": {
+      "kinds": [
+        "command"
+      ],
+      "note": "test execution output, not a claim about tests"
+    },
+    "10": {
+      "kinds": [
+        "file",
+        "document",
+        "ticket",
+        "query"
+      ],
+      "note": "package contents; for criterion 16, documentation compared against the code it describes rather than against the diff"
+    },
+    "11": {
+      "kinds": [
+        "log",
+        "metric",
+        "query",
+        "http"
+      ],
+      "note": "observed logs, metrics or traces from a running system"
+    },
+    "12": {
+      "kinds": [
+        "command"
+      ],
+      "note": "test execution output, not a claim about tests"
+    },
+    "13": {
+      "kinds": [
+        "query",
+        "http",
+        "log",
+        "command"
+      ],
+      "note": "a traced real record, with the trace recorded"
+    },
+    "14": {
+      "kinds": [
+        "screenshot",
+        "http",
+        "command"
+      ],
+      "note": "the Product/UX verdict with the states actually exercised; screenshots alone are never enough, because a screenshot's content is not kernel-verifiable"
+    },
+    "16": {
+      "kinds": [
+        "file",
+        "document",
+        "ticket",
+        "query"
+      ],
+      "note": "package contents; for criterion 16, documentation compared against the code it describes rather than against the diff"
+    },
+    "17": {
+      "kinds": [
+        "file",
+        "git",
+        "command"
+      ],
+      "note": "static analysis plus the capability graph; self-assertion is never evidence"
+    },
+    "18": {
+      "kinds": [
+        "file",
+        "document",
+        "ticket",
+        "query"
+      ],
+      "note": "package contents; for criterion 16, documentation compared against the code it describes rather than against the diff"
+    }
+  },
+  "applies_when": {
+    "capability_kinds": [
+      "ui",
+      "surface"
+    ],
+    "work_item_types": [
+      "FEATURE",
+      "STORY",
+      "DEFECT"
+    ],
+    "requires_access": [
+      "repository",
+      "git",
+      "runtime"
+    ]
+  }
+}

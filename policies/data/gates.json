@@ -1,0 +1,229 @@
+{
+  "version": "1.0",
+  "gates": [
+    {
+      "gate": "MERGE_PROTECTED",
+      "description": "Merging into a protected branch. The gate is on blast radius, not on importance, so a typo fix merging into main crosses it exactly as a rewrite does.",
+      "fires_at_end_of_run": true,
+      "once_per_work_item": false,
+      "pre_grantable_by_policy": false,
+      "classifiers": [
+        {
+          "id": "merge_target_protected",
+          "kind": "classification_value",
+          "patterns": [],
+          "descriptor_field": "branch_protection",
+          "expected": "PROTECTED",
+          "fires_when_unevaluable": true
+        }
+      ]
+    },
+    {
+      "gate": "DEPLOY_PRODUCTION",
+      "description": "Deploying to production, including a release that triggers an automatic deploy.",
+      "fires_at_end_of_run": true,
+      "once_per_work_item": false,
+      "pre_grantable_by_policy": false,
+      "classifiers": [
+        {
+          "id": "deploy_target_production",
+          "kind": "classification_value",
+          "patterns": [],
+          "descriptor_field": "environment",
+          "expected": "PRODUCTION",
+          "fires_when_unevaluable": true
+        }
+      ]
+    },
+    {
+      "gate": "PRODUCTION_WRITE",
+      "description": "Any write to a production system, including a harmless one.",
+      "fires_at_end_of_run": true,
+      "once_per_work_item": false,
+      "pre_grantable_by_policy": false,
+      "classifiers": [
+        {
+          "id": "operation_against_production",
+          "kind": "classification_value",
+          "patterns": [],
+          "descriptor_field": "environment",
+          "expected": "PRODUCTION",
+          "fires_when_unevaluable": true
+        }
+      ]
+    },
+    {
+      "gate": "DESTRUCTIVE_MIGRATION",
+      "description": "Dropping or altering columns and tables destructively, backfills that overwrite existing values, anything without a verified reversal.",
+      "fires_at_end_of_run": false,
+      "once_per_work_item": false,
+      "pre_grantable_by_policy": false,
+      "classifiers": [
+        {
+          "id": "destructive_sql_in_content",
+          "kind": "content_pattern",
+          "patterns": [
+            "(?i)\\bDROP\\s+TABLE\\b",
+            "(?i)\\bDROP\\s+COLUMN\\b",
+            "(?i)\\bDROP\\s+DATABASE\\b",
+            "(?i)\\bTRUNCATE\\b",
+            "(?i)\\bALTER\\s+.*\\bTYPE\\b",
+            "(?i)\\bDELETE\\s+FROM\\b(?![\\s\\S]{0,200}\\bWHERE\\b)",
+            "(?i)\\bUPDATE\\b(?![\\s\\S]{0,200}\\bWHERE\\b)"
+          ],
+          "descriptor_field": null,
+          "expected": null,
+          "fires_when_unevaluable": true
+        },
+        {
+          "id": "migration_without_down_step",
+          "kind": "path_pattern",
+          "patterns": ["**/migrations/**", "**/migrate/**", "**/*.sql"],
+          "descriptor_field": "has_down_step",
+          "expected": false,
+          "fires_when_unevaluable": true
+        }
+      ]
+    },
+    {
+      "gate": "IRREVERSIBLE_DATA_MUTATION",
+      "description": "Deleting or overwriting real data where it cannot be restored. Keyed on the descriptor rather than on the wording of the operation.",
+      "fires_at_end_of_run": false,
+      "once_per_work_item": false,
+      "pre_grantable_by_policy": false,
+      "classifiers": [
+        {
+          "id": "descriptor_declares_no_reversal",
+          "kind": "descriptor_flag",
+          "patterns": [],
+          "descriptor_field": "reversal",
+          "expected": null,
+          "fires_when_unevaluable": true
+        }
+      ]
+    },
+    {
+      "gate": "CREDENTIAL_OR_SECURITY_CHANGE",
+      "description": "Credentials, secrets, keys, permissions, access control, authentication, authorization or security configuration. Fires on the path or on the content of the diff, so an agent that says nothing fires it anyway.",
+      "fires_at_end_of_run": false,
+      "once_per_work_item": false,
+      "pre_grantable_by_policy": false,
+      "classifiers": [
+        {
+          "id": "security_sensitive_path",
+          "kind": "path_pattern",
+          "patterns": [
+            "**/auth/**",
+            "**/authn/**",
+            "**/authz/**",
+            "**/secrets/**",
+            "**/credential*/**",
+            "**/iam/**",
+            "**/rbac/**",
+            "**/policy/**",
+            "**/policies/**",
+            "**/.env*",
+            "**/*.pem",
+            "**/*.key",
+            "**/*.crt",
+            "**/*.cer",
+            "**/*.pfx",
+            "**/*.p12",
+            "**/*.jks",
+            "**/*.keystore"
+          ],
+          "descriptor_field": null,
+          "expected": null,
+          "fires_when_unevaluable": true
+        },
+        {
+          "id": "security_marker_in_diff",
+          "kind": "content_pattern",
+          "patterns": [
+            "PRIVATE KEY",
+            "(?i)client_secret",
+            "(?i)\\bpassword\\s*[:=]",
+            "(?i)\\bapi[_-]?key\\s*[:=]",
+            "(?i)\\bsecret\\s*[:=]",
+            "(?i)\\bGRANT\\s+(ALL|SELECT|INSERT|UPDATE|DELETE)\\b",
+            "(?i)\\bREVOKE\\b",
+            "(?i)\\brole\\s*[:=]",
+            "(?i)\\bpermission[s]?\\s*[:=]",
+            "(?i)\\ballow(ed)?_origins?\\s*[:=]"
+          ],
+          "descriptor_field": null,
+          "expected": null,
+          "fires_when_unevaluable": true
+        }
+      ]
+    },
+    {
+      "gate": "EXTERNAL_COMMUNICATION",
+      "description": "Anything leaving the organisation's boundary. Publication is effectively irreversible even where a delete button exists.",
+      "fires_at_end_of_run": false,
+      "once_per_work_item": false,
+      "pre_grantable_by_policy": false,
+      "classifiers": [
+        {
+          "id": "descriptor_declares_external_destination",
+          "kind": "descriptor_flag",
+          "patterns": [],
+          "descriptor_field": "external_destination",
+          "expected": true,
+          "fires_when_unevaluable": true
+        }
+      ]
+    },
+    {
+      "gate": "SCOPE_EXPANSION",
+      "description": "Work materially beyond the admitted scope. It fires as a refusal at the adapter first; the gate is how legitimate scope growth is granted rather than smuggled, and it is the route for a review comment whose remediation falls outside the Work Item's scope and cannot be split off.",
+      "fires_at_end_of_run": false,
+      "once_per_work_item": false,
+      "pre_grantable_by_policy": false,
+      "classifiers": [
+        {
+          "id": "path_outside_mandate",
+          "kind": "scope_escape",
+          "patterns": [],
+          "descriptor_field": null,
+          "expected": null,
+          "fires_when_unevaluable": true
+        }
+      ]
+    },
+    {
+      "gate": "COST_CEILING_EXCEEDED",
+      "description": "Continuing past the run's or the Work Item's cost, time or loop budget. Kernel accounting, per run and per Work Item.",
+      "fires_at_end_of_run": false,
+      "once_per_work_item": false,
+      "pre_grantable_by_policy": false,
+      "classifiers": [
+        {
+          "id": "budget_exhausted",
+          "kind": "kernel_accounting",
+          "patterns": [],
+          "descriptor_field": null,
+          "expected": null,
+          "fires_when_unevaluable": true
+        }
+      ]
+    },
+    {
+      "gate": "AUTONOMOUS_INTAKE_EXECUTION",
+      "description": "The Work Item originated from EXTERNAL intake and the run is about to enter its first mutating stage. Fires once per Work Item, never for read-only work, and policy may pre-grant it per configured source - so a trusted internal webhook stays fully autonomous and an unauthenticated one does not.",
+      "fires_at_end_of_run": false,
+      "once_per_work_item": true,
+      "pre_grantable_by_policy": true,
+      "classifiers": [
+        {
+          "id": "external_intake_entering_mutating_stage",
+          "kind": "trust_class_and_mutating_stage",
+          "patterns": [],
+          "descriptor_field": null,
+          "expected": "EXTERNAL",
+          "fires_when_unevaluable": true
+        }
+      ]
+    }
+  ]
+}

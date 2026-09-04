@@ -28,12 +28,12 @@ freeze.
 - `AGENTOS_PRINCIPLES.md` — `a3914787ce6d0b66`
 - `docs/AGENTOS_ARCHITECTURE.md` — `1573a60c51c2a388`
 - `docs/KERNEL_BOUNDARY.md` — `78113d17cdca79cf`
-- `docs/INTENT_AND_WORK_ITEM_RESOLUTION.md` — `dc491a5f0b43dfe7`
+- `docs/INTENT_AND_WORK_ITEM_RESOLUTION.md` — `0cb08bade5f29824`
 - `docs/AGENT_ROLES.md` — `deac3f391abda1bb`
 - `docs/CONTEXT_MODEL.md` — `3709631f74bf9a22`
 - `docs/DATA_SEMANTICS.md` — `82248789997a6e23`
 - `docs/CAPABILITY_MODEL.md` — `49953fc71f677f61`
-- `docs/WORKFLOW_STATE_MACHINE.md` — `92b85295c796aafa`
+- `docs/WORKFLOW_STATE_MACHINE.md` — `49652156db7aaa0a`
 - `docs/AGENT_HANDOFF_CONTRACT.md` — `593c9d46250991a5`
 - `docs/DEFINITION_OF_DONE.md` — `4a96122456712c78`
 - `docs/HUMAN_AUTHORIZATION.md` — `a2124c4d081b40b5`
@@ -269,13 +269,15 @@ ceremony.
 Amendments are appended here with date, the document and section changed, the contradiction
 that prompted the change, and the contract version bumped if any.
 
-### 2026-09-04 — WP-1, amendments A-1 to A-11
+### 2026-09-04 — WP-1 and WP-2, amendments A-1 to A-14
 
-Eleven amendments, all raised by the same activity: writing the JSON Schemas against the frozen
-documents. That is the activity the plan predicted would raise them
+Fourteen amendments. A-1 to A-11 were raised by one activity — writing the JSON Schemas against
+the frozen documents; A-12 to A-14 by the next one, authoring the stage descriptors, the nine
+workflow templates and the DoD profiles as policy data, and then having the loader check them
+against each other. That is the activity the plan predicted would raise them
 ([IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) section 8: "It will happen, and most often
 in WP-1, because writing a schema against a document is the first activity that reads it
-precisely"), and all eleven have the second shape it named — **a rule stated against a field the
+precisely"), and all fourteen have the second shape it named — **a rule stated against a field the
 shape did not have.** None changes a normative decision; none touches the kernel boundary, the
 dependency rule, the stage vocabulary, the confidence or absence vocabularies, or the gate
 set, so none requires a v0.4.
@@ -296,6 +298,9 @@ fields). No other contract had a prior published version to bump.
 | A-9 | HUMAN_AUTHORIZATION · 3 | Denials and grants are recorded at the work-item level so a fresh run is not a way to ask again, and the grant did not name its work item. Revocability is a state the record could not express. | Added required `work_item_id` and `revoked_at`. |
 | A-10 | AGENT_HANDOFF_CONTRACT · Input package | The example carried a `goal` section the document had already removed, and lacked the mandate name, the intake reference the resolution dispatch needs, the materialized sections, the criteria owed, the granted tool surface D-2's conformance check compares against, and the selected model. | Removed `goal`; added `mandate_name`, `intake_ref`, `context_sections`, `dod_criteria_owed`, `tools_granted`, `model`. |
 | A-11 | CONTEXT_MODEL · 2 | The assertion example carried evidence with no `id`, no `locator` and no `reproducible`, so the one worked example of an assertion's evidence was evidence the kernel could not replay — which is the whole point of the field. | Completed the inline evidence, and stated that a package assertion carries evidence inline while an envelope assertion cites ids. |
+| A-12 | WORKFLOW_STATE_MACHINE · 2.3 | The read-only stage set omitted `COMPLETION`, which made `investigation.readonly` not "entirely non-mutating" as 3.2 states, left its risk class unable to be `READ_ONLY` as 3.6 defines it, and would have fired `AUTONOMOUS_INTAKE_EXECUTION` on read-only work that the resolution document section 9 says is ungated for every trust class. | Added `COMPLETION` to the read-only set, and stated that at stage granularity `mutating` means authoritative state outside AgentOS's own ledger — otherwise every stage is mutating and the flag gates nothing. |
+| A-13 | WORKFLOW_STATE_MACHINE · 4.3 | The resume walk in 5.1 evaluates each stage's `satisfied_by`, and scenario G of the resolution document states `DECOMPOSITION` is `COMPLETED_PRIOR` when children exist — but no reality predicate expressed "children exist". `children_all_terminal` is `FALSE` in exactly that scenario, so it could not stand in. | Added `reality.children_exist`. |
+| A-14 | WORKFLOW_STATE_MACHINE · 3.2 | DEFINITION_OF_DONE section 7 requires an Epic's own outcome to be evaluated against its own profile with evidence, and the Validator is the only role that supplies an outcome verdict. `epic.coordinate` contained no stage the Validator owns, so the obligation had nobody to discharge it: every Epic would have reached `COMPLETION`, found its critical criteria `NOT_VALIDATED`, computed `INCOMPLETE`, and had no stage to route back to. | `epic.coordinate` contains `VALIDATION` after `CHILD_COORDINATION`, for the Epic's own outcome and not for its children's. It is non-mutating and it is not `IMPLEMENTATION`, so both structural guarantees hold. |
 
 Two decisions taken while resolving these are recorded because they could otherwise look like
 oversights:
