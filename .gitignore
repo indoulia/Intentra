@@ -1,0 +1,12 @@
+# Durable run data — schema is tracked, run output is not
+state/runs/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Scratch
+*.log
+tmp/
