@@ -455,16 +455,29 @@ shipping even if AgentOS never writes a line of code.
 review, authorization gates (nothing is gated when nothing mutates), deployment,
 parallelism, parallel child Work Items.
 
-**The MVP is not currently unblocked.** Three decisions in section 11 sit inside it: the
-agent execution substrate (blocks dispatch), static-analysis depth (blocks the capability
-graph, and therefore orphan detection — the audit's headline output), and implementation
-language. Resolving those three is the immediate next work; everything else in Phases 1–3
-is READY or NEEDS CONTRACT.
+**The MVP is unblocked as of the v0.3 freeze.** Three decisions in section 11 sat inside it:
+the agent execution substrate (blocked dispatch), implementation language, and static-analysis
+depth (blocked the capability graph, and therefore orphan detection — the audit's headline
+output). The first two are decided; the third is adopted provisionally and resolved by
+measurement during the audit work package, with the plan arranged so that a disappointing
+result costs the graph rather than the milestone. Nothing in Phases 1–3 is now BLOCKED.
 
-Sequenced honestly, that means: resolve the three decisions, build the six contracts, build
-the kernel as an envelope replayer with no model in the loop, then attach discovery.
+Sequenced honestly, that means: build the contracts, build the kernel as an envelope replayer
+with no model in the loop, then attach discovery. That sequence, decomposed into work packages
+with exit tests, is [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
 
 ## 11. Unresolved decisions
+
+**Six of these were settled at the v0.3 freeze** — five closed outright and one adopted
+provisionally — and this section is left as written so that the reasoning behind each remains
+readable. For what was decided and what would reverse it,
+see [ARCHITECTURE_FREEZE.md](ARCHITECTURE_FREEZE.md) section 4: implementation language
+(TypeScript), agent execution substrate (Claude Agent SDK, one session per dispatch, under a
+binding allowlist-only condition), run store backend (files), work item identity without an
+external key (exact scope plus normalized title), intake trust classification (closed for the
+CLI host, extended per host), and static-analysis depth (adopted provisionally, resolved by
+measurement in the MVP). The five that remain open are in the freeze's section 5, and none of
+them blocks the first milestone.
 
 Listed with when they must be resolved.
 

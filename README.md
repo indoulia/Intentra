@@ -24,13 +24,19 @@ which stages are needed, or whether to resume or start over.
 
 ## Status
 
-**Architecture v0.3 — internally consistent, adversarially traced, implementation-ready,
-zero production code.**
+**Architecture v0.3 — frozen 2026-09-04. Implementation baseline. Zero production code.**
+
+The design is no longer a living draft. The fourteen normative documents are pinned by hash
+in [docs/freeze/v0.3.sha256](docs/freeze/v0.3.sha256), and a disagreement between code and
+document is resolved by amending the document, never by deciding locally — see
+[docs/ARCHITECTURE_FREEZE.md](docs/ARCHITECTURE_FREEZE.md) for what that obliges, which
+decisions the freeze closed, and which it deliberately left open.
 
 There is no application code in this repository yet, and that is deliberate. This phase
-produces the contracts and models that the implementation must satisfy. See
-[docs/IMPLEMENTATION_ROADMAP.md](docs/IMPLEMENTATION_ROADMAP.md) for what gets built and
-in what order.
+produces the contracts and models that the implementation must satisfy. What gets built and
+in what order is [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md): contracts
+first, then a kernel with no model in it, and a **read-only** AgentOS — one that discovers
+and audits and mutates nothing — as the first and only milestone planned in detail.
 
 ## Design premise
 
@@ -76,6 +82,8 @@ Read in this order.
 13. [docs/SKILL_AND_MODEL_SELECTION.md](docs/SKILL_AND_MODEL_SELECTION.md) — dynamic skill and model routing.
 14. [docs/REPOSITORY_ADAPTER.md](docs/REPOSITORY_ADAPTER.md) — how AgentOS attaches to any repository.
 15. [docs/IMPLEMENTATION_ROADMAP.md](docs/IMPLEMENTATION_ROADMAP.md) — MVP, phases, and the Marksy proving ground.
+16. [docs/ARCHITECTURE_FREEZE.md](docs/ARCHITECTURE_FREEZE.md) — the v0.3 freeze: what is pinned, what it obliges, which decisions are closed.
+17. [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) — work packages, exit tests and the invariant suite for the read-only MVP.
 
 ## Repository layout
 

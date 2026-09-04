@@ -1,7 +1,12 @@
 # AgentOS Design
 
-Architecture v0.3 — internally consistent, adversarially traced, implementation-ready,
-zero production code.
+Architecture v0.3 — **frozen 2026-09-04**, implementation baseline, zero production code.
+
+The fourteen normative documents below are pinned by hash in
+[freeze/v0.3.sha256](freeze/v0.3.sha256). Before changing any of them, read
+[ARCHITECTURE_FREEZE.md](ARCHITECTURE_FREEZE.md) section 3 — the amendment protocol is short
+and the point of it is that a change reaching code without reaching the document reintroduces
+exactly the drift the freeze prevents.
 
 ## Read in this order
 
@@ -23,6 +28,13 @@ zero production code.
 13. [SKILL_AND_MODEL_SELECTION.md](SKILL_AND_MODEL_SELECTION.md) — dynamic routing.
 14. [REPOSITORY_ADAPTER.md](REPOSITORY_ADAPTER.md) — attaching to any repository.
 15. [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md) — phases, readiness, MVP, pilot.
+
+Then, for building rather than understanding:
+
+16. [ARCHITECTURE_FREEZE.md](ARCHITECTURE_FREEZE.md) — what is frozen, what it obliges, the
+    six decisions closed at the freeze and the five left open.
+17. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — eight work packages to a read-only
+    MVP, each with its exit test, plus the eighteen-test invariant suite.
 
 ## Where each thing is defined, once
 
@@ -53,5 +65,12 @@ definition restated, that is drift and should be replaced with a link.
 
 ## Open decisions
 
-Eleven, in IMPLEMENTATION_ROADMAP section 11. Three sit inside the MVP and are the immediate
-next work: agent execution substrate, static-analysis depth, implementation language.
+**Five.** Of the eleven in IMPLEMENTATION_ROADMAP section 11, five were closed outright at the
+freeze — implementation language, agent execution substrate, run store backend, work item
+identity without an external key, and intake trust classification for the CLI host — and a
+sixth, static-analysis depth, is adopted provisionally and resolved by measurement inside the
+MVP. The remaining five
+— capability identity across runs, cost model, product/UX evidence acquisition, human
+interaction channel, multi-repository graphs — are in
+[ARCHITECTURE_FREEZE.md](ARCHITECTURE_FREEZE.md) section 5 with what each may not be allowed
+to block. **None of them blocks milestone 1.**

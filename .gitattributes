@@ -1,0 +1,3 @@
+# The v0.3 freeze manifest hashes LF content. Pin markdown to LF so
+# `sha256sum -c docs/freeze/v0.3.sha256` verifies on every platform.
+*.md text eol=lf
