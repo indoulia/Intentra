@@ -15,7 +15,8 @@ before anything high-impact happens.
 
 ## Status
 
-**Architecture v0.1 — internally consistent, implementation-ready, zero production code.**
+**Architecture v0.2 — internally consistent, adversarially traced, implementation-ready,
+zero production code.**
 
 There is no application code in this repository yet, and that is deliberate. This phase
 produces the contracts and models that the implementation must satisfy. See

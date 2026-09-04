@@ -23,7 +23,9 @@ prerequisite. Any code path that requires it is a bug.
 7. **Determine commands** — build, test, lint, run. Discovered from manifests and CI, then
    verified by execution where safe.
 8. **Establish boundaries** — which branches are protected, which environments exist, which
-   are production.
+   are production. **These two determinations fail closed** (section 2.2): where protection
+   or production status cannot be established, the adapter treats the branch as protected
+   and the environment as production.
 
 Every output of this sequence is an assertion with a confidence class. Detection is often
 `INFERENCE`; verification by running a command upgrades it to `FACT`, and doing that
@@ -41,6 +43,72 @@ upgrade for build and test commands early is worth the cost.
 - **No footprint.** AgentOS does not add dependencies, configuration or files to the target
   repository except what the goal requires and, where the human enables it, `.agent/`
   artifacts.
+
+## 2.1 Path confinement
+
+Worktree isolation is a containment claim, and a claim needs an enforcement point. The
+repository adapter is it.
+
+**Every path argument is resolved before use** — expanded, normalized, `..` collapsed, and
+symlinks followed to a real path — and then checked:
+
+1. The resolved path must be under the worktree root. Anything else is refused.
+2. It must satisfy the dispatch's `mandate.in_scope` and not match `mandate.out_of_scope`
+   ([AGENT_HANDOFF_CONTRACT.md](AGENT_HANDOFF_CONTRACT.md)). Scope is enforced here, not
+   left to the receiving agent's discretion.
+3. It must not match the **absolute deny-list** in `policies/paths.json`, which is checked
+   even for paths that pass 1 and 2:
+   - the AgentOS installation directory
+   - `state/` and everything under it
+   - `policies/` and `contracts/`
+   - the host's credential stores and the user's home configuration
+4. Symlink targets are checked, not just link paths. A symlink inside the worktree pointing
+   outside it is refused on traversal.
+
+A refused path is not an error the agent can retry differently: it is logged as a
+`scope_violation` (in-scope failure) or a `security_violation` (deny-list or escape
+attempt). A security violation aborts the dispatch immediately and is reported regardless
+of the run's outcome — an agent that attempted it is worth knowing about even if it failed.
+
+The deny-list exists because rules 1 and 2 depend on correctly computing a worktree root
+and a scope. Rule 3 is the backstop that holds when they are wrong.
+
+## 2.2 Fail-closed classification
+
+Two facts gate everything dangerous: **is this branch protected**, and **is this
+environment production**. Both are discovered, and discovery can fail.
+
+**The rule: `UNKNOWN` is treated as the dangerous case.**
+
+- Branch protection `UNKNOWN` or `UNAVAILABLE` -> the branch is **protected**. Merging into
+  it requires a `MERGE_PROTECTED` grant.
+- Environment classification `UNKNOWN` or `UNAVAILABLE` -> the environment is
+  **production**. Writes to it require a grant.
+- No environment topology discovered at all -> every reachable runtime is production.
+
+This inverts the tempting default, and it inverts it deliberately. "We could not determine
+whether this was production" is not a licence to write to it. Where the rule bites
+incorrectly, the fix is to give AgentOS the access it needs to classify — or to declare the
+topology in `.agent/environments.json` — not to relax the rule.
+
+The classification and its confidence are recorded on every gated operation, so a run that
+was conservative because it was blind is distinguishable from one that was conservative
+because the target really was production.
+
+## 2.3 Idempotent operations
+
+Every mutating adapter operation accepts an idempotency key derived from the dispatch
+([WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md) section 5.3) and records completed
+keys. Replaying a known key performs no work and returns the recorded result.
+
+Each operation declares in its descriptor:
+
+- `mutating` — does it change anything
+- `reversal` — the operation that undoes it, or `null`
+- `idempotent_by_key` — whether key-based deduplication is sound for it
+
+An operation with `reversal: null` is non-reversible; a dispatch that performed one is never
+automatically retried.
 
 ## 3. The optional `.agent/` directory
 

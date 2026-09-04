@@ -54,9 +54,9 @@ CONTEXT_DISCOVERY
   -> BLOCKED                             critical source unreachable and required
 
 CONTEXT_READY
-  -> AUDIT                               goal touches an existing system  [default]
-  -> ARCHITECTURE                        audit not applicable (recorded reason)
-  -> IMPLEMENTATION                      trivial change within an established contract
+  -> AUDIT                               [default]
+  -> ARCHITECTURE                        NOT audit.applicable
+  -> IMPLEMENTATION                      NOT audit.applicable AND NOT architecture.required
   -> BLOCKED                             goal contradicts discovered reality
 
 AUDIT
@@ -64,8 +64,8 @@ AUDIT
   -> BLOCKED                             cannot audit without access it lacks
 
 AUDIT_COMPLETE
-  -> ARCHITECTURE                        structural change needed  [default]
-  -> IMPLEMENTATION                      findings are localized, contracts unchanged
+  -> ARCHITECTURE                        architecture.required  [default]
+  -> IMPLEMENTATION                      NOT architecture.required
   -> READY_FOR_HUMAN_AUTHORIZATION       audit-only goal; findings are the deliverable
 
 ARCHITECTURE
@@ -88,8 +88,8 @@ IMPLEMENTATION_COMPLETE
   -> VALIDATION
 
 VALIDATION
-  -> UX_REVIEW                           user-facing surface changed
-  -> READY_FOR_HUMAN_AUTHORIZATION       validation passed, no UI surface
+  -> UX_REVIEW                           ux.required
+  -> READY_FOR_HUMAN_AUTHORIZATION       NOT ux.required
   -> VALIDATION_FAILED
   -> BLOCKED                             cannot validate (environment unavailable)
 
@@ -185,6 +185,46 @@ One authorization mechanism, one blocking mechanism, and no state explosion. The
 distinction between "waiting on a human" and "waiting on anything else" lives in the
 blocker kind, which is where an operator already looks.
 
+## 2.3 Transition predicates
+
+A transition table whose branch conditions are prose is a table an agent decides. Every
+conditional transition above names a **predicate** the kernel evaluates itself, over the
+Context Package, the capability registry and the dispatch's mutation events. The agent's
+opinion is recorded as a `claim` and is never the decision.
+
+Predicates are defined as data in `policies/predicates.json`. Their meanings:
+
+- **`audit.applicable`** — the capability registry contains at least one record whose
+  scope intersects the goal scope, **or** the target repository has any commit history.
+  False only for genuinely greenfield work.
+- **`architecture.required`** — any of: a planned or actual change touches a declared
+  contract boundary (`api_map`, `source_map`, schema/migration paths); the work would
+  change canonical ownership of an entity in `domain_model`; an audit finding is
+  categorized structural (`orphan-*`, `duplicate-ownership`, `broken-chain`,
+  `provenance-break`).
+- **`ux.required`** — `context.ui_map` is non-empty **and** the dispatch's mutation events
+  include a path under any `ui_map` surface, **or** an API whose consumers include a
+  `ui_map` surface changed shape.
+- **`production.applicable`** — `environments` includes an environment classified
+  production **and** the goal scope reaches it.
+
+### The safer-branch rule
+
+A predicate evaluates to `TRUE`, `FALSE`, or `INDETERMINATE`. **`INDETERMINATE` takes the
+branch that does more work, not less.** Cannot tell whether a UI changed? Run the UX
+review. Cannot tell whether architecture is needed? Run the Architect. Cannot tell whether
+audit applies? Audit.
+
+This is deliberately biased. The cost of an unnecessary review is tokens; the cost of a
+skipped one is a defect reaching production behind a green run. Where a predicate's inputs
+are missing because discovery could not reach them, the safer branch is also the honest
+one — AgentOS does not get to skip a stage because it failed to look.
+
+An agent may not propose a transition whose predicate the kernel evaluates against it. Such
+a `next_action` is overridden, and the override is logged with both the claim and the
+evaluated value, so a systematically over-claiming agent becomes visible in the run
+narrative.
+
 ## 3. Loops and budgets
 
 Three loops exist, all bounded by policy:
@@ -234,16 +274,96 @@ Rules that make interruption survivable:
   the log. If they disagree, the log wins.
 - **Write before act.** An intent-to-dispatch event is written before the agent is invoked,
   so a crash mid-agent is detectable rather than invisible.
-- **Steps are idempotent or explicitly resumable.** Re-running a step after a crash must
-  either be safe or refuse and require a decision. This is enforced at dispatch, not
-  assumed.
-- **Mutations are recorded with their reversal.** Every file change, commit and branch
-  operation is logged with enough information to undo it.
+- **Every event is one newline-terminated line, appended and flushed.** On recovery a
+  trailing partial line — the signature of a power loss mid-write — is discarded and the
+  discard is itself logged. A partial line is never parsed, and never silently dropped.
 - **Recovery replays, it does not resume from memory.** On restart the kernel reads the
-  log, rebuilds the cursor, identifies any step interrupted mid-flight, and either retries
-  it (idempotent) or blocks with a clear report (not idempotent).
+  log, rebuilds the cursor, identifies any dispatch interrupted mid-flight, and applies the
+  retry protocol below.
 
-Nothing about resumption depends on a model remembering anything.
+Nothing about resumption depends on a model remembering anything, or on a model being
+available at all.
+
+### 5.1 The adapter call log
+
+**Every adapter call is logged — reads included, not only mutations.** A `call` event
+records dispatch, adapter, operation, arguments, outcome and timing. Mutating calls
+additionally emit the `mutation` event below.
+
+Logging reads costs little and buys the thing nothing else can: **the kernel knows what an
+agent actually looked at.** That makes two otherwise unverifiable claims checkable.
+
+- **Coverage.** An agent's `coverage.scope_examined` is reconciled against its call log. An
+  agent claiming it examined a subsystem that no call touched is a contract violation.
+  Without this, `coverage` — the field that distinguishes "found nothing there" from "never
+  looked there" — is exactly the kind of unchecked self-report the rest of v0.2 removes.
+- **Evidence that cannot be replayed.** A screenshot cannot be byte-compared, but the
+  adapter call that produced it can be confirmed to have happened, against that URL, in that
+  state, at that time. The observation's *provenance* is verifiable even when its *content*
+  is not.
+
+Read calls are logged at a policy-defined granularity, since a discovery run makes many.
+Aggregation is permitted; omission is not.
+
+### 5.2 Mutation events
+
+**Adapters emit a `mutation` event at call time, before returning to the caller.** Not at
+the end of a dispatch, and not from the envelope — an envelope that never arrives cannot
+record anything, which is exactly the crash this rule exists for.
+
+```json
+{
+  "event": "mutation",
+  "run_id": "...", "dispatch_id": "d_014", "seq": 37,
+  "adapter": "git", "op": "commit",
+  "target": "worktree/agentos-run-a1b2",
+  "before": { "head": "9f2c1ab" },
+  "after":  { "head": "4de0117" },
+  "reversal": { "op": "reset_hard", "args": { "to": "9f2c1ab" } },
+  "at": "2026-09-04T11:02:44Z"
+}
+```
+
+Consequences:
+
+- The reversal record exists the moment the mutation does.
+- The blast radius of any dispatch is computable from the log alone.
+- `artifacts_changed` in the envelope becomes a *reconciliation* the kernel checks against
+  these events ([AGENT_HANDOFF_CONTRACT.md](AGENT_HANDOFF_CONTRACT.md)) — under-reporting
+  and over-reporting are both caught.
+
+An adapter that cannot emit a mutation event must refuse the mutation. Unlogged mutation is
+not permitted, and "the log was unavailable" is a reason to stop, not to proceed.
+
+### 5.3 Retry protocol
+
+Retry is defined at the granularity where side effects actually happen — the adapter
+operation — not at the granularity of an agent.
+
+**Idempotency keys.** Every mutating adapter call carries
+`key = hash(run_id, dispatch_id, adapter, op, normalized_args)`. The adapter records
+completed keys. On replay of a known key it performs no work and returns the recorded
+result. This makes a re-dispatch after a crash safe *per operation*, without requiring the
+agent to be deterministic.
+
+**Pre-retry reset.** Before re-dispatching an interrupted or failed agent, the kernel:
+
+1. Reads the dispatch's mutation events.
+2. Applies their reversals in reverse order, restoring the worktree to its pre-dispatch
+   state.
+3. Logs a `dispatch_rollback` event listing what was reversed.
+4. Re-dispatches with a **new** `dispatch_id`, so the retry's operations get fresh keys and
+   are not confused with the abandoned attempt's.
+
+**Non-reversible operations.** An adapter operation whose `reversal` is `null` — an
+external API write, an email, a published artifact — is declared non-reversible in the
+adapter's descriptor. A dispatch that performed one **is never automatically retried**. The
+run blocks with `EXTERNAL_DEPENDENCY`, stating precisely what already happened, and a human
+decides. This is the one place where "retry safely" is not available, and pretending
+otherwise is how a system sends the same notification four times.
+
+**Interaction with budgets.** Retries count against the run's loop and cost budgets. A
+dispatch that fails repeatedly exhausts its budget and blocks rather than looping.
 
 ## 6. Observability projections
 

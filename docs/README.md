@@ -1,6 +1,7 @@
 # AgentOS Design
 
-Architecture v0.1 — internally consistent, implementation-ready, zero production code.
+Architecture v0.2 — internally consistent, adversarially traced, implementation-ready,
+zero production code.
 
 ## Read in this order
 

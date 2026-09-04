@@ -70,6 +70,46 @@ own: any state may transition to `BLOCKED` carrying a blocker of kind
 timeout leaves it blocked. One authorization mechanism, one blocking mechanism, no state
 explosion — see [WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md) section 2.2.
 
+### How a gate is detected
+
+A gate that fires only when an agent volunteers that it is crossing one is not a gate. Gates
+are triggered by **mechanical classifiers evaluated at the adapter**, from what the adapter
+observes rather than from what the agent says.
+
+Classifiers live in `policies/gates.json` as data. Their shape:
+
+- **`MERGE_PROTECTED`** — the git adapter sees a merge whose target is classified protected
+  (fail-closed, [REPOSITORY_ADAPTER.md](REPOSITORY_ADAPTER.md) section 2.2).
+- **`DEPLOY_PRODUCTION`, `PRODUCTION_WRITE`** — the runtime adapter sees an operation
+  against an environment classified production (fail-closed, same rule).
+- **`CREDENTIAL_OR_SECURITY_CHANGE`** — a file mutation whose path matches configured
+  patterns (auth, secrets, key, credential, iam, rbac, policy, `.env`, certificate and
+  keystore extensions), **or** whose content diff touches configured markers
+  (`PRIVATE KEY`, `client_secret`, `password`, permission and role declarations).
+- **`DESTRUCTIVE_MIGRATION`** — a migration or SQL artifact whose content matches
+  destructive patterns (`DROP TABLE`, `DROP COLUMN`, `TRUNCATE`, `ALTER ... TYPE`,
+  `DELETE FROM` without a bounded predicate), **or** a migration with no accompanying down
+  step.
+- **`IRREVERSIBLE_DATA_MUTATION`** — any adapter operation whose descriptor declares
+  `reversal: null` against real data.
+- **`EXTERNAL_COMMUNICATION`** — any adapter operation whose descriptor declares an
+  external destination.
+- **`SCOPE_EXPANSION`** — a path mutation outside `mandate.in_scope`, detected at the
+  adapter (section 2.1 of the repository adapter). Note this fires as a refusal first; the
+  gate is how legitimate scope growth is granted rather than smuggled.
+- **`COST_CEILING_EXCEEDED`** — kernel budget accounting.
+
+Two properties matter more than the specific patterns:
+
+- **Classifiers are policy data, not kernel code.** They are tuned per organisation without
+  touching the kernel, and a repository may add stricter ones.
+- **Agent self-declaration is an additional trigger, never the only one.** An agent that
+  says "this is a credential change" fires the gate. An agent that says nothing fires it
+  anyway if a classifier matches. The gate does not depend on candour.
+
+A classifier that cannot evaluate — unreadable diff, unknown file type — fires the gate.
+Same rule as everywhere else: uncertainty takes the safer branch.
+
 ### Who may authorize
 
 A human. Specifically:

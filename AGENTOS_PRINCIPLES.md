@@ -66,6 +66,11 @@ Agents exchange typed envelopes containing status, findings, evidence, assumptio
 unknowns, artifacts changed, recommendations, blockers and next action. Never transcripts.
 An agent must be replaceable, resumable, and independently auditable.
 
+**The kernel disbelieves agents.** Nothing an agent supplies — evidence, a branch-condition
+claim, a report of what it changed, a path, a judgment that an action is safe — becomes
+trusted state because it was well-formed. Every one of them passes a check the kernel
+performs itself, with a component that is not the agent.
+
 **The kernel is not an agent.** The component that enforces state, budgets, policy and
 persistence is deterministic code with no model in it. The Orchestrator *Agent* advises it
 and can be wrong without consequence. Agents depend on contracts, policies, registries and

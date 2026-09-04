@@ -27,7 +27,30 @@ The host adapter enumerates every invocable capability:
 - repository scripts (`package.json` scripts, `Makefile` targets, `*.ps1`, `*.sh`)
 
 Each entry records: identifier, source, description, declared inputs and outputs, declared
-side effects, availability, and whether it mutates anything.
+side effects, availability, whether it mutates anything, and three capability flags that
+gate selection:
+
+- **`spawns_agents`** — can this skill start another agent, session, subagent or task?
+- **`external_destination`** — can it send anything outside the organisation's boundary?
+- **`reversal`** — the operation that undoes it, or `null` for non-reversible.
+
+### `spawns_agents` is a hard exclusion
+
+**No agent may invoke another agent.** Direct invocation is already impossible — agents hold
+no dispatch reference — but a skill that spawns a subagent is the same violation wearing a
+tool's clothing, and on some execution substrates such tools are the default way to work.
+
+Therefore: a skill with `spawns_agents: true` is **never selectable for an agent dispatch**.
+Policy forbids it, the registry excludes it from candidate lists, and the host adapter
+refuses the invocation if it is somehow requested. Three layers, because this one is
+substrate-dependent and easy to reintroduce accidentally.
+
+A skill whose spawning behaviour cannot be determined is treated as `spawns_agents: true`.
+Same rule as everywhere: uncertainty takes the safer branch.
+
+The kernel remains the only thing that starts an agent. Anything that appears in the run
+narrative as work done by an agent must correspond to a dispatch event, and an agent
+population that cannot be enumerated from the log is not a system anyone can reason about.
 
 An unreachable connector is recorded `UNAVAILABLE`, never omitted. "This host has no Jira
 access" and "Jira is configured but the server failed to connect" lead to different
@@ -132,6 +155,21 @@ If the preferred model is unavailable, AgentOS may proceed on a lesser model **o
 work whose precision requirement it still meets. Otherwise the run blocks. Proceeding on an
 inadequate model and reporting the result as normal is a form of dishonesty the evidence
 model is built to prevent — and the degradation, if it happens, appears in the run report.
+
+### No model at all
+
+Model unavailability is an ordinary, expected condition, not an exception.
+
+A dispatch that cannot obtain any adequate model returns `FAILED`. The kernel retries per
+policy, then transitions to `BLOCKED` with `EXTERNAL_DEPENDENCY`. The state does not
+advance, no envelope is merged, and the run resumes at the same point when a model returns.
+
+Everything the kernel does — schema validation, cross-field consistency, evidence
+verification, transition predicates, mutation reconciliation, gate classification,
+authorization lifecycle, DoD arithmetic, recovery — runs with no model in the loop. A run
+with zero available models makes no progress and suffers no corruption. That is the
+intended behaviour, and it is the sharpest statement of the kernel boundary: **the kernel's
+correctness is independent of model availability, not merely of model quality.**
 
 ### Recording
 

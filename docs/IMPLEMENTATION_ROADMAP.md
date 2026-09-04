@@ -65,6 +65,47 @@ Delivered:
 
 Still open and deliberately so: the decisions in section 11. Two of them block Phase 1.
 
+## 2.6 Architecture v0.2 — the kernel disbelieves agents
+
+v0.1 established that no agent can **drive** the run. An adversarial trace of fifteen
+failure scenarios showed it had not established that the kernel can **disbelieve** an
+agent: six of eight invariants failed, every one of them the kernel accepting agent-supplied
+data as true because it was well-formed.
+
+Closed in v0.2:
+
+- **W1 Evidence verification** — `Evidence.locator` is mandatory and re-executable; the
+  kernel replays evidence through the originating adapter (always for critical findings,
+  authorization requests and DoD criteria marked `MET`; sampled otherwise). `verification`
+  is kernel-owned and rejected if an agent supplies it. Repeated mismatch rejects the whole
+  envelope.
+- **W2 Transition predicates** — the four prose branch conditions became named predicates
+  the kernel evaluates over the Context Package and mutation events. `INDETERMINATE` takes
+  the branch that does more work.
+- **W3 Mutation events** — adapters emit them at call time with reversals;
+  `artifacts_changed` becomes a reconciliation that catches under- and over-reporting.
+- **W4 Path confinement** — resolve, then check worktree root, mandate scope and an
+  absolute deny-list covering `state/`, `policies/`, `contracts/` and the installation.
+- **W5 `spawns_agents`** — skills that can start an agent are never selectable;
+  undetermined counts as spawning. Folded into the substrate decision (section 11).
+- **W6 Fail-closed classification** — unknown branch protection means protected; unknown
+  environment means production.
+- **W7 Mechanical gate classifiers** — gates fire from what the adapter observes; agent
+  self-declaration is an additional trigger, never the only one.
+- **W8 Idempotency** — keys at adapter-operation granularity, pre-retry reversal, fresh
+  `dispatch_id` per attempt, and no automatic retry after a non-reversible operation.
+- **W9 Structured mandate** — typed `objective`/`in_scope`/`out_of_scope` enforced at the
+  adapter; free prose is labelled untrusted and grants nothing.
+- **W10 Cross-field consistency** — enumerated and checked independently of schema
+  conformance.
+- **W11 Torn-write recovery** — trailing partial lines discarded and logged.
+
+Also added: explicit behaviour when **no model is available at all** — the run blocks
+cleanly and resumes, because every kernel function runs model-free.
+
+New policy files this implies, all data rather than code: `gates.json`, `paths.json`,
+`predicates.json`, `evidence.json`. No new directories.
+
 ## 3. Phase 1 — Contracts and kernel skeleton
 
 Deliverables:
@@ -98,8 +139,10 @@ against the guesses.
 1. **`Assertion`** — value plus `FACT | INFERENCE | UNKNOWN` plus evidence plus
    `observed_at` plus freshness. Every leaf value in the system is one. Nothing else can be
    defined until this is.
-2. **`Evidence`** — the ten-kind closed set, `ref`, `excerpt`, `observed_at`, `adapter`,
-   `reproducible`. Shared verbatim by the Context Package and the envelope.
+2. **`Evidence`** — the ten-kind closed set, a mandatory re-executable `locator`, `ref`,
+   `excerpt`, `observed_at`, `reproducible`, and a kernel-owned `verification` block.
+   Shared verbatim by the Context Package and the envelope. Build this before anything that
+   produces evidence, because retrofitting a locator means re-deriving every observation.
 3. **`HandoffEnvelope`** — the only inter-agent transport. Its status enum drives the state
    machine, so the two must be defined together or they will drift.
 4. **`ContextPackage`** — the shape discovery writes and every agent reads. Its section
@@ -109,8 +152,10 @@ against the guesses.
    the adapter checks the grant. Building mutation first and adding authorization after is
    how the gate ends up bypassable.
 
-`Finding`, `Blocker` and `DoDProfile` are needed slightly later but are cheap once the six
-above exist.
+`Finding`, `Blocker`, `DoDProfile`, `AdapterOperationDescriptor` and `MutationEvent` are
+needed slightly later but are cheap once the six above exist. The last two are what make
+adapters enforceable rather than merely conventional, so they precede any mutating
+adapter.
 
 **Validation order.** Define `Assertion` and `Evidence` first, then `HandoffEnvelope`
 against a hand-written fixture for every status value, then the rest. If a schema cannot
@@ -259,7 +304,10 @@ Listed with when they must be resolved.
   the agent execution substrate.
 - **Agent execution substrate** (before Phase 1). Claude Code subagents, Agent SDK
   sessions, or direct API. The handoff contract is transport-agnostic specifically so this
-  can change later without redesign.
+  can change later without redesign. **Must be decided together with W5**: whichever
+  substrate is chosen has to make `spawns_agents` detectable and refusable, or the "no
+  agent invokes another agent" invariant is unenforceable on it. That is now a selection
+  criterion, not an afterthought.
 - **Run store backend** (Phase 1, revisit Phase 7). Files first for inspectability; SQLite
   if concurrency demands it.
 - **Static analysis depth** (Phase 3). How much language-specific analysis to build versus
