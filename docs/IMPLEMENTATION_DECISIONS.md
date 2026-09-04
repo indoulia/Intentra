@@ -251,3 +251,199 @@ No test framework dependency, and tests run against exactly the JavaScript that 
 `tools/bin/test.mjs` discovers test files rather than globbing a hand-written list, because a
 package left out of a glob is a package nobody notices is untested. It reports the file count
 per package, so a package with zero tests is visible rather than absent.
+
+---
+
+## WP-4 to WP-8 — reach, judgment and the read-only MVP
+
+### I-20 · The Agent SDK is a declared dependency of `agents/`, and the only third-party one
+
+D-2 selects the Claude Agent SDK as the execution substrate. A substrate is a transport, and
+a transport has to be depended on rather than described, so `@agentos/agents` declares
+`@anthropic-ai/claude-agent-sdk` and `tools/bin/conformance.mjs` carries the permission as a
+named entry beside the dependency table — the same shape as the I/O exceptions, and for the
+same reason: "AgentOS depends on nothing but its own contracts" is only worth saying if the
+exceptions are countable.
+
+It is one package, in one package, reached from one file
+(`agents/src/substrate/claude-agent-sdk.ts`, already the named I/O exception), behind the
+`AgentSubstrate` port declared in `contracts/`. That is what makes D-2's reversal clause real:
+swapping to the Anthropic SDK's tool runner replaces that file and nothing else, and no other
+package learns that the substrate changed.
+
+The conformance check fails three ways rather than one: on a third-party dependency in any
+package with no recorded decision, on any change to the `@agentos/*` edges, and on a
+permission that has gone stale because the manifest no longer declares what it permits.
+
+**Reversed by:** D-2's own reversal — the allowlist condition proving unachievable on the SDK.
+The replacement is a dependency too, so what changes is which name is on the list, not whether
+the list exists.
+
+---
+
+## WP-6 and WP-7 — resolution, the uncertainty ladder, and orchestration
+
+### I-21 · The common safe prefix is computed over template stages
+
+`INTENT_AND_WORK_ITEM_RESOLUTION.md` section 7 rung 3 states the mechanism and then gives an
+example the mechanism cannot produce. The mechanism: "intersect the candidate templates' stage
+sequences from the entry node, take the longest common prefix, and admit it only if every stage
+in it is declared non-mutating in the stage vocabulary." The example: "in practice that prefix
+is `CONTEXT_DISCOVERY → AUDIT`."
+
+`CONTEXT_DISCOVERY` is a **prologue** stage. It is kernel-owned, runs in every run, and is
+excluded from `templateStage` by construction (`contracts/schema/common.json`), so it appears
+in no template's `stages` and no intersection of template stage sequences can ever yield it.
+
+`commonSafePrefix` implements the mechanism, over template stages. The example is read as prose
+about what the prologue plus the prefix look like together from the outside — the prologue does
+run first, and does run `CONTEXT_DISCOVERY` — rather than as a claim about what the
+intersection returns. For scenario I's three surviving candidates the intersection is computed
+from `defect.standard`, `investigation.readonly` and `change_request.land`, and truncated at
+the first stage not declared non-mutating.
+
+Two consequences worth stating because they are not obvious:
+
+- **A single candidate still has a prefix.** Where only one template is admissible, every stage
+  in it is what AgentOS would do whichever reading is right, so the whole non-mutating head of
+  it is the prefix. This is what makes `investigation.readonly` "the target of ambiguity rung 3"
+  true in the read-only build rather than only in principle.
+- **The candidate set spans the alternative readings.** The templates intersected are those
+  admissible for the admitted type *and* for every `alternatives[].type`, because the ambiguity
+  the ladder exists for is about which reading is right. Intersecting one type's set alone would
+  answer a question nobody asked.
+
+**Reversed by:** an amendment making the prologue expressible in a template's stage sequence,
+which would be a much larger change than this paragraph.
+
+### I-22 · Gate classification and the grant check reach `adapters/` as injected ports
+
+`KERNEL_BOUNDARY.md` puts gate enforcement in `adapters/`, and `core/src/authorization.ts` says
+`checkGrant` "is called from the adapter". `.dependency-cruiser.cjs` makes `adapters -> core` a
+hard error, and rightly: the adapters are the enforcement surface and must not depend on the
+thing they enforce for.
+
+The resolution is a function port rather than an import. `core/`'s composition root builds a
+`GrantEnforcer` and a `GateClassifierPort` closure over the policy set and the store and hands
+them to the adapter registry, so both still execute **inside the adapter at call time** and no
+dependency edge is created. The rule lives in `core/`; the enforcement runs in `adapters/`.
+
+The port also closes a shape gap. `AdapterCallContext.grantsHeld` is a list of grant **ids** —
+an adapter has no business holding grant records — and `checkGrant` needs the records, so the
+injected closure is what resolves one into the other. Only grants the dispatch actually carries
+are considered: a grant recorded for the run that this dispatch was not handed is not permission
+this dispatch holds, and "some dispatch in this run has one" is exactly the transfer a
+non-transferable grant forbids.
+
+`GrantEnforcementRequest` and `GrantEnforcementVerdict` are declared in `core/` and match the
+adapter framework's grant-checker port structurally rather than by import, for the same reason
+the closure exists at all: `core/src/authorization.ts` naming `adapters` would be the boundary
+violation outside `core/src/composition/`. Structural compatibility is what lets the composition
+root hand one straight to the other with no edge in either direction.
+
+**Reversed by:** moving the gate policy into `adapters/`, which would put policy interpretation
+behind the enforcement boundary instead of in front of it.
+
+### I-23 · Two contract gaps are carried as events rather than as fields
+
+Neither is fixed by widening `contracts/`, because both are frozen-schema questions rather than
+implementation choices. Both are reported.
+
+**`WorkItem` has no `intent` field.** Resolution produces an `intent` assertion, and the
+narrative's v0.3 obligation is to state what AgentOS decided the work was and why — "a run that
+did the wrong thing correctly is the new failure mode this layer introduces, and it is invisible
+unless resolution is narrated alongside execution". An intent nothing durable records is an
+obligation nothing can discharge, so it is written to the **work-item** event log as a `note`
+with topic `intent`, carrying the assertion, its confidence, its probe, the admitted type, the
+resolver's own confidence and every rejected alternative. The work-item log is the right home
+because intent outlives the run, exactly as the work item does.
+
+**`IntakeRecord.principal` is a required object with a non-empty `id`.** A host that cannot
+assert a principal must produce *absence*, and the record cannot express it. Fabricating
+`{ id: 'unauthenticated' }` reads as an identity — "the unauthenticated user" — which is the
+fabricated default `DATA_SEMANTICS.md` exists to forbid: it converts an operational fact
+(nobody was authenticated) into a confident claim about who asked. So the id is the marker
+`(no principal asserted)`, the absence is carried structurally on the intake result, and the
+kernel records a `note` stating that the host asserted nobody. The intake classifies `EXTERNAL`
+either way, which is the behaviour D-5 actually turns on.
+
+**Reversed by:** an amendment making `principal` nullable and adding `intent` to the work item,
+at which point both events become redundant with a field.
+
+### I-24 · An unreadable capability registry is `INDETERMINATE`, not an empty one
+
+`policies/work-items.json` states two capability requirements — `DEFECT` needs a record
+intersecting its scope, `FEATURE` needs none to — and both were previously answered from an
+empty array the live path passed in unconditionally. That made every `FEATURE` admissible for
+the reason that nobody looked, and every `DEFECT` downgrade for the same reason.
+
+`checkTypeEvidence` now takes whether the registry was **available**. Unavailable makes those
+requirements `INDETERMINATE`, the check records `INDETERMINATE` rather than `PASS` or `FAIL`,
+and the type downgrades to `UNKNOWN` with the reason stated — which routes to
+`investigation.readonly`, the safe thing to do when you do not know what you are looking at.
+
+In this build the registry genuinely is unavailable at admission: it is written by the Auditor
+into a run's `capabilities/`, and `ContextPackage.capabilities` is a *reference* into one rather
+than the records. The kernel therefore loads the newest registry any prior run of this
+repository assembled, and reports unavailability when there is none. A first resolution of a new
+work item has no registry, and says so.
+
+**Reversed by:** a durable per-repository capability registry the prologue can read, at which
+point availability is the ordinary case and this stays as the honest answer for the day the
+store is unreadable.
+
+### I-25 · The reconciliation matrix is computed in `discovery/` and read by the kernel
+
+`current_reality.reconciliation` is a Context Package field, and the Context Package is written
+only by probes, so the eight-state three-way matrix is computed once — in `discovery/`, at
+capability level and at work-item level — and `core/` reads it. Two implementations of one rule
+is one implementation too many; the workflow floor evaluator is shared between the policy loader
+and the kernel for the same reason.
+
+What stays in `core/` is the *reading*, and it is not nothing: an absent field, an absent
+reality, or a value outside the vocabulary is `INDETERMINATE` and never a negative answer. A
+discovery run that could not reach the project-management system has not established that nobody
+intends the work, and one that could not reach the git host has not established that there is no
+pull request. `core/src/work-item-reconciliation.ts` is that reader.
+
+What also stays in `core/` is the *decision made from it*: where AgentOS's own ledger and an
+external system disagree, `arbitration.ts` applies the authority ordering of
+`INTENT_AND_WORK_ITEM_RESOLUTION.md` 5.1 as the rule-based step — the external system wins on
+its own state, and the discrepancy is itself recorded as a finding.
+
+**Reversed by:** nothing short of moving `current_reality` out of the Context Package.
+
+### I-26 · `INCOMPLETE` routes back to the first unmet critical criterion a graph stage owns
+
+`DEFINITION_OF_DONE.md` says the run "routes back to the stage that owes the verdicts", which
+names a stage — so the criterion the route-back is chosen from has to be one a stage owns.
+Taking the numerically first unmet critical criterion routes to `null` whenever a prologue
+criterion is among the unmet, and criterion 1 is owned by no template stage, so that was every
+run whose context package could not establish it: exactly the runs that most need to route back.
+
+The route-back is bounded twice: by the dispatch cap the loop already checks each iteration, and
+by **one lap per owing stage**. A second lap over a stage that supplied nothing the first time
+is a quiet retry, and exceeding a bound is never one — so the run ends and a human sees what the
+stage could not establish.
+
+**Reversed by:** a policy cap for route-backs, if one lap turns out to be too few in practice.
+
+### I-27 · Condition 4's "recorded handling" is kernel-recorded, never the gap's own account
+
+`UNDERSTOOD` condition 4 asks that every `UNKNOWN` blocking a mandatory stage is "resolved, or
+has a recorded handling". `recoverable_by` cannot be that handling: the schema requires it and
+requires it non-empty, so a check keyed on it passes for every schema-valid Context Package and
+decides nothing. Neither can `attempted`, for the same reason and a better one — it is the
+agent's account of itself, and nobody supplies `UNDERSTOOD`.
+
+So the two branches are: **resolved**, meaning the `current_reality` element the gap's subject
+names is determinate now; and **handled**, meaning the *kernel* recorded what it did about it —
+a ladder rung that dispatched the recovery the gap named, or a human answer. Everything else
+fails the condition, which sends the run into the ladder.
+
+The condition is also narrowed to gaps blocking a **mandatory** obligation. A gap blocking
+`UX_REVIEW` in a template that may legitimately exclude it does not make the workflow decision
+indeterminate.
+
+**Reversed by:** a `handling` field on the unknown record, which would let a gap carry its own
+disposition — at which point the question becomes who wrote it.

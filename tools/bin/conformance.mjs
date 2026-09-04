@@ -94,6 +94,19 @@ const DEPENDENCY_TABLE = {
   core: ['contracts', 'policies', 'registries', 'adapters', 'state', 'agents', 'discovery'],
 };
 
+/*
+ * The one third-party runtime dependency in the system, named with the decision that permits
+ * it. Decision I-20: D-2 selects the Claude Agent SDK as the execution substrate, and the
+ * substrate is a real transport that has to be depended on rather than described. It is
+ * confined to the package whose job is agent execution, and to the one file inside it that
+ * D-2's reversal clause wants swapping to be a change to. Every other package stays on the
+ * dependency table exactly, so "AgentOS depends on nothing but its own contracts" remains
+ * true everywhere it was true before.
+ */
+const EXTERNAL_DEPENDENCIES = new Map([
+  ['agents', ['@anthropic-ai/claude-agent-sdk']],
+]);
+
 check(
   'every manifest declares exactly its permitted dependencies',
   'IMPLEMENTATION_PLAN section 3, KERNEL_BOUNDARY section 2',
@@ -103,12 +116,29 @@ check(
       const manifestPath = join(ROOT, pkg, 'package.json');
       if (!existsSync(manifestPath)) continue;
       const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-      const declared = Object.keys(manifest.dependencies ?? {})
+      const external = EXTERNAL_DEPENDENCIES.get(pkg) ?? [];
+      const all = Object.keys(manifest.dependencies ?? {});
+      const unpermitted = all.filter((d) => !d.startsWith('@agentos/') && !external.includes(d));
+      if (unpermitted.length > 0) {
+        problems.push(
+          `${pkg}: declares third-party dependencies with no recorded decision permitting `
+          + `them: ${unpermitted.join(', ')}`,
+        );
+      }
+      const declared = all
+        .filter((d) => d.startsWith('@agentos/'))
         .map((d) => d.replace('@agentos/', ''))
         .sort();
       const want = [...allowed].sort();
       if (declared.join(',') !== want.join(',')) {
         problems.push(`${pkg}: declares [${declared.join(', ')}], table says [${want.join(', ')}]`);
+      }
+      const missingExternal = external.filter((d) => !all.includes(d));
+      if (missingExternal.length > 0) {
+        problems.push(
+          `${pkg}: the recorded decision permits ${missingExternal.join(', ')} and the manifest `
+          + 'no longer declares it, so the permission is stale and should be removed',
+        );
       }
     }
     return problems.length === 0 ? true : problems.join('; ');
