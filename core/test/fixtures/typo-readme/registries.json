@@ -1,0 +1,23 @@
+{
+  "skills": [],
+  "models": [
+    {
+      "id": "claude-opus-5",
+      "availability": {
+        "adapter": "host.models",
+        "state": "AVAILABLE",
+        "detail": "",
+        "checked_at": "2026-09-04T10:14:00Z"
+      },
+      "context_window": 200000,
+      "reasoning": "deep",
+      "coding": "strong",
+      "vision": "strong",
+      "tool_use": "strong",
+      "usd_per_mtok_input": 15,
+      "usd_per_mtok_output": 75,
+      "latency_class": "medium",
+      "precision_class": "high"
+    }
+  ]
+}

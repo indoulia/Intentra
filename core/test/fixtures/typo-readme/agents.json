@@ -1,0 +1,176 @@
+[
+  {
+    "role": "context-discovery",
+    "mandate_name": "resolution",
+    "version": "1.0",
+    "objective": "given an IntakeRecord, produce a proposed Work Item: intent, type, external identity, desired outcome, scope, constraints, dependencies, parent, alternatives",
+    "required_inputs": [
+      "repository",
+      "git_state"
+    ],
+    "required_outputs": [
+      "proposed_work_item"
+    ],
+    "permitted_adapters": [
+      "repo",
+      "git",
+      "pm",
+      "runtime",
+      "host"
+    ],
+    "read_only": true,
+    "dod_criteria_owned": [
+      1
+    ],
+    "model_requirement": {
+      "context": "medium",
+      "reasoning": "deep",
+      "coding": false,
+      "vision": false,
+      "tool_use": "strong",
+      "precision": "high"
+    }
+  },
+  {
+    "role": "context-discovery",
+    "mandate_name": "context",
+    "version": "1.0",
+    "objective": "build the Context Package and the current_reality set for this work item",
+    "required_inputs": [
+      "repository",
+      "current_reality"
+    ],
+    "required_outputs": [
+      "context_package",
+      "current_reality",
+      "gaps"
+    ],
+    "permitted_adapters": [
+      "repo",
+      "git",
+      "pm",
+      "runtime",
+      "host"
+    ],
+    "read_only": true,
+    "dod_criteria_owned": [
+      1
+    ],
+    "model_requirement": {
+      "context": "large",
+      "reasoning": "mid",
+      "coding": false,
+      "vision": false,
+      "tool_use": "strong",
+      "precision": "standard"
+    }
+  },
+  {
+    "role": "orchestrator",
+    "mandate_name": "workflow",
+    "version": "1.0",
+    "objective": "propose a workflow template and its parameterization",
+    "required_inputs": [
+      "current_reality",
+      "repository"
+    ],
+    "required_outputs": [
+      "workflow_proposal"
+    ],
+    "permitted_adapters": [],
+    "read_only": true,
+    "dod_criteria_owned": [],
+    "model_requirement": {
+      "context": "medium",
+      "reasoning": "mid",
+      "coding": false,
+      "vision": false,
+      "tool_use": "none",
+      "precision": "standard"
+    }
+  },
+  {
+    "role": "auditor",
+    "mandate_name": "audit",
+    "version": "1.0",
+    "objective": "build the capability graph over the work item scope and identify breaks, orphans and unsupported completeness claims",
+    "required_inputs": [
+      "repository",
+      "current_reality"
+    ],
+    "required_outputs": [
+      "capability_graph",
+      "findings_report",
+      "orphan_inventory"
+    ],
+    "permitted_adapters": [
+      "repo",
+      "git"
+    ],
+    "read_only": true,
+    "dod_criteria_owned": [
+      3,
+      4
+    ],
+    "model_requirement": {
+      "context": "large",
+      "reasoning": "deep",
+      "coding": false,
+      "vision": false,
+      "tool_use": "strong",
+      "precision": "high"
+    }
+  },
+  {
+    "role": "auditor",
+    "mandate_name": "root_cause",
+    "version": "1.0",
+    "objective": "explain why the observed behaviour occurs, with evidence",
+    "required_inputs": [
+      "repository",
+      "current_reality"
+    ],
+    "required_outputs": [
+      "root_cause",
+      "evidence_chain"
+    ],
+    "permitted_adapters": [
+      "repo",
+      "git"
+    ],
+    "read_only": true,
+    "dod_criteria_owned": [],
+    "model_requirement": {
+      "context": "large",
+      "reasoning": "deep",
+      "coding": false,
+      "vision": false,
+      "tool_use": "strong",
+      "precision": "high"
+    }
+  },
+  {
+    "role": "orchestrator",
+    "mandate_name": "completion",
+    "version": "1.0",
+    "objective": "write the completion report and the run narrative",
+    "required_inputs": [
+      "current_reality"
+    ],
+    "required_outputs": [
+      "completion_report",
+      "run_narrative"
+    ],
+    "permitted_adapters": [],
+    "read_only": true,
+    "dod_criteria_owned": [],
+    "model_requirement": {
+      "context": "medium",
+      "reasoning": "mid",
+      "coding": false,
+      "vision": false,
+      "tool_use": "none",
+      "precision": "standard"
+    }
+  }
+]

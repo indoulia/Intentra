@@ -162,6 +162,62 @@ its outcome has no supporting evidence.
 Applying this check is what raised amendment A-14: `epic.coordinate` had no stage the Validator
 owns, so the Epic's own outcome verdict was owed to nobody.
 
+### I-16 · Prologue events are written to an intake log and replayed into the run log
+
+Intake recording, resolution dispatch and work-item admission all happen *before* a Workflow
+Run exists, and every one of them can fail in a way a human needs to see. Writing them into a
+run log that does not exist yet is impossible, and holding them in memory until one does would
+lose exactly the events that explain why no run was ever created.
+
+So the prologue writes to `state/intake/<intake_id>/events.ndjson`, and when a run is created
+its prologue is replayed into the run log with the same content and fresh sequence numbers.
+Both logs are append-only and both are durable, so a crash anywhere in the prologue leaves a
+readable account of how far it got.
+
+### I-17 · The resume order is the template's declared stage order
+
+The resume sweep needs an order over the graph, and deriving one with Kahn's algorithm over
+the forward edges is wrong for these graphs: the repair stages — `REWORK`, `REVIEW_TRIAGE`,
+`COMMENT_RESOLUTION` — are reachable only through loop edges, so excluding loops to break the
+cycles leaves them with no incoming edge at all and hoists them to the front. That put
+`REWORK` second in `defect.standard` and made every resumed defect enter there.
+
+The order is therefore the one the template declares, which is also the order a reviewer reads.
+That makes the declaration order load-bearing, so `checkWellFormed` now checks it: the entry
+must be the first declared stage, and no forward edge may run backwards through the
+declaration unless it closes a cycle — which `change_request.land` legitimately does, looping
+`STRUCTURAL_REAUDIT -> PR_REVIEW` back to its own entry, and a template that merely listed its
+stages out of order does not.
+
+### I-18 · The replay fixture loader is a named I/O exception
+
+`core/src/replay/fixture.ts` reads a directory the operator names on the command line. It is
+the same shape of exception as [I-11](#i-11): a boundary through which recorded data enters,
+confined to one file, with everything validated against the contracts before the kernel sees
+it. Nothing the kernel *decides* with does I/O — the ports a replay builds are in-memory and
+answer from what was loaded.
+
+The alternative was a separate package for the replay tool, which would have moved the same
+I/O somewhere else and made `agentos replay` depend on a package that exists for one file.
+
+### I-19 · `agentos work` is absent from this build rather than stubbed
+
+The plan lists the CLI under WP-3, and three of its four commands are complete there:
+`status` and `narrate` read the store, and `replay` drives the entire kernel from recorded
+envelopes. `work` cannot be: starting a real run needs a live adapter registry (WP-4), an
+agent substrate (WP-5) and a discovery implementation (WP-6), and the plan's own sequencing
+puts all three after WP-3.
+
+So the command is **not present**. Invoking it prints what is missing and exits non-zero. A
+command that accepted the invocation and then did nothing useful would be a stub in
+production, which is exactly what the conformance check exists to catch — and it would hide
+the dependency rather than state it.
+
+This is a dependency error in the plan rather than a decision about the design: "CLI and
+projections" is listed as a WP-3 deliverable, and one quarter of it depends on WP-4 through
+WP-6. The smallest correction is to build the three commands that only need the kernel and
+the store, and to add `work` when the last port it needs exists.
+
 ---
 
 ## Cross-cutting

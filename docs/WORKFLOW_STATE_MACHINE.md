@@ -417,8 +417,32 @@ adapters only):
 - **`reality.implementation_present`** — a branch or commit within scope implements the work
 - **`reality.tests_present`** — tests covering the scope exist and executed
 - **`reality.pr_open`** / **`reality.pr_merged`** / **`reality.pr_approved`**
+- **`reality.pr_reviewed`** — a review has been delivered on the pull request, whatever its
+  verdict. This is `PR_REVIEW`'s `satisfied_by`, and it is deliberately not
+  `reality.pr_approved`: the stage's mutation is *obtaining* a review, and a review that
+  requested changes has still happened. Keying it on approval would make the stage look un-run
+  in exactly the case its own loop edge to `REVIEW_TRIAGE` exists for — which is section 12 D
+  of the resolution document, whose stated entry is `REVIEW_TRIAGE` and is unreachable
+  otherwise (amendment A-16). `reality.pr_approved` remains, and remains what the edge
+  conditions read: approval is the stage's *outcome*, which is a different question from
+  whether the stage ran.
 - **`reality.pr_has_unresolved_comments`** — unresolved review threads on the current head
 - **`reality.ci_green`** — CI passed for the current head SHA, within the freshness window
+- **`reality.stage_completed_previously`** — a prior Workflow Run against this Work Item
+  completed the stage being asked about, read from `current_reality.agentos_history`. This is
+  the `satisfied_by` of the read-only analysis stages — `AUDIT`, `ROOT_CAUSE`, `ARCHITECTURE`
+  and `PLAN` — and it is keyed on AgentOS's own ledger because that is the only honest
+  observation available: **code existing does not mean an analysis happened.** Section 12 C of
+  the resolution document marks `AUDIT` and `PLAN` `COMPLETED_PRIOR` on a resumed Story, and
+  section 12 D enters a resumed Defect at `REVIEW_TRIAGE`; neither is expressible without it,
+  and keying it on `reality.implementation_present` instead would mark an audit already done
+  because a fix exists, which is precisely the inference the design refuses (amendment A-15).
+
+  The ledger is authoritative about what AgentOS did and says nothing about whether it still
+  holds — which is the right scope here, because "did we analyse this" is a question about the
+  past. It is also why the stages this governs are all non-mutating: skipping them wrongly
+  costs a lap of analysis, and the DoD criteria they own come back `NOT_VALIDATED` and route
+  the run back to them.
 - **`reality.children_exist`** — the work item has at least one child, whatever its state.
   This is `DECOMPOSITION`'s `satisfied_by`, and it is a different question from the next one:
   in the partially completed Epic of
@@ -502,23 +526,50 @@ The kernel computes the entry stage. No agent proposes it, and the intake never 
 
 ### 5.1 The computation
 
-Walk the frozen graph in topological order from the template's entry. For each stage, evaluate
-its `satisfied_by` predicate over Current Reality:
+Sweep the frozen graph in run order — the order the template declares its stages in, which
+the well-formedness check requires to start at the entry and to run forwards through the
+graph's forward edges. Classify every stage by its `satisfied_by` predicate over Current
+Reality:
 
 ```
-satisfied_by TRUE            -> mark COMPLETED_PRIOR, record the reality evidence, continue
-satisfied_by FALSE           -> this is the entry stage; stop
+satisfied_by TRUE            -> already done: COMPLETED_PRIOR, with the reality evidence
+satisfied_by FALSE           -> not done
+satisfied_by absent          -> not done, and not observable as done either
 satisfied_by INDETERMINATE
-    and stage is non-mutating -> enter it (more verification, no mutation)
-    and stage is mutating     -> dispatch targeted discovery; if still INDETERMINATE,
-                                 BLOCKED with AMBIGUOUS_STATE
+    and stage is non-mutating -> not done (more verification, no mutation)
+    and stage is mutating     -> dispatch targeted discovery; if still INDETERMINATE, the
+                                 stage is ambiguous
 ```
+
+**The entry stage is the first stage not already done, at or after the last stage that is.**
+Not simply the first stage not already done: a stage earlier than a completed mutation is
+`PASSED_UNVERIFIED` — the sweep neither claims it happened nor re-enters it, because
+re-entering it would walk backwards over work that demonstrably already occurred (amendment
+A-17). `story.standard` contains `ARCHITECTURE`, `STRUCTURAL_REAUDIT` and `UX_REVIEW`, and a
+resumed Story whose prior run never executed them still enters at `PR_REVIEW` rather than
+re-planning behind an open pull request.
+
+`PASSED_UNVERIFIED` is not forgiveness. Such a stage supplied no per-criterion verdicts, so
+its criteria are `NOT_VALIDATED`, so `COMPLETION` computes `INCOMPLETE` and routes back to the
+stage that owns them. Passing over a stage defers its judgment; it cannot skip it.
+
+Two states are refused rather than resumed:
+
+- **An ambiguous mutating stage the sweep would have to pass over to reach the entry.**
+  Skipping it would drop a mutation that may never have happened; entering it would maybe
+  repeat one that has. Neither follows from an `INDETERMINATE`, so it is `BLOCKED` with
+  `AMBIGUOUS_STATE`. An ambiguous stage *downstream* of the entry blocks nothing: the run
+  reaches it through the ordinary transitions and probes again there.
+- **A mutating stage observably `FALSE` before a later `COMPLETED_PRIOR` one.** "There is no
+  implementation, and the pull request is merged" is not a resumable state, it is two
+  observations contradicting each other, and AgentOS does not resolve it by preferring
+  whichever is more convenient. `BLOCKED` with `AMBIGUOUS_STATE`.
 
 For `STORY-724` with implementation complete, tests complete, a PR open and three unresolved
-review comments, the walk marks `AUDIT`, `PLAN`, `IMPLEMENTATION`, `VALIDATION` and
-`PR_PREPARATION` as `COMPLETED_PRIOR` and enters at `REVIEW_TRIAGE`. Analysis, planning and
-implementation are not restarted — not because an agent decided they were done, but because
-git and the PR host said so.
+review comments, the sweep marks `AUDIT`, `PLAN`, `IMPLEMENTATION`, `VALIDATION`,
+`PR_PREPARATION` and `PR_REVIEW` as `COMPLETED_PRIOR` and enters at `REVIEW_TRIAGE`. Analysis,
+planning and implementation are not restarted — not because an agent decided they were done,
+but because git and the PR host said so.
 
 ### 5.2 Resumption never fakes completion
 

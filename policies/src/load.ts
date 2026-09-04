@@ -452,6 +452,16 @@ export function loadPolicies(root?: string): PolicySet {
       }
     }
     for (const entry of profile.not_applicable_by_default) {
+      if (!declared.has(entry.criterion)) {
+        /* A criterion set aside by default still appears in the completion report as
+         * NOT_APPLICABLE with its reason, so it has to be one of the profile's criteria. A
+         * criterion omitted entirely would be invisible rather than explicitly inapplicable,
+         * and the distinction between "this does not apply" and "we did not check" is the
+         * one the whole model exists to keep. */
+        fail(file, 'not-applicable-criteria-declared',
+          `criterion ${entry.criterion} is NOT_APPLICABLE by default and is not among this `
+          + "profile's criteria, so it would never appear in the completion report");
+      }
       if (entry.reason.trim().length === 0) {
         fail(file, 'not-applicable-needs-reason',
           `criterion ${entry.criterion} is NOT_APPLICABLE with no reason, which is how a profile marks an inconvenient criterion away`);

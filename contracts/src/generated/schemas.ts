@@ -3008,7 +3008,8 @@ export const EVENT_SCHEMA: JsonSchemaObject = {
                     "enum": [
                       "COMPLETED_PRIOR",
                       "ENTER",
-                      "DISCOVER",
+                      "PASSED_UNVERIFIED",
+                      "NOT_REACHED",
                       "BLOCK_AMBIGUOUS_STATE"
                     ]
                   },
@@ -5459,11 +5460,12 @@ export const HANDOFF_ENVELOPE_SCHEMA: JsonSchemaObject = {
       "$ref": "finding.json#/$defs/coverage"
     },
     "outputs": {
-      "description": "The dispatch's `required_outputs`, filled. Keyed by output name; a missing or null key is an unfilled output, which is what separates PARTIAL from COMPLETE.",
+      "description": "The dispatch's `required_outputs`, filled. Keyed by output name; a missing or null key is an unfilled output, which is what separates PARTIAL from COMPLETE. A value may be any JSON: a reference into the run store, an inline structure, or a scalar.",
       "type": "object",
       "propertyNames": {
         "$ref": "common.json#/$defs/nonEmptyString"
-      }
+      },
+      "additionalProperties": true
     },
     "dod_verdicts": {
       "description": "Per-criterion verdicts this stage owes. The kernel does the arithmetic and never judges a criterion itself.",

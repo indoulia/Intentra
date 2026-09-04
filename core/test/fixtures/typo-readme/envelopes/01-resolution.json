@@ -1,0 +1,149 @@
+{
+  "envelope_version": "1.2",
+  "work_item_id": "wi_c_subject",
+  "run_id": "run_20260904T100000Z_000001",
+  "envelope_id": "env_resolution",
+  "dispatch_id": "d_001",
+  "agent": "context-discovery",
+  "agent_version": "1.0",
+  "model": "claude-opus-5",
+  "skills_used": [],
+  "stage_in": "RESOLUTION",
+  "started_at": "2026-09-04T10:14:00Z",
+  "completed_at": "2026-09-04T10:41:00Z",
+  "cost": {
+    "input_tokens": 1000,
+    "output_tokens": 100
+  },
+  "status": "COMPLETE",
+  "summary": "one paragraph a human can read without opening anything else",
+  "findings": [],
+  "evidence": [
+    {
+      "id": "E-01",
+      "kind": "file",
+      "locator": {
+        "adapter": "repo",
+        "op": "read_file",
+        "args": {
+          "path": "README.md"
+        }
+      },
+      "ref": "README.md",
+      "excerpt": "AgentOs",
+      "observed_at": "2026-09-04T10:14:00Z",
+      "reproducible": true
+    }
+  ],
+  "assumptions": [],
+  "unknowns": [],
+  "artifacts_changed": [],
+  "recommendations": [],
+  "blockers": [],
+  "coverage": {
+    "scope_examined": [
+      "README.md"
+    ],
+    "scope_not_examined": [],
+    "confidence": "FACT"
+  },
+  "outputs": {
+    "proposed_work_item": "inline"
+  },
+  "dod_verdicts": [],
+  "proposals": {
+    "work_item": {
+      "source_intake": "in_0001",
+      "intent": {
+        "value": "MODIFY_ARTIFACT",
+        "confidence": "INFERENCE",
+        "derived_from": [
+          "A-001"
+        ],
+        "reasoning": "derived from the observed manifest",
+        "observed_at": "2026-09-04T10:14:00Z",
+        "probe": "resolution",
+        "freshness": "CURRENT"
+      },
+      "type": {
+        "value": "TASK",
+        "confidence": "INFERENCE",
+        "derived_from": [
+          "A-001"
+        ],
+        "reasoning": "derived from the observed manifest",
+        "observed_at": "2026-09-04T10:14:00Z",
+        "probe": "resolution",
+        "freshness": "CURRENT"
+      },
+      "external_identity": {
+        "value": null,
+        "confidence": "UNKNOWN",
+        "reason": "NOT_APPLICABLE",
+        "recoverable_by": "read access to the git host",
+        "observed_at": "2026-09-04T10:14:00Z",
+        "probe": "git.pr",
+        "freshness": "UNKNOWN"
+      },
+      "title": {
+        "value": "Fix typo in README",
+        "confidence": "FACT",
+        "evidence": [
+          {
+            "id": "E-01",
+            "kind": "file",
+            "locator": {
+              "adapter": "repo",
+              "op": "read_file",
+              "args": {
+                "path": "README.md"
+              }
+            },
+            "ref": "README.md",
+            "excerpt": "AgentOs",
+            "observed_at": "2026-09-04T10:14:00Z",
+            "reproducible": true
+          }
+        ],
+        "observed_at": "2026-09-04T10:14:00Z",
+        "probe": "repo.stack",
+        "freshness": "CURRENT"
+      },
+      "desired_outcome": {
+        "value": "the misspelling in README.md is corrected",
+        "confidence": "INFERENCE",
+        "derived_from": [
+          "A-001"
+        ],
+        "reasoning": "derived from the observed manifest",
+        "observed_at": "2026-09-04T10:14:00Z",
+        "probe": "resolution",
+        "freshness": "CURRENT"
+      },
+      "scope": {
+        "paths": [
+          "README.md"
+        ],
+        "capabilities": [],
+        "repositories": [
+          "subject"
+        ],
+        "confidence": "FACT"
+      },
+      "constraints": [],
+      "dependencies": [],
+      "parent": {
+        "value": null,
+        "confidence": "UNKNOWN",
+        "reason": "NOT_APPLICABLE",
+        "recoverable_by": "read access to the git host",
+        "observed_at": "2026-09-04T10:14:00Z",
+        "probe": "git.pr",
+        "freshness": "UNKNOWN"
+      },
+      "resolution_confidence": 0.9,
+      "alternatives": []
+    }
+  },
+  "next_action": null
+}

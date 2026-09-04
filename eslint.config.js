@@ -42,9 +42,21 @@ export default tseslint.config(
       },
     },
     rules: {
-      /* An unhandled union member in the envelope-status switch is the failure the
-       * discriminated-union design exists to prevent, so it is an error. */
-      '@typescript-eslint/switch-exhaustiveness-check': 'error',
+      /*
+       * An unhandled union member in the envelope-status switch is the failure the
+       * discriminated-union design exists to prevent, so it is an error.
+       *
+       * A `default` clause counts as covering the rest. The switches that must be exhaustive
+       * — envelope status to kernel action, gate classification — end in `assertNever`, which
+       * makes the compiler enforce it and does so at build time rather than at lint time. The
+       * ones with a `default` are renderers that narrate a handful of event kinds and fall
+       * back to generic text for the rest, and listing thirty kinds to say "generic text"
+       * would obscure the few that are special.
+       */
+      '@typescript-eslint/switch-exhaustiveness-check': [
+        'error',
+        { considerDefaultExhaustiveForUnions: true },
+      ],
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/no-misused-promises': 'error',
       '@typescript-eslint/require-await': 'error',
@@ -91,6 +103,14 @@ export default tseslint.config(
       '@typescript-eslint/no-unnecessary-condition': 'off',
       '@typescript-eslint/no-non-null-assertion': 'off',
       '@typescript-eslint/no-unnecessary-type-assertion': 'off',
+      /* A test double implements an async port with a synchronous fixture. The `async` is
+       * required by the interface, not by the body, and rewriting each one as an explicit
+       * `Promise.resolve` would make the doubles harder to read than the ports they stand in
+       * for. */
+      '@typescript-eslint/require-await': 'off',
+      /* `assert.throws(() => log.append(x))` returns void from a shorthand arrow, which is
+       * exactly how the assertion helpers are meant to be called. */
+      '@typescript-eslint/no-confusing-void-expression': 'off',
     },
   },
 );

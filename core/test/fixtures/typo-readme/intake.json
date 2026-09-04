@@ -1,0 +1,17 @@
+{
+  "source": "NATURAL_LANGUAGE",
+  "source_locator": {
+    "adapter": "host.cli",
+    "op": "read_invocation",
+    "args": {
+      "argv_index": 1
+    }
+  },
+  "raw": "Fix typo in README.",
+  "reread": {
+    "raw": "Fix typo in README."
+  },
+  "identity": {
+    "outcome": "NOT_NAMED"
+  }
+}

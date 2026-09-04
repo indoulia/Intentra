@@ -1,0 +1,227 @@
+{
+  "meta": {
+    "run_id": "run_recorded",
+    "work_item_id": null,
+    "package_version": 1,
+    "assembled_at": "2026-01-01T00:00:00.000Z",
+    "tier": 2,
+    "probe_coverage": [
+      {
+        "probe": "repo.structure",
+        "section": "repository",
+        "state": "RAN",
+        "reason": null,
+        "scope_examined": [
+          "**"
+        ],
+        "scope_not_examined": [],
+        "observed_at": "2026-09-04T10:14:00Z"
+      }
+    ],
+    "adapter_availability": []
+  },
+  "work_item": null,
+  "current_reality": {
+    "implementation_present": {
+      "value": false,
+      "confidence": "FACT",
+      "evidence": [
+        "E-001"
+      ],
+      "observed_at": "2026-09-04T10:14:00Z",
+      "probe": "repo.stack",
+      "freshness": "CURRENT"
+    },
+    "tests_present": {
+      "value": false,
+      "confidence": "FACT",
+      "evidence": [
+        "E-001"
+      ],
+      "observed_at": "2026-09-04T10:14:00Z",
+      "probe": "repo.stack",
+      "freshness": "CURRENT"
+    },
+    "pr": {
+      "value": {
+        "state": "NONE"
+      },
+      "confidence": "FACT",
+      "evidence": [
+        "E-001"
+      ],
+      "observed_at": "2026-09-04T10:14:00Z",
+      "probe": "repo.stack",
+      "freshness": "CURRENT"
+    },
+    "ci": {
+      "value": {
+        "result": "NONE"
+      },
+      "confidence": "FACT",
+      "evidence": [
+        "E-001"
+      ],
+      "observed_at": "2026-09-04T10:14:00Z",
+      "probe": "repo.stack",
+      "freshness": "CURRENT"
+    },
+    "reviews": {
+      "value": {
+        "approved": false,
+        "unresolved_threads": 0,
+        "review_count": 0
+      },
+      "confidence": "FACT",
+      "evidence": [
+        "E-001"
+      ],
+      "observed_at": "2026-09-04T10:14:00Z",
+      "probe": "repo.stack",
+      "freshness": "CURRENT"
+    },
+    "merge_state": {
+      "value": {
+        "state": "MERGEABLE"
+      },
+      "confidence": "FACT",
+      "evidence": [
+        "E-001"
+      ],
+      "observed_at": "2026-09-04T10:14:00Z",
+      "probe": "repo.stack",
+      "freshness": "CURRENT"
+    },
+    "deployment": {
+      "value": null,
+      "confidence": "FACT",
+      "evidence": [
+        "E-001"
+      ],
+      "observed_at": "2026-09-04T10:14:00Z",
+      "probe": "repo.stack",
+      "freshness": "CURRENT"
+    },
+    "outcome_evidence": {
+      "value": false,
+      "confidence": "FACT",
+      "evidence": [
+        "E-001"
+      ],
+      "observed_at": "2026-09-04T10:14:00Z",
+      "probe": "repo.stack",
+      "freshness": "CURRENT"
+    },
+    "children": {
+      "value": [],
+      "confidence": "FACT",
+      "evidence": [
+        "E-001"
+      ],
+      "observed_at": "2026-09-04T10:14:00Z",
+      "probe": "repo.stack",
+      "freshness": "CURRENT"
+    },
+    "agentos_history": {
+      "value": [],
+      "confidence": "FACT",
+      "evidence": [
+        "E-001"
+      ],
+      "observed_at": "2026-09-04T10:14:00Z",
+      "probe": "repo.stack",
+      "freshness": "CURRENT"
+    },
+    "reconciliation": "INDETERMINATE"
+  },
+  "repository": {
+    "languages": {
+      "value": [
+        "markdown"
+      ],
+      "confidence": "FACT",
+      "evidence": [
+        "E-001"
+      ],
+      "observed_at": "2026-09-04T10:14:00Z",
+      "probe": "repo.stack",
+      "freshness": "CURRENT"
+    }
+  },
+  "product": {},
+  "capabilities": null,
+  "architecture": {},
+  "domain_model": {
+    "canonical_ownership": {
+      "value": {},
+      "confidence": "FACT",
+      "evidence": [
+        "E-001"
+      ],
+      "observed_at": "2026-09-04T10:14:00Z",
+      "probe": "repo.stack",
+      "freshness": "CURRENT"
+    }
+  },
+  "source_map": {
+    "sources": {
+      "value": [
+        "README.md"
+      ],
+      "confidence": "FACT",
+      "evidence": [
+        "E-001"
+      ],
+      "observed_at": "2026-09-04T10:14:00Z",
+      "probe": "repo.stack",
+      "freshness": "CURRENT"
+    }
+  },
+  "data_map": {},
+  "api_map": {
+    "endpoints": {
+      "value": [],
+      "confidence": "FACT",
+      "evidence": [
+        "E-001"
+      ],
+      "observed_at": "2026-09-04T10:14:00Z",
+      "probe": "repo.stack",
+      "freshness": "CURRENT"
+    }
+  },
+  "ui_map": {
+    "surfaces": {
+      "value": [],
+      "confidence": "FACT",
+      "evidence": [
+        "E-001"
+      ],
+      "observed_at": "2026-09-04T10:14:00Z",
+      "probe": "repo.stack",
+      "freshness": "CURRENT"
+    }
+  },
+  "tests": {},
+  "git_state": {
+    "commit_count": {
+      "value": 12,
+      "confidence": "FACT",
+      "evidence": [
+        "E-001"
+      ],
+      "observed_at": "2026-09-04T10:14:00Z",
+      "probe": "repo.stack",
+      "freshness": "CURRENT"
+    }
+  },
+  "runtime_state": {},
+  "production_state": {},
+  "intent": {},
+  "reconciliation": [],
+  "agent_capabilities": {},
+  "model_capabilities": {},
+  "constraints": {},
+  "authorization": {},
+  "gaps": []
+}

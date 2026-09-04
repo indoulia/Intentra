@@ -1,0 +1,47 @@
+{
+  "envelope_version": "1.2",
+  "work_item_id": "wi_c_subject",
+  "run_id": "run_20260904T100000Z_000001",
+  "envelope_id": "env_workflow",
+  "dispatch_id": "d_001",
+  "agent": "orchestrator",
+  "agent_version": "1.0",
+  "model": "claude-opus-5",
+  "skills_used": [],
+  "stage_in": "WORKFLOW_SELECTED",
+  "started_at": "2026-09-04T10:14:00Z",
+  "completed_at": "2026-09-04T10:41:00Z",
+  "cost": {
+    "input_tokens": 1000,
+    "output_tokens": 100
+  },
+  "status": "COMPLETE",
+  "summary": "one paragraph a human can read without opening anything else",
+  "findings": [],
+  "evidence": [],
+  "assumptions": [],
+  "unknowns": [],
+  "artifacts_changed": [],
+  "recommendations": [],
+  "blockers": [],
+  "coverage": {
+    "scope_examined": [
+      "(no adapters)"
+    ],
+    "scope_not_examined": [],
+    "confidence": "INFERENCE"
+  },
+  "outputs": {
+    "workflow_proposal": "inline"
+  },
+  "dod_verdicts": [],
+  "proposals": {
+    "workflow": {
+      "template_id": "investigation.readonly",
+      "include_optional": [],
+      "exclude_optional": [],
+      "rationale": "the deliverable is findings and nothing mutates"
+    }
+  },
+  "next_action": null
+}

@@ -1,0 +1,61 @@
+{
+  "envelope_version": "1.2",
+  "work_item_id": "wi_c_subject",
+  "run_id": "run_20260904T100000Z_000001",
+  "envelope_id": "env_root_cause",
+  "dispatch_id": "d_001",
+  "agent": "auditor",
+  "agent_version": "1.0",
+  "model": "claude-opus-5",
+  "skills_used": [],
+  "stage_in": "ROOT_CAUSE",
+  "started_at": "2026-09-04T10:14:00Z",
+  "completed_at": "2026-09-04T10:41:00Z",
+  "cost": {
+    "input_tokens": 1000,
+    "output_tokens": 100
+  },
+  "status": "COMPLETE",
+  "summary": "one paragraph a human can read without opening anything else",
+  "findings": [],
+  "evidence": [
+    {
+      "id": "E-01",
+      "kind": "file",
+      "locator": {
+        "adapter": "repo",
+        "op": "read_file",
+        "args": {
+          "path": "README.md"
+        }
+      },
+      "ref": "README.md",
+      "excerpt": "AgentOs",
+      "observed_at": "2026-09-04T10:14:00Z",
+      "reproducible": true
+    }
+  ],
+  "assumptions": [],
+  "unknowns": [],
+  "artifacts_changed": [],
+  "recommendations": [],
+  "blockers": [],
+  "coverage": {
+    "scope_examined": [
+      "README.md"
+    ],
+    "scope_not_examined": [],
+    "confidence": "FACT"
+  },
+  "outputs": {
+    "root_cause": "the file was written with the wrong capitalization",
+    "evidence_chain": "E-01"
+  },
+  "dod_verdicts": [],
+  "proposals": {},
+  "next_action": {
+    "proposed_stage": "COMPLETION",
+    "proposed_agent": "orchestrator",
+    "rationale": "the cause is established and the deliverable is findings"
+  }
+}

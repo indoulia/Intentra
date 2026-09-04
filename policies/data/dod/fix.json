@@ -4,14 +4,19 @@
   "criteria": [
     1,
     2,
+    3,
+    4,
     5,
     6,
+    8,
     9,
     10,
     12,
     13,
+    14,
     16,
-    17
+    17,
+    18
   ],
   "critical_criteria": [
     5,
@@ -59,6 +64,22 @@
       ],
       "note": "diff review against the approved architecture and the plan's work-unit list"
     },
+    "3": {
+      "kinds": [
+        "file",
+        "git",
+        "command"
+      ],
+      "note": "static analysis plus the capability graph; self-assertion is never evidence"
+    },
+    "4": {
+      "kinds": [
+        "file",
+        "git",
+        "command"
+      ],
+      "note": "static analysis plus the capability graph; self-assertion is never evidence"
+    },
     "5": {
       "kinds": [
         "git",
@@ -74,6 +95,14 @@
         "command"
       ],
       "note": "static analysis plus the capability graph; self-assertion is never evidence"
+    },
+    "8": {
+      "kinds": [
+        "screenshot",
+        "http",
+        "command"
+      ],
+      "note": "the Product/UX verdict with the states actually exercised; screenshots alone are never enough, because a screenshot's content is not kernel-verifiable"
     },
     "9": {
       "kinds": [
@@ -105,6 +134,14 @@
       ],
       "note": "a traced real record, with the trace recorded"
     },
+    "14": {
+      "kinds": [
+        "screenshot",
+        "http",
+        "command"
+      ],
+      "note": "the Product/UX verdict with the states actually exercised; screenshots alone are never enough, because a screenshot's content is not kernel-verifiable"
+    },
     "16": {
       "kinds": [
         "file",
@@ -121,6 +158,15 @@
         "command"
       ],
       "note": "static analysis plus the capability graph; self-assertion is never evidence"
+    },
+    "18": {
+      "kinds": [
+        "file",
+        "document",
+        "ticket",
+        "query"
+      ],
+      "note": "package contents; for criterion 16, documentation compared against the code it describes rather than against the diff"
     }
   },
   "applies_when": {

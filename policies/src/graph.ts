@@ -30,12 +30,29 @@ export function incoming(graph: GraphView, to: Stage): readonly WorkflowEdge[] {
 
 /** Every stage reachable from the entry over all edges, loops included. */
 export function reachable(graph: GraphView): ReadonlySet<Stage> {
-  const seen = new Set<Stage>([graph.entry]);
-  const queue: Stage[] = [graph.entry];
+  return reachableFrom(graph, graph.entry, null);
+}
+
+/**
+ * Every stage reachable from `start`, over the given edge kinds or over all of them.
+ *
+ * Two questions are asked of it. "Which stages does the run reach going forwards" decides
+ * whether a stage belongs to the declared order's forward progress; "can this stage be
+ * reached again from the one it points back to" decides whether a backwards edge closes a
+ * legitimate cycle or is a declaration-order defect.
+ */
+export function reachableFrom(
+  graph: GraphView,
+  start: Stage,
+  kinds: ReadonlySet<WorkflowEdge['kind']> | null,
+): ReadonlySet<Stage> {
+  const seen = new Set<Stage>([start]);
+  const queue: Stage[] = [start];
   while (queue.length > 0) {
     const current = queue.shift() as Stage;
     for (const edge of graph.edges) {
       if (edge.from !== current) continue;
+      if (kinds !== null && !kinds.has(edge.kind)) continue;
       if (seen.has(edge.to)) continue;
       seen.add(edge.to);
       queue.push(edge.to);
@@ -189,6 +206,39 @@ export function checkWellFormed(graph: GraphView): WellFormedness {
         + 'exactly one holds',
       );
     }
+  }
+
+  /*
+   * The declared stage order is the run order.
+   *
+   * The kernel's resume sweep walks `stages` in declaration order, so that order carries
+   * meaning and has to be checked rather than assumed. Two things make it trustworthy: the
+   * entry is the first stage declared, and no forward edge runs backwards through the
+   * declaration unless it closes a cycle — `change_request.land` legitimately loops
+   * `STRUCTURAL_REAUDIT -> PR_REVIEW` back to its own entry, and a template that merely
+   * listed its stages out of order would not.
+   */
+  const index = new Map<TemplateStage, number>(graph.stages.map((s, i) => [s, i]));
+  if (graph.stages.length > 0 && graph.stages[0] !== graph.entry) {
+    problems.push(
+      `the entry stage ${graph.entry} is not the first declared stage (${String(graph.stages[0])}); `
+      + 'the declared order is the order the resume sweep walks, so it must start where the run does',
+    );
+  }
+  const forwardReachable = reachableFrom(graph, graph.entry, new Set(['advance', 'branch']));
+  for (const edge of graph.edges) {
+    if (edge.kind !== 'advance' && edge.kind !== 'branch') continue;
+    const from = index.get(edge.from);
+    const to = index.get(edge.to as TemplateStage);
+    if (from === undefined || to === undefined) continue;
+    if (!forwardReachable.has(edge.from) || !forwardReachable.has(edge.to)) continue;
+    if (from < to) continue;
+    if (reachableFrom(graph, edge.to, null).has(edge.from)) continue;
+    problems.push(
+      `edge ${edge.from} -> ${edge.to} runs backwards through the declared stage order and `
+      + 'does not close a cycle; the declared order is the order the resume sweep walks, so a '
+      + 'forward edge that goes backwards in it would have the sweep classify stages out of order',
+    );
   }
 
   return { ok: problems.length === 0, problems };

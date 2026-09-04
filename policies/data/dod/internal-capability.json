@@ -4,11 +4,22 @@
   "criteria": [
     1,
     2,
+    3,
+    4,
     5,
+    6,
+    7,
+    8,
     9,
+    10,
+    11,
     12,
+    13,
+    14,
+    15,
     16,
-    17
+    17,
+    18
   ],
   "critical_criteria": [
     1,
@@ -79,6 +90,22 @@
       ],
       "note": "diff review against the approved architecture and the plan's work-unit list"
     },
+    "3": {
+      "kinds": [
+        "file",
+        "git",
+        "command"
+      ],
+      "note": "static analysis plus the capability graph; self-assertion is never evidence"
+    },
+    "4": {
+      "kinds": [
+        "file",
+        "git",
+        "command"
+      ],
+      "note": "static analysis plus the capability graph; self-assertion is never evidence"
+    },
     "5": {
       "kinds": [
         "git",
@@ -87,17 +114,86 @@
       ],
       "note": "diff review against the approved architecture and the plan's work-unit list"
     },
+    "6": {
+      "kinds": [
+        "file",
+        "git",
+        "command"
+      ],
+      "note": "static analysis plus the capability graph; self-assertion is never evidence"
+    },
+    "7": {
+      "kinds": [
+        "query",
+        "http",
+        "log",
+        "command"
+      ],
+      "note": "a traced real record, with the trace recorded"
+    },
+    "8": {
+      "kinds": [
+        "screenshot",
+        "http",
+        "command"
+      ],
+      "note": "the Product/UX verdict with the states actually exercised; screenshots alone are never enough, because a screenshot's content is not kernel-verifiable"
+    },
     "9": {
       "kinds": [
         "command"
       ],
       "note": "test execution output, not a claim about tests"
     },
+    "10": {
+      "kinds": [
+        "file",
+        "document",
+        "ticket",
+        "query"
+      ],
+      "note": "package contents; for criterion 16, documentation compared against the code it describes rather than against the diff"
+    },
+    "11": {
+      "kinds": [
+        "log",
+        "metric",
+        "query",
+        "http"
+      ],
+      "note": "observed logs, metrics or traces from a running system"
+    },
     "12": {
       "kinds": [
         "command"
       ],
       "note": "test execution output, not a claim about tests"
+    },
+    "13": {
+      "kinds": [
+        "query",
+        "http",
+        "log",
+        "command"
+      ],
+      "note": "a traced real record, with the trace recorded"
+    },
+    "14": {
+      "kinds": [
+        "screenshot",
+        "http",
+        "command"
+      ],
+      "note": "the Product/UX verdict with the states actually exercised; screenshots alone are never enough, because a screenshot's content is not kernel-verifiable"
+    },
+    "15": {
+      "kinds": [
+        "log",
+        "metric",
+        "query",
+        "http"
+      ],
+      "note": "production observations, under authorization"
     },
     "16": {
       "kinds": [
@@ -115,6 +211,15 @@
         "command"
       ],
       "note": "static analysis plus the capability graph; self-assertion is never evidence"
+    },
+    "18": {
+      "kinds": [
+        "file",
+        "document",
+        "ticket",
+        "query"
+      ],
+      "note": "package contents; for criterion 16, documentation compared against the code it describes rather than against the diff"
     }
   },
   "applies_when": {

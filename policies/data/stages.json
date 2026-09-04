@@ -11,7 +11,7 @@
         "orphan_inventory"
       ],
       "exit_condition": "a capability graph covering the work item scope exists, every finding carries evidence, and coverage states what was not examined",
-      "satisfied_by": null,
+      "satisfied_by": "reality.stage_completed_previously",
       "gates_possible": [],
       "dod_criteria": [
         3,
@@ -28,7 +28,7 @@
         "evidence_chain"
       ],
       "exit_condition": "the observed behaviour is explained by a cause established from evidence, or a blocker states why it cannot be",
-      "satisfied_by": null,
+      "satisfied_by": "reality.stage_completed_previously",
       "gates_possible": [],
       "dod_criteria": [],
       "applicability_predicate": null
@@ -44,7 +44,7 @@
         "failure_semantics"
       ],
       "exit_condition": "the target architecture, its delta from current, canonical ownership and failure semantics are recorded, with rejected alternatives",
-      "satisfied_by": null,
+      "satisfied_by": "reality.stage_completed_previously",
       "gates_possible": [],
       "dod_criteria": [
         2,
@@ -60,7 +60,7 @@
         "plan"
       ],
       "exit_condition": "an ordered list of work units exists and every unit names an applicable DoD profile",
-      "satisfied_by": null,
+      "satisfied_by": "reality.stage_completed_previously",
       "gates_possible": [],
       "dod_criteria": [],
       "applicability_predicate": null
@@ -213,7 +213,7 @@
         "review_state"
       ],
       "exit_condition": "the review state for the current head is read, and every thread is either resolved or routed",
-      "satisfied_by": "reality.pr_approved",
+      "satisfied_by": "reality.pr_reviewed",
       "gates_possible": [],
       "dod_criteria": [],
       "applicability_predicate": null

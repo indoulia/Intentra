@@ -1,0 +1,81 @@
+{
+  "envelope_version": "1.2",
+  "work_item_id": "wi_c_subject",
+  "run_id": "run_20260904T100000Z_000001",
+  "envelope_id": "env_audit",
+  "dispatch_id": "d_001",
+  "agent": "auditor",
+  "agent_version": "1.0",
+  "model": "claude-opus-5",
+  "skills_used": [],
+  "stage_in": "AUDIT",
+  "started_at": "2026-09-04T10:14:00Z",
+  "completed_at": "2026-09-04T10:41:00Z",
+  "cost": {
+    "input_tokens": 1000,
+    "output_tokens": 100
+  },
+  "status": "COMPLETE",
+  "summary": "one paragraph a human can read without opening anything else",
+  "findings": [],
+  "evidence": [
+    {
+      "id": "E-01",
+      "kind": "file",
+      "locator": {
+        "adapter": "repo",
+        "op": "read_file",
+        "args": {
+          "path": "README.md"
+        }
+      },
+      "ref": "README.md",
+      "excerpt": "AgentOs",
+      "observed_at": "2026-09-04T10:14:00Z",
+      "reproducible": true
+    }
+  ],
+  "assumptions": [],
+  "unknowns": [],
+  "artifacts_changed": [],
+  "recommendations": [],
+  "blockers": [],
+  "coverage": {
+    "scope_examined": [
+      "README.md"
+    ],
+    "scope_not_examined": [],
+    "confidence": "FACT"
+  },
+  "outputs": {
+    "capability_graph": "capabilities/v1.json",
+    "findings_report": "artifacts/findings.md",
+    "orphan_inventory": "artifacts/orphans.md"
+  },
+  "dod_verdicts": [
+    {
+      "criterion": 3,
+      "verdict": "MET",
+      "reason": null,
+      "evidence": [
+        "E-01"
+      ],
+      "capability": "cap.subject"
+    },
+    {
+      "criterion": 4,
+      "verdict": "MET",
+      "reason": null,
+      "evidence": [
+        "E-01"
+      ],
+      "capability": "cap.subject"
+    }
+  ],
+  "proposals": {},
+  "next_action": {
+    "proposed_stage": "ROOT_CAUSE",
+    "proposed_agent": "auditor",
+    "rationale": "the audit found something worth explaining"
+  }
+}

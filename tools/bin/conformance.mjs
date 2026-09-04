@@ -161,6 +161,11 @@ const IO_EXCEPTIONS = new Map([
   ['agents/src/substrate/claude-agent-sdk.ts',
     "decision D-2: the substrate is the transport to the agent execution host, and D-2's "
     + 'reversal clause wants swapping it to be a one-file change.'],
+  ['core/src/replay/fixture.ts',
+    'decision I-18: the boundary through which a recorded run enters, the same shape of '
+    + 'exception as I-11. It reads a directory the operator named on the command line, '
+    + 'validates everything against the contracts before the kernel sees it, and is one file. '
+    + 'No kernel decision code does I/O: the ports the replay builds are in-memory.'],
 ]);
 
 check(

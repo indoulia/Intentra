@@ -25,7 +25,7 @@
     "typecheck": "tsc -b --force",
     "lint": "eslint .",
     "test": "npm run build && npm run test:all",
-    "boundary": "depcruise --config .dependency-cruiser.cjs contracts/src policies/src registries/src state/src adapters/src discovery/src agents/src core/src",
+    "boundary": "node tools/bin/verify.mjs boundary",
     "boundary:delete-core": "node tools/bin/delete-core-test.mjs",
     "verify": "node tools/bin/verify.mjs",
     "test:all": "node tools/bin/test.mjs",

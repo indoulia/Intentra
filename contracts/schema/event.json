@@ -261,7 +261,7 @@
                   "evaluated": { "$ref": "common.json#/$defs/predicateValue" },
                   "mutating": { "type": "boolean" },
                   "decision": {
-                    "enum": ["COMPLETED_PRIOR", "ENTER", "DISCOVER", "BLOCK_AMBIGUOUS_STATE"]
+                    "enum": ["COMPLETED_PRIOR", "ENTER", "PASSED_UNVERIFIED", "NOT_REACHED", "BLOCK_AMBIGUOUS_STATE"]
                   },
                   "evidence": { "type": "array", "items": { "$ref": "common.json#/$defs/id" } }
                 },

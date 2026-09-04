@@ -33,7 +33,7 @@ freeze.
 - `docs/CONTEXT_MODEL.md` — `3709631f74bf9a22`
 - `docs/DATA_SEMANTICS.md` — `82248789997a6e23`
 - `docs/CAPABILITY_MODEL.md` — `49953fc71f677f61`
-- `docs/WORKFLOW_STATE_MACHINE.md` — `49652156db7aaa0a`
+- `docs/WORKFLOW_STATE_MACHINE.md` — `12e129b623d8eb0b`
 - `docs/AGENT_HANDOFF_CONTRACT.md` — `593c9d46250991a5`
 - `docs/DEFINITION_OF_DONE.md` — `4a96122456712c78`
 - `docs/HUMAN_AUTHORIZATION.md` — `a2124c4d081b40b5`
@@ -269,18 +269,28 @@ ceremony.
 Amendments are appended here with date, the document and section changed, the contradiction
 that prompted the change, and the contract version bumped if any.
 
-### 2026-09-04 — WP-1 and WP-2, amendments A-1 to A-14
+### 2026-09-04 — WP-1 to WP-3, amendments A-1 to A-17
 
-Fourteen amendments. A-1 to A-11 were raised by one activity — writing the JSON Schemas against
-the frozen documents; A-12 to A-14 by the next one, authoring the stage descriptors, the nine
-workflow templates and the DoD profiles as policy data, and then having the loader check them
-against each other. That is the activity the plan predicted would raise them
+Seventeen amendments. A-1 to A-11 were raised by one activity — writing the JSON Schemas against
+the frozen documents; A-12 to A-15 by the next two, authoring the stage descriptors, the nine
+workflow templates and the DoD profiles as policy data and having the loader check them against
+each other; A-16 and A-17 by running the kernel's resume computation against the resolution
+document's own scenarios. That is the activity the plan predicted would raise them
 ([IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) section 8: "It will happen, and most often
 in WP-1, because writing a schema against a document is the first activity that reads it
-precisely"), and all fourteen have the second shape it named — **a rule stated against a field the
-shape did not have.** None changes a normative decision; none touches the kernel boundary, the
-dependency rule, the stage vocabulary, the confidence or absence vocabularies, or the gate
-set, so none requires a v0.4.
+precisely"), and A-1 to A-16 have the second shape it named — **a rule stated against a field the
+shape did not have.**
+
+A-17 is the one amendment of a different kind, and it is called out because it changes an
+algorithm rather than a shape: the resume walk's stopping rule contradicted the worked
+scenarios in the same documents, and both readings could not stand. It was resolved in the
+direction the scenarios name, and the safety property the walk exists to protect is
+unchanged and now stated explicitly — a stage the walk passes over is never recorded as done,
+and passing over a mutation that observably has not happened is refused rather than guessed.
+
+None changes a normative decision; none touches the kernel boundary, the dependency rule, the
+stage vocabulary, the confidence or absence vocabularies, or the gate set, so none requires a
+v0.4.
 
 **Contract version bumped:** `HandoffEnvelope` 1.1 → **1.2** (A-1, A-2, A-3 add required
 fields). No other contract had a prior published version to bump.
@@ -301,6 +311,9 @@ fields). No other contract had a prior published version to bump.
 | A-12 | WORKFLOW_STATE_MACHINE · 2.3 | The read-only stage set omitted `COMPLETION`, which made `investigation.readonly` not "entirely non-mutating" as 3.2 states, left its risk class unable to be `READ_ONLY` as 3.6 defines it, and would have fired `AUTONOMOUS_INTAKE_EXECUTION` on read-only work that the resolution document section 9 says is ungated for every trust class. | Added `COMPLETION` to the read-only set, and stated that at stage granularity `mutating` means authoritative state outside AgentOS's own ledger — otherwise every stage is mutating and the flag gates nothing. |
 | A-13 | WORKFLOW_STATE_MACHINE · 4.3 | The resume walk in 5.1 evaluates each stage's `satisfied_by`, and scenario G of the resolution document states `DECOMPOSITION` is `COMPLETED_PRIOR` when children exist — but no reality predicate expressed "children exist". `children_all_terminal` is `FALSE` in exactly that scenario, so it could not stand in. | Added `reality.children_exist`. |
 | A-14 | WORKFLOW_STATE_MACHINE · 3.2 | DEFINITION_OF_DONE section 7 requires an Epic's own outcome to be evaluated against its own profile with evidence, and the Validator is the only role that supplies an outcome verdict. `epic.coordinate` contained no stage the Validator owns, so the obligation had nobody to discharge it: every Epic would have reached `COMPLETION`, found its critical criteria `NOT_VALIDATED`, computed `INCOMPLETE`, and had no stage to route back to. | `epic.coordinate` contains `VALIDATION` after `CHILD_COORDINATION`, for the Epic's own outcome and not for its children's. It is non-mutating and it is not `IMPLEMENTATION`, so both structural guarantees hold. |
+| A-15 | WORKFLOW_STATE_MACHINE · 4.3 | The resume walk evaluates each stage's `satisfied_by`, and the read-only analysis stages had none — so a resumed run re-entered at `AUDIT` however much had already been done, which contradicts section 12 C (a resumed Story marks `AUDIT` and `PLAN` `COMPLETED_PRIOR`) and section 12 D (a resumed Defect enters at `REVIEW_TRIAGE`). Keying them on `reality.implementation_present` would have marked an audit already done because a fix exists, which is the inference the design refuses. | Added `reality.stage_completed_previously`, read from `current_reality.agentos_history`. Code existing does not mean an analysis happened; AgentOS's own ledger is the only honest observation that it did. |
+| A-16 | WORKFLOW_STATE_MACHINE · 4.3 | `PR_REVIEW`’s `satisfied_by` was `reality.pr_approved`, which is `FALSE` in exactly the case section 12 D describes — a pull request reviewed with changes requested. The resume walk therefore could not mark `PR_REVIEW` already done and could not reach `REVIEW_TRIAGE`, the entry that scenario states. Approval is the stage’s *outcome*; the stage’s *mutation* is obtaining a review, and the loop edge to `REVIEW_TRIAGE` exists precisely for a review that went badly. | `PR_REVIEW`’s `satisfied_by` is `reality.pr_reviewed`: a review has been delivered, whatever its verdict. `reality.pr_approved` remains, and remains what the edge conditions read. |
+| A-17 | WORKFLOW_STATE_MACHINE · 5.1 | The walk as written stops at the first stage whose `satisfied_by` is not `TRUE`, and the same document’s worked example plus scenarios 12 C and 12 D require otherwise: `story.standard` contains `ARCHITECTURE`, `STRUCTURAL_REAUDIT` and `UX_REVIEW`, none of which is `COMPLETED_PRIOR` in scenario C, yet that run must enter at `PR_REVIEW` and mark exactly `AUDIT`, `PLAN`, `IMPLEMENTATION`, `VALIDATION` and `PR_PREPARATION`. Stopping at the first non-`TRUE` stage would have entered at `ARCHITECTURE` and re-run planning behind an open pull request. | The walk classifies every stage and the entry is **the first stage not already done at or after the last one that is**. A stage before that point is `PASSED_UNVERIFIED`: not claimed done, not re-entered, and its criteria stay `NOT_VALIDATED` so `COMPLETION` routes back to it. A *mutating* stage observably `FALSE` before a later `COMPLETED_PRIOR` one is a contradiction between two observations and is `BLOCKED` with `AMBIGUOUS_STATE`. |
 
 Two decisions taken while resolving these are recorded because they could otherwise look like
 oversights:

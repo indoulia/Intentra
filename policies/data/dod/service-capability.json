@@ -9,11 +9,13 @@
     5,
     6,
     7,
+    8,
     9,
     10,
     11,
     12,
     13,
+    14,
     15,
     16,
     17,
@@ -101,6 +103,14 @@
       ],
       "note": "a traced real record, with the trace recorded"
     },
+    "8": {
+      "kinds": [
+        "screenshot",
+        "http",
+        "command"
+      ],
+      "note": "the Product/UX verdict with the states actually exercised; screenshots alone are never enough, because a screenshot's content is not kernel-verifiable"
+    },
     "9": {
       "kinds": [
         "command"
@@ -139,6 +149,14 @@
         "command"
       ],
       "note": "a traced real record, with the trace recorded"
+    },
+    "14": {
+      "kinds": [
+        "screenshot",
+        "http",
+        "command"
+      ],
+      "note": "the Product/UX verdict with the states actually exercised; screenshots alone are never enough, because a screenshot's content is not kernel-verifiable"
     },
     "15": {
       "kinds": [

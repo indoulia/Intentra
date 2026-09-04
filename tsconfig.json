@@ -1,7 +1,9 @@
-{
+﻿{
   "files": [],
   "references": [
     { "path": "./contracts" },
-    { "path": "./policies" }
+    { "path": "./policies" },
+    { "path": "./state" },
+    { "path": "./core" }
   ]
 }

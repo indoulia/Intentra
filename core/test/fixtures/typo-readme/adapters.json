@@ -1,0 +1,60 @@
+{
+  "operations": [
+    {
+      "descriptor": {
+        "adapter": "repo",
+        "op": "read_file",
+        "description": "read a file inside the worktree",
+        "mutating": false,
+        "reversal": null,
+        "idempotent_by_key": false,
+        "identity_args": [],
+        "external_destination": false,
+        "observation_safe": true,
+        "incidental_artifacts": [],
+        "args_schema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        "gates": []
+      },
+      "results": {
+        "*": {
+          "path": "README.md",
+          "content": "AgentOs is an operating system for agents."
+        }
+      },
+      "replay": {
+        "outcome": "OK",
+        "value": {
+          "path": "README.md",
+          "content": "AgentOs is an operating system for agents."
+        },
+        "excerpt": "AgentOs"
+      }
+    }
+  ],
+  "availability": [
+    {
+      "adapter": "repo",
+      "state": "AVAILABLE",
+      "detail": "",
+      "checked_at": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "adapter": "git",
+      "state": "NOT_CONFIGURED",
+      "detail": "the recording had no git adapter",
+      "checked_at": "2026-01-01T00:00:00.000Z"
+    }
+  ],
+  "classifications": []
+}

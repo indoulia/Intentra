@@ -75,6 +75,14 @@
       "evaluator": "prApproved"
     },
     {
+      "name": "reality.pr_reviewed",
+      "family": "reality",
+      "description": "A review has been delivered on the pull request, whatever its verdict. This is PR_REVIEW's satisfied_by, and deliberately not pr_approved: the stage obtains a review, and a review that requested changes has still happened. Keying it on approval would make the stage look un-run in exactly the case its own loop edge to REVIEW_TRIAGE exists for.",
+      "reads": ["current_reality.reviews"],
+      "freshness_class": "git",
+      "evaluator": "prReviewed"
+    },
+    {
       "name": "reality.pr_has_unresolved_comments",
       "family": "reality",
       "description": "Unresolved review threads exist on the current head.",
@@ -89,6 +97,14 @@
       "reads": ["current_reality.ci", "current_reality.pr"],
       "freshness_class": "git",
       "evaluator": "ciGreen"
+    },
+    {
+      "name": "reality.stage_completed_previously",
+      "family": "reality",
+      "description": "A prior Workflow Run against this Work Item completed the stage being asked about, read from current_reality.agentos_history. This is the satisfied_by of the read-only analysis stages, and it is keyed on AgentOS's own ledger because code existing does not mean an analysis happened. The ledger is authoritative about what AgentOS did and says nothing about whether it still holds, which is the right scope: 'did we analyse this' is a question about the past.",
+      "reads": ["current_reality.agentos_history", "stage"],
+      "freshness_class": "agentos",
+      "evaluator": "stageCompletedPreviously"
     },
     {
       "name": "reality.children_exist",

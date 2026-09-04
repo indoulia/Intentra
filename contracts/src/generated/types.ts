@@ -806,7 +806,7 @@ export type EntryStageComputedLogEvent = {
       readonly satisfied_by: string | null;
       readonly evaluated: PredicateValue;
       readonly mutating: boolean;
-      readonly decision: "COMPLETED_PRIOR" | "ENTER" | "DISCOVER" | "BLOCK_AMBIGUOUS_STATE";
+      readonly decision: "COMPLETED_PRIOR" | "ENTER" | "PASSED_UNVERIFIED" | "NOT_REACHED" | "BLOCK_AMBIGUOUS_STATE";
       readonly evidence: readonly Id[];
     }>;
   };
@@ -1539,9 +1539,12 @@ export type HandoffEnvelope = {
   readonly coverage: Coverage;
   /**
    * The dispatch's `required_outputs`, filled. Keyed by output name; a missing or null key is
-   * an unfilled output, which is what separates PARTIAL from COMPLETE.
+   * an unfilled output, which is what separates PARTIAL from COMPLETE. A value may be any
+   * JSON: a reference into the run store, an inline structure, or a scalar.
    */
-  readonly outputs: Readonly<Record<string, never>>;
+  readonly outputs: {
+    readonly [key: string]: unknown;
+  };
   /**
    * Per-criterion verdicts this stage owes. The kernel does the arithmetic and never judges a
    * criterion itself.
