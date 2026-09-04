@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentos.dev/schema/evidence.json",
+  "title": "Evidence",
+  "description": "An observation the kernel can re-execute. `locator` is what makes evidence a claim the system can check rather than a claim it must believe.",
+  "type": "object",
+  "properties": {
+    "id": { "$ref": "common.json#/$defs/id" },
+    "kind": { "$ref": "common.json#/$defs/evidenceKind" },
+    "locator": { "$ref": "common.json#/$defs/locator" },
+    "ref": {
+      "description": "Human-readable pointer. For human reading only; never the basis of a check.",
+      "$ref": "common.json#/$defs/nonEmptyString"
+    },
+    "excerpt": { "type": "string" },
+    "observed_at": { "$ref": "common.json#/$defs/timestamp" },
+    "reproducible": {
+      "description": "False for a genuinely unrepeatable observation, which caps the assertion it supports at INFERENCE.",
+      "type": "boolean"
+    },
+    "predicate": {
+      "description": "Mandatory for kind `log` and `metric`: the kernel re-evaluates a predicate rather than comparing a volatile raw value.",
+      "$ref": "#/$defs/predicate"
+    },
+    "verification": {
+      "description": "Kernel-owned. An envelope arriving with this populated is a contract violation.",
+      "$ref": "#/$defs/verification"
+    }
+  },
+  "required": ["id", "kind", "locator", "ref", "excerpt", "observed_at", "reproducible"],
+  "additionalProperties": false,
+  "$defs": {
+    "predicate": {
+      "description": "A machine-evaluable statement about an observation, e.g. `count == 0` or `error_rate < 0.01`.",
+      "type": "object",
+      "properties": {
+        "subject": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "operator": { "enum": ["eq", "ne", "lt", "lte", "gt", "gte", "contains", "not_contains", "matches"] },
+        "operand": { "type": ["string", "number", "boolean", "null"] }
+      },
+      "required": ["subject", "operator", "operand"],
+      "additionalProperties": false
+    },
+    "verification": {
+      "type": "object",
+      "properties": {
+        "status": { "$ref": "common.json#/$defs/verificationStatus" },
+        "at": { "$ref": "common.json#/$defs/timestamp" },
+        "by": { "const": "kernel" },
+        "matches": { "type": ["boolean", "null"] },
+        "detail": { "type": "string" }
+      },
+      "required": ["status", "at", "by", "matches"],
+      "additionalProperties": false
+    }
+  }
+}

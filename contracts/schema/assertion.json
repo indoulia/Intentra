@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentos.dev/schema/assertion.json",
+  "title": "Assertion",
+  "description": "Every leaf value in the system is one. A discriminated union on `confidence`, so the obligations of each class are structural rather than remembered: FACT owes evidence, INFERENCE owes what it was derived from, UNKNOWN owes a reason and what would recover it.",
+  "oneOf": [
+    { "$ref": "#/$defs/fact" },
+    { "$ref": "#/$defs/inference" },
+    { "$ref": "#/$defs/unknown" }
+  ],
+  "$defs": {
+    "evidenceRef": {
+      "description": "An evidence id where an evidence pool exists to reference — an envelope carries `evidence[]` and its assertions cite ids — or the evidence itself where the assertion stands alone, as every assertion in the Context Package does. Both forms occur in the frozen documents and both are the same evidence.",
+      "oneOf": [{ "$ref": "common.json#/$defs/id" }, { "$ref": "evidence.json" }]
+    },
+    "base": {
+      "type": "object",
+      "properties": {
+        "value": {},
+        "confidence": { "$ref": "common.json#/$defs/confidenceClass" },
+        "observed_at": { "$ref": "common.json#/$defs/timestamp" },
+        "probe": {
+          "description": "The probe or dispatch that produced this assertion. Required so that every assertion names its source, agent-authored inferences included.",
+          "$ref": "common.json#/$defs/nonEmptyString"
+        },
+        "freshness": { "$ref": "common.json#/$defs/freshness" }
+      },
+      "required": ["value", "confidence", "observed_at", "probe", "freshness"]
+    },
+    "fact": {
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "type": "object",
+      "properties": {
+        "confidence": { "const": "FACT" },
+        "evidence": {
+          "description": "A FACT with no evidence is an INFERENCE that has not admitted it.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/evidenceRef" }
+        }
+      },
+      "required": ["evidence"],
+      "unevaluatedProperties": false
+    },
+    "inference": {
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "type": "object",
+      "properties": {
+        "confidence": { "const": "INFERENCE" },
+        "derived_from": {
+          "description": "Assertion or evidence ids this was reasoned from.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.json#/$defs/id" }
+        },
+        "reasoning": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidenceRef" } }
+      },
+      "required": ["derived_from", "reasoning"],
+      "unevaluatedProperties": false
+    },
+    "unknown": {
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "type": "object",
+      "properties": {
+        "confidence": { "const": "UNKNOWN" },
+        "value": { "const": null },
+        "reason": { "$ref": "common.json#/$defs/absenceReason" },
+        "recoverable_by": {
+          "description": "What would resolve it. This is what makes an unknown actionable rather than decorative, and it is what the uncertainty ladder's rung 2 dispatches.",
+          "$ref": "common.json#/$defs/nonEmptyString"
+        },
+        "attempted": { "type": "string" }
+      },
+      "required": ["reason", "recoverable_by"],
+      "unevaluatedProperties": false
+    }
+  }
+}

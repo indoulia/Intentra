@@ -17,10 +17,11 @@ Three properties follow from that, and they are the point of the contract:
 
 ```json
 {
-  "envelope_version": "1.1",
+  "envelope_version": "1.2",
   "work_item_id": "wi_jira_DEF-456",
   "run_id": "run_2026_09_04_a1b2",
   "envelope_id": "env_007",
+  "dispatch_id": "d_014",
   "agent": "auditor",
   "agent_version": "1.0",
   "model": "claude-opus-5",
@@ -43,10 +44,20 @@ Three properties follow from that, and they are the point of the contract:
   "blockers": [],
 
   "coverage": {
-    "scope_examined": "...",
-    "scope_not_examined": "...",
+    "scope_examined": ["src/ipo/**"],
+    "scope_not_examined": ["src/audit/**"],
     "confidence": "INFERENCE"
   },
+
+  "outputs": {
+    "capability_graph": "capabilities/v2.json",
+    "findings_report": "artifacts/findings-audit.md"
+  },
+
+  "dod_verdicts": [
+    { "criterion": 3, "verdict": "MET", "reason": null,
+      "evidence": ["E-031"], "capability": "cap.ipo-classification" }
+  ],
 
   "proposals": {},
 
@@ -61,6 +72,24 @@ Three properties follow from that, and they are the point of the contract:
 `state_in` became `stage_in` and `proposed_state` became `proposed_stage` in envelope
 version 1.1, following the vocabulary change in
 [WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md) section 2.
+
+Envelope version 1.2 adds three fields, all required, and each because a rule the design
+already states had no field to read (amendments A-1 to A-3 in
+[ARCHITECTURE_FREEZE.md](ARCHITECTURE_FREEZE.md) section 8):
+
+- **`dispatch_id`** — echoes the dispatch this envelope answers. `artifacts_changed` and
+  `coverage` are reconciled against *the dispatch's* mutation events and call log, so an
+  envelope that does not name its dispatch cannot be reconciled at all, and a substrate
+  returning the wrong envelope would be undetectable.
+- **`outputs`** — the dispatch's `required_outputs`, filled, keyed by output name. `COMPLETE`
+  requires "every `required_output` present", and before this the envelope had nowhere to put
+  one.
+- **`dod_verdicts`** — the per-criterion verdicts this stage owes.
+  [DEFINITION_OF_DONE.md](DEFINITION_OF_DONE.md) section 3 has agents supply them and the
+  kernel do the arithmetic; the envelope is the only transport and had no field for them.
+
+`coverage.scope_examined` and `scope_not_examined` are lists of scope entries rather than
+prose, because they are reconciled against the call log mechanically.
 
 ## Status values
 
@@ -122,6 +151,7 @@ incorrectly under real conditions) · `MEDIUM` (works, with material gaps) · `L
   "ref": "runtime.postgres.staging :: classification.sme",
   "excerpt": "0",
   "observed_at": "2026-09-04T10:22:00Z",
+  "reproducible": true,
   "verification": {
     "status": "VERIFIED",
     "at": "2026-09-04T10:23:11Z",
@@ -137,10 +167,16 @@ Kinds: `file` · `git` · `command` · `query` · `http` · `log` · `ticket` ·
 **`locator` is mandatory and must be re-executable by the kernel.** It names an adapter, a
 read-only operation on that adapter, and the arguments needed to reproduce the observation.
 `ref` and `excerpt` remain for human reading; `locator` is what makes evidence a claim the
-system can check rather than a claim it must believe. Evidence whose observation is
+system can check rather than a claim it must believe. `reproducible` is mandatory and states
+which case this is. Evidence whose observation is
 genuinely unrepeatable (a log line since rotated, a one-shot runtime state) sets
 `locator.op` to `null` and carries `reproducible: false` — which caps the assertion it
 supports at `INFERENCE`, never `FACT`.
+
+Evidence of kind `log` or `metric` additionally carries a **`predicate`** — the statement the
+observation satisfied, as a typed `{ subject, operator, operand }`. The kernel re-evaluates a
+predicate for those kinds rather than comparing a volatile raw value, and the rule was stated
+below without naming the field that carries it (amendment A-6).
 
 **`verification` is written only by the kernel.** An envelope arriving with a
 `verification` block populated is a contract violation, logged as such and handled as
@@ -227,29 +263,60 @@ most consequential claim in the envelope as the one nobody verified.
 
 The v0.3 additions, and the only place an agent may ask for something structural. Every one
 is a **proposal** the kernel admits, adjusts or refuses, and every one is optional — an
-agent fills only the keys its mandate calls for.
+agent fills only the keys its mandate calls for. The example shows every key filled at once,
+which no single dispatch ever does; `work_item` is omitted because
+[INTENT_AND_WORK_ITEM_RESOLUTION.md](INTENT_AND_WORK_ITEM_RESOLUTION.md) section 3.2 carries
+it in full.
 
 ```json
 {
   "proposals": {
-    "work_item": { },
     "workflow": {
       "template_id": "defect.standard",
       "include_optional": ["ARCHITECTURE"],
       "exclude_optional": [
-        { "stage": "UX_REVIEW", "claim": "ux.required is FALSE", "rationale": "..." }
+        { "stage": "UX_REVIEW", "claim": "ux.required is FALSE",
+          "rationale": "no path under a ui_map surface is in scope" }
       ],
-      "rationale": "..."
+      "rationale": "a defect in an existing capability, with a contract boundary in scope"
     },
     "decomposition": [
-      { "title": "...", "type": "STORY", "scope": { }, "desired_outcome": "...",
+      { "title": "Detect remote changes", "type": "STORY",
+        "scope": { "paths": ["src/sync/detect/**"], "capabilities": ["cap.change-detect"],
+                   "repositories": ["marksy"] },
+        "desired_outcome": "a remote change is observed within the configured interval",
         "depends_on": [], "external_identity": "jira:STORY-101" }
     ],
     "triage": [
-      { "thread_id": "rt_7", "reading": "...", "remediation_scope": { "paths": ["..."] },
-        "proposed_route": "COMMENT_RESOLUTION" }
+      { "thread_id": "rt_7", "reading": "add a test covering restart recovery",
+        "remediation_scope": { "paths": ["tests/namespace/**"], "capabilities": [],
+                               "repositories": ["marksy"] },
+        "separable": "FALSE", "proposed_route": "COMMENT_RESOLUTION" }
     ],
-    "cancellation": { "work_item_id": "...", "to": "SUPERSEDED", "evidence": ["E-12"] }
+    "cancellation": { "work_item_id": "wi_jira_STORY-201", "to": "SUPERSEDED",
+                      "evidence": ["E-12"],
+                      "rationale": "the outcome is already observable in production" },
+    "dispatch": { "stage": "PLAN", "agent": "architect",
+                  "objective": "order the work units and assign a DoD profile to each",
+                  "mandate_scope": { "paths": ["src/namespace/**"],
+                                     "capabilities": ["cap.namespace-restore"],
+                                     "repositories": ["marksy"] },
+                  "advisory_notes": "untrusted free text" },
+    "arbitration": { "conflict_id": "c_03", "classification": "FACTUAL",
+                     "discriminating_observation": "read the namespace table after a restart",
+                     "resolution": "A",
+                     "rationale": "one position is FACT, the other INFERENCE" },
+    "authorization_request": {
+      "gate": "MERGE_PROTECTED", "target": "marksy :: main",
+      "what": "merge PR #412 into main",
+      "why": "the fix is validated and the review is resolved",
+      "blast_radius": "one service, one namespace loader",
+      "reversibility": { "how": "revert the merge commit", "verified": true,
+                         "cost": "one deploy cycle" },
+      "evidence": ["E-031"], "unknowns": ["production restart cadence"],
+      "alternatives": ["do nothing and leave the defect open"],
+      "recommendation": "merge"
+    }
   }
 }
 ```
@@ -272,6 +339,17 @@ What the kernel does with each:
   means a child Work Item; outside and inseparable means `SCOPE_EXPANSION`.
 - **`cancellation`** — admitted only if `reality.outcome_already_satisfied` evaluates `TRUE`
   from adapter evidence. Otherwise it escalates to a human.
+- **`dispatch`** — the Orchestrator Agent's proposed next dispatch: agent, mandate, model and
+  skill preference. An input to the kernel's selection and to the registries' ranking, never
+  a bypass of either.
+- **`arbitration`** — a surviving conflict's resolution on the merits. The kernel executes it:
+  dispatching the named probe, or escalating where the agent says it cannot settle it.
+- **`authorization_request`** — a *draft*. The kernel records the request and a human decides;
+  a draft is not a request and no grant originates here.
+
+These last three complete the set. [AGENT_ROLES.md](AGENT_ROLES.md) role 1 already lists them
+among the Orchestrator Agent's outputs, and `proposals` is the only structural channel an
+agent has, so a closed `proposals` object had to name them (amendment A-4).
 
 A proposal an agent is not entitled to make — a workflow proposal from the Implementer, a
 decomposition outside `DECOMPOSITION` — is a contract violation, logged and handled as
@@ -408,6 +486,17 @@ a contract violation handled as `BLOCKED`:
 - A Product/UX verdict on a claimed-exercised state requires at least one
   call-log-anchored evidence item for that state, not screenshots alone.
 - Every assertion carries a confidence class.
+- `dispatch_id` must equal the dispatch the kernel issued. A mismatch is a contract violation
+  rather than a relabelling, because the reconciliations in step 3 are per dispatch.
+- Every key in `outputs` must name a `required_output` of this dispatch, and a
+  `required_output` that is absent or `null` is unfilled — which is what makes `PARTIAL`
+  distinguishable from `COMPLETE` mechanically.
+- Every `dod_verdicts[].criterion` must be one this stage owns, per `dod_criteria_owed`. An
+  agent supplying a verdict on a criterion it does not own is a contract violation: no agent
+  supplies the verdict on its own work, and that rule is only enforceable if ownership is
+  checked on arrival.
+- `dod_verdicts[].verdict` of `NOT_APPLICABLE` or `NOT_VALIDATED` requires a `reason`. A
+  criterion set aside without one is a criterion quietly skipped.
 
 ## Kernel enforcement
 
@@ -437,33 +526,66 @@ Symmetrically, an agent receives a typed input, never a conversation:
 ```json
 {
   "work_item_id": "wi_jira_DEF-456",
-  "run_id": "...",
+  "run_id": "run_2026_09_04_a1b2",
+  "dispatch_id": "d_014",
   "agent": "architect",
+  "mandate_name": "architecture",
   "stage": "ARCHITECTURE",
   "work_item_ref": "../work-item.json",
+  "intake_ref": null,
   "workflow": { "template_id": "defect.standard", "version": "1.0",
-                "stages_remaining": ["PLAN", "IMPLEMENTATION", "..."] },
+                "stages_remaining": ["PLAN", "IMPLEMENTATION", "VALIDATION"] },
   "context_package_ref": "context/v3.json",
+  "context_sections": { "domain_model": { }, "data_map": { }, "api_map": { } },
   "capability_registry_ref": "capabilities/v2.json",
   "prior_envelopes": ["env_002", "env_007"],
-  "dispatch_id": "d_014",
   "mandate": {
     "objective": "...",
     "in_scope": ["src/pricing/**"],
     "out_of_scope": ["src/auth/**", "tests/fixtures/**"],
+    "capabilities": ["cap.pricing"],
     "advisory_notes": "untrusted free text from the Orchestrator Agent"
   },
-  "required_inputs": ["goal", "domain_model", "data_map", "api_map"],
+  "required_inputs": ["domain_model", "data_map", "api_map"],
   "required_outputs": ["target_architecture", "plan", "decisions"],
   "dod_profile_ref": "policies/dod/service-capability.json",
-  "constraints": { },
-  "authorization_scope": { },
+  "dod_criteria_owed": [2, 18],
+  "constraints": [],
+  "authorization_scope": { "autonomous": [], "gated": [], "grants_held": [] },
+  "tools_granted": [
+    { "adapter": "repo", "op": "read_file", "tool_name": "repo__read_file",
+      "description": "...", "args_schema": { } }
+  ],
   "skills_available": [],
-  "budget": { }
+  "model": "claude-opus-5",
+  "budget": { "max_usd": 5, "max_turns": 40, "max_wall_clock_ms": 900000 }
 }
 ```
 
 `prior_envelopes` are references to structured envelopes, not transcript text.
+
+Six fields the v0.2 example did not carry, added in amendment A-10 because the dispatch
+boundary cannot be built without them:
+
+- **`mandate_name`** — which of the role's mandates this dispatch is. Context Discovery has
+  two, and `resolution` runs before a Work Item exists.
+- **`intake_ref`** — populated for exactly that case, where `work_item_ref` is still `null`.
+- **`context_sections`** — the materialized subset. `required_inputs` says which sections; this
+  carries them, and is what keeps input size independent of run length.
+- **`dod_criteria_owed`** — the criteria this stage supplies verdicts for, so an agent knows
+  what it owes rather than inferring it.
+- **`tools_granted`** — the exact adapter operations this dispatch may reach, with the tool name
+  each is exposed as. This is the allowlist the startup conformance check compares the
+  substrate's effective tool surface against
+  ([ARCHITECTURE_FREEZE.md](ARCHITECTURE_FREEZE.md) D-2), and without it the check has nothing
+  to compare.
+- **`model`** — the model the kernel selected. The registries rank and the kernel selects; the
+  dispatch is told the outcome rather than choosing.
+
+`required_inputs` no longer lists `goal`. There is no `goal` section: the raw request lives
+verbatim in the `IntakeRecord` and the interpreted version is the admitted Work Item, which
+`work_item_ref` names. `constraints` and `authorization_scope` are shown with their real
+shapes — a list and a typed object — rather than as empty placeholders.
 
 **`work_item_ref` replaces v0.2's inlined `goal`.** There is one authoritative statement of
 what is being attempted, and every agent reads the same one. `workflow` is supplied

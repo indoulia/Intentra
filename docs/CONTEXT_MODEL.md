@@ -43,13 +43,29 @@ Every leaf value in the package is an assertion, not a bare value.
   "value": "postgres",
   "confidence": "FACT",
   "evidence": [
-    { "kind": "file", "ref": "docker-compose.yml:12", "excerpt": "image: postgres:15" }
+    {
+      "id": "E-004",
+      "kind": "file",
+      "locator": { "adapter": "repo", "op": "read_file",
+                   "args": { "path": "docker-compose.yml", "lines": "12-12" } },
+      "ref": "docker-compose.yml:12",
+      "excerpt": "image: postgres:15",
+      "observed_at": "2026-09-04T10:14:00Z",
+      "reproducible": true
+    }
   ],
   "observed_at": "2026-09-04T10:14:00Z",
   "probe": "repo.stack",
   "freshness": "CURRENT"
 }
 ```
+
+An assertion in the package carries its evidence **inline**, because a Context Package
+assertion stands alone — there is no envelope-level `evidence[]` here to reference. In an
+envelope the same assertion cites evidence ids instead, and the contract admits both forms
+because both occur in this design and both are the same evidence. Inline evidence is complete
+evidence: the re-executable `locator` and `reproducible` are what let the kernel replay it,
+and an earlier draft of this example omitted them (amendment A-11).
 
 For `INFERENCE`, `evidence` is replaced or supplemented by `derived_from` (assertion ids)
 plus the reasoning in one sentence. For `UNKNOWN`, `reason` is mandatory and

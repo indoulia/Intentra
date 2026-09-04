@@ -1,0 +1,18 @@
+{
+  "name": "@agentos/core",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": { ".": "./dist/src/index.js" },
+  "dependencies": {
+    "@agentos/contracts": "0.3.0",
+    "@agentos/policies": "0.3.0",
+    "@agentos/registries": "0.3.0",
+    "@agentos/adapters": "0.3.0",
+    "@agentos/state": "0.3.0",
+    "@agentos/agents": "0.3.0",
+    "@agentos/discovery": "0.3.0"
+  }
+}

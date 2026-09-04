@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentos.dev/schema/work-item.json",
+  "title": "Intake and Work Item",
+  "description": "IntakeRecord, the proposed Work Item resolution produces, and the admitted Work Item the kernel creates from it.",
+  "$defs": {
+    "intakeRecord": {
+      "description": "Adapter-normalized. `raw` is verbatim: no agent summarizes intake before it is recorded, because a summary that drops the discriminating clause is how a resolution goes wrong invisibly.",
+      "type": "object",
+      "properties": {
+        "intake_id": { "$ref": "common.json#/$defs/id" },
+        "received_at": { "$ref": "common.json#/$defs/timestamp" },
+        "source": { "$ref": "common.json#/$defs/intakeSource" },
+        "source_locator": { "$ref": "common.json#/$defs/locator" },
+        "principal": { "$ref": "#/$defs/principal" },
+        "trust_class": {
+          "description": "Set by the host from authenticated context, never from the content. A webhook body cannot promote itself.",
+          "$ref": "common.json#/$defs/trustClass"
+        },
+        "raw": { "type": "string" },
+        "content_hash": {
+          "description": "Hash of `raw` at admission. Compared at COMPLETION against a re-execution of `source_locator` to detect source drift.",
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "attachments": { "type": "array", "items": { "$ref": "#/$defs/attachment" } },
+        "correlation": {
+          "type": "object",
+          "properties": {
+            "prior_work_item": { "type": ["string", "null"], "minLength": 1 },
+            "prior_run": { "type": ["string", "null"], "minLength": 1 }
+          },
+          "required": ["prior_work_item", "prior_run"],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "intake_id", "received_at", "source", "source_locator", "principal",
+        "trust_class", "raw", "content_hash", "attachments", "correlation"
+      ],
+      "additionalProperties": false
+    },
+
+    "principal": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "asserted_by": {
+          "description": "Which host asserted this identity. A host that cannot assert a principal classifies the intake EXTERNAL.",
+          "$ref": "common.json#/$defs/nonEmptyString"
+        }
+      },
+      "required": ["id", "asserted_by"],
+      "additionalProperties": false
+    },
+
+    "attachment": {
+      "type": "object",
+      "properties": {
+        "name": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "locator": { "$ref": "common.json#/$defs/locator" },
+        "media_type": { "$ref": "common.json#/$defs/nonEmptyString" }
+      },
+      "required": ["name", "locator", "media_type"],
+      "additionalProperties": false
+    },
+
+    "proposedWorkItem": {
+      "description": "Resolution's output. Every field is an assertion with a confidence class, the type included.",
+      "type": "object",
+      "properties": {
+        "source_intake": { "$ref": "common.json#/$defs/id" },
+        "intent": { "$ref": "assertion.json" },
+        "type": { "$ref": "assertion.json" },
+        "external_identity": { "$ref": "assertion.json" },
+        "title": { "$ref": "assertion.json" },
+        "desired_outcome": { "$ref": "assertion.json" },
+        "scope": { "$ref": "#/$defs/scopeAssertion" },
+        "constraints": { "type": "array", "items": { "$ref": "common.json#/$defs/nonEmptyString" } },
+        "dependencies": { "type": "array", "items": { "$ref": "common.json#/$defs/nonEmptyString" } },
+        "parent": { "$ref": "assertion.json" },
+        "resolution_confidence": {
+          "description": "The agent's own number. Recorded, never the reason anything is believed, consulted only at the policy threshold.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "alternatives": {
+          "description": "Every alternative reading considered and why it was rejected. This list is what the uncertainty ladder and any question to a human are built from.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/alternative" }
+        }
+      },
+      "required": [
+        "source_intake", "intent", "type", "external_identity", "title",
+        "desired_outcome", "scope", "constraints", "dependencies", "parent",
+        "resolution_confidence", "alternatives"
+      ],
+      "additionalProperties": false
+    },
+
+    "alternative": {
+      "type": "object",
+      "properties": {
+        "type": { "$ref": "common.json#/$defs/workItemType" },
+        "reading": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "why_rejected": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "would_do": {
+          "description": "What AgentOS would do under this reading. Rung 4 of the uncertainty ladder asks with this in hand.",
+          "type": "string"
+        }
+      },
+      "required": ["type", "reading", "why_rejected"],
+      "additionalProperties": false
+    },
+
+    "scopeAssertion": {
+      "type": "object",
+      "properties": {
+        "paths": { "type": "array", "items": { "$ref": "common.json#/$defs/pathGlob" } },
+        "capabilities": { "type": "array", "items": { "$ref": "common.json#/$defs/id" } },
+        "repositories": { "type": "array", "items": { "$ref": "common.json#/$defs/nonEmptyString" } },
+        "confidence": { "$ref": "common.json#/$defs/confidenceClass" }
+      },
+      "required": ["paths", "capabilities", "repositories", "confidence"],
+      "additionalProperties": false
+    },
+
+    "workItem": {
+      "description": "The durable thing AgentOS is trying to accomplish. It outlives every attempt.",
+      "type": "object",
+      "properties": {
+        "work_item_id": { "$ref": "common.json#/$defs/id" },
+        "created_at": { "$ref": "common.json#/$defs/timestamp" },
+        "source_intake": { "$ref": "common.json#/$defs/id" },
+        "origin_trust_class": { "$ref": "common.json#/$defs/trustClass" },
+        "type": { "$ref": "common.json#/$defs/workItemType" },
+        "claimed_type": {
+          "description": "What resolution asserted, kept when the kernel admitted the item as UNKNOWN for want of the type's minimum evidence.",
+          "oneOf": [{ "$ref": "common.json#/$defs/workItemType" }, { "type": "null" }]
+        },
+        "title": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "external_identity": { "type": ["string", "null"], "minLength": 1 },
+        "desired_outcome": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "scope": { "$ref": "common.json#/$defs/scope" },
+        "constraints": { "type": "array", "items": { "$ref": "common.json#/$defs/nonEmptyString" } },
+        "dependencies": { "type": "array", "items": { "$ref": "common.json#/$defs/id" } },
+        "lifecycle": { "$ref": "common.json#/$defs/workItemLifecycle" },
+        "candidate_dod_profiles": {
+          "description": "Profiles the desired outcome binds to. Non-empty is an admission requirement: an outcome nothing can demonstrate is a wish.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.json#/$defs/dodProfileId" }
+        },
+        "links": { "type": "array", "items": { "$ref": "#/$defs/link" } },
+        "duplicate_candidates": {
+          "description": "Surfaced, never auto-merged. A wrong merge destroys history.",
+          "type": "array",
+          "items": { "$ref": "common.json#/$defs/id" }
+        },
+        "lease": { "oneOf": [{ "$ref": "#/$defs/lease" }, { "type": "null" }] },
+        "runs": { "type": "array", "items": { "$ref": "common.json#/$defs/id" } },
+        "reresolution_count": { "type": "integer", "minimum": 0 },
+        "decomposition_depth": { "type": "integer", "minimum": 0 },
+        "denied_gates": {
+          "description": "Denials are recorded at the work item level, so starting a fresh run is not a way to re-ask.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/denial" }
+        },
+        "consumed_budget": { "$ref": "#/$defs/consumedBudget" }
+      },
+      "required": [
+        "work_item_id", "created_at", "source_intake", "origin_trust_class", "type",
+        "claimed_type", "title", "external_identity", "desired_outcome", "scope",
+        "constraints", "dependencies", "lifecycle", "candidate_dod_profiles", "links",
+        "duplicate_candidates", "lease", "runs", "reresolution_count",
+        "decomposition_depth", "denied_gates", "consumed_budget"
+      ],
+      "additionalProperties": false
+    },
+
+    "link": {
+      "type": "object",
+      "properties": {
+        "kind": { "$ref": "common.json#/$defs/workItemLinkKind" },
+        "target": { "$ref": "common.json#/$defs/id" }
+      },
+      "required": ["kind", "target"],
+      "additionalProperties": false
+    },
+
+    "lease": {
+      "description": "One active Workflow Run per Work Item. Acquired atomically by exclusive create, never read-then-write.",
+      "type": "object",
+      "properties": {
+        "run_id": { "$ref": "common.json#/$defs/id" },
+        "acquired_at": { "$ref": "common.json#/$defs/timestamp" },
+        "holder": { "$ref": "common.json#/$defs/nonEmptyString" }
+      },
+      "required": ["run_id", "acquired_at", "holder"],
+      "additionalProperties": false
+    },
+
+    "denial": {
+      "type": "object",
+      "properties": {
+        "gate": { "$ref": "common.json#/$defs/gate" },
+        "target": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "denied_at": { "$ref": "common.json#/$defs/timestamp" },
+        "denied_by": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "reason": { "type": "string" }
+      },
+      "required": ["gate", "target", "denied_at", "denied_by", "reason"],
+      "additionalProperties": false
+    },
+
+    "consumedBudget": {
+      "description": "Per Work Item, not only per run: three runs of two laps each is six laps, and a budget that resets on every attempt is not a budget.",
+      "type": "object",
+      "properties": {
+        "usd": { "type": "number", "minimum": 0 },
+        "input_tokens": { "type": "integer", "minimum": 0 },
+        "output_tokens": { "type": "integer", "minimum": 0 },
+        "dispatches": { "type": "integer", "minimum": 0 },
+        "loops": {
+          "type": "object",
+          "patternProperties": { "^[a-z_]+$": { "type": "integer", "minimum": 0 } },
+          "additionalProperties": false
+        }
+      },
+      "required": ["usd", "input_tokens", "output_tokens", "dispatches", "loops"],
+      "additionalProperties": false
+    }
+  }
+}

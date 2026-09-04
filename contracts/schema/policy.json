@@ -1,0 +1,539 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentos.dev/schema/policy.json",
+  "title": "Policy data",
+  "description": "Every behaviour the design calls policy exists as data, and a mis-authored policy fails loudly at startup rather than quietly during a run. No threshold lives anywhere but here.",
+  "$defs": {
+    "predicateDefinition": {
+      "description": "policies/predicates.json. A transition table whose branch conditions are prose is a table an agent decides.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "pattern": "^(reality|architecture|ux|audit|production|regression)\\.[a-z_]+$" },
+        "family": { "enum": ["applicability", "reality"] },
+        "description": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "reads": {
+          "description": "Which named inputs the evaluator consults. A predicate over an UNKNOWN input is INDETERMINATE, never FALSE.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.json#/$defs/nonEmptyString" }
+        },
+        "freshness_class": {
+          "description": "Which freshness window governs the inputs. A STALE input is re-probed before the predicate is evaluated.",
+          "enum": ["git", "runtime", "repository", "intent", "agentos"]
+        },
+        "evaluator": {
+          "description": "The kernel evaluator that implements it. Naming it in data keeps the mapping auditable without putting the logic here.",
+          "$ref": "common.json#/$defs/nonEmptyString"
+        }
+      },
+      "required": ["name", "family", "description", "reads", "freshness_class", "evaluator"],
+      "additionalProperties": false
+    },
+
+    "predicateSet": {
+      "type": "object",
+      "properties": {
+        "version": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "predicates": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/predicateDefinition" }
+        }
+      },
+      "required": ["version", "predicates"],
+      "additionalProperties": false
+    },
+
+    "floorRule": {
+      "description": "policies/workflow-floor.json. Rules of the form: if the graph contains X, it must contain Y before it.",
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "description": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "trigger": { "$ref": "#/$defs/floorTrigger" },
+        "requires": { "type": "array", "items": { "$ref": "#/$defs/floorRequirement" } },
+        "forbids": { "type": "array", "items": { "$ref": "common.json#/$defs/templateStage" } },
+        "keyed_on": {
+          "description": "A floor rule keyed on a resolved field can only be as good as the resolution; a rule keyed on observed reality cannot be defeated by misclassification.",
+          "enum": ["graph", "type", "reality", "scope"]
+        }
+      },
+      "required": ["id", "description", "trigger", "requires", "forbids", "keyed_on"],
+      "additionalProperties": false
+    },
+
+    "floorTrigger": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "contains_stage" },
+            "stage": { "$ref": "common.json#/$defs/templateStage" }
+          },
+          "required": ["kind", "stage"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "work_item_type" },
+            "type": { "$ref": "common.json#/$defs/workItemType" }
+          },
+          "required": ["kind", "type"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "predicate_true" },
+            "predicate": { "$ref": "common.json#/$defs/nonEmptyString" }
+          },
+          "required": ["kind", "predicate"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": { "kind": { "const": "always" } },
+          "required": ["kind"],
+          "additionalProperties": false
+        }
+      ]
+    },
+
+    "floorRequirement": {
+      "type": "object",
+      "properties": {
+        "stage": { "$ref": "common.json#/$defs/templateStage" },
+        "position": { "enum": ["before", "after", "present", "sole_predecessor_of_complete"] },
+        "relative_to": {
+          "oneOf": [{ "$ref": "common.json#/$defs/templateStage" }, { "type": "null" }]
+        }
+      },
+      "required": ["stage", "position", "relative_to"],
+      "additionalProperties": false
+    },
+
+    "floorSet": {
+      "type": "object",
+      "properties": {
+        "version": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "rules": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/floorRule" } }
+      },
+      "required": ["version", "rules"],
+      "additionalProperties": false
+    },
+
+    "stageSet": {
+      "type": "object",
+      "properties": {
+        "version": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "stages": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "workflow.json#/$defs/stageDescriptor" }
+        }
+      },
+      "required": ["version", "stages"],
+      "additionalProperties": false
+    },
+
+    "workItemPolicy": {
+      "description": "policies/work-items.json. Per type, the minimum evidence class required to assert it. Nobody declares an incident by writing the word.",
+      "type": "object",
+      "properties": {
+        "version": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "resolution_confidence_threshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "types": {
+          "type": "array",
+          "minItems": 9,
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": { "$ref": "common.json#/$defs/workItemType" },
+              "description": { "$ref": "common.json#/$defs/nonEmptyString" },
+              "minimum_evidence": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "requirement": {
+                      "enum": [
+                        "external_item_of_this_type",
+                        "child_items_exist",
+                        "runtime_or_production_observation",
+                        "capability_record_intersecting_scope",
+                        "no_capability_record_intersecting_scope",
+                        "named_path_exists",
+                        "existing_change_proposal",
+                        "reproduction_or_incorrect_behaviour_report",
+                        "none"
+                      ]
+                    },
+                    "kinds": { "type": "array", "items": { "$ref": "common.json#/$defs/evidenceKind" } },
+                    "note": { "$ref": "common.json#/$defs/nonEmptyString" }
+                  },
+                  "required": ["requirement", "kinds", "note"],
+                  "additionalProperties": false
+                }
+              },
+              "satisfied_by": {
+                "description": "`ALL` requires every entry; `ANY` requires one. `UNKNOWN` requires none, which is why it is the fallback.",
+                "enum": ["ALL", "ANY", "NONE"]
+              },
+              "candidate_dod_profiles": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "$ref": "common.json#/$defs/dodProfileId" }
+              }
+            },
+            "required": ["type", "description", "minimum_evidence", "satisfied_by", "candidate_dod_profiles"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["version", "resolution_confidence_threshold", "types"],
+      "additionalProperties": false
+    },
+
+    "intakePolicy": {
+      "type": "object",
+      "properties": {
+        "version": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "hosts": {
+          "description": "What each host can assert. A host that cannot assert a principal must classify EXTERNAL.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "properties": {
+              "host": { "$ref": "common.json#/$defs/nonEmptyString" },
+              "can_assert_principal": { "type": "boolean" },
+              "trust_class": { "$ref": "common.json#/$defs/trustClass" },
+              "sources": { "type": "array", "minItems": 1, "items": { "$ref": "common.json#/$defs/intakeSource" } }
+            },
+            "required": ["host", "can_assert_principal", "trust_class", "sources"],
+            "additionalProperties": false
+          }
+        },
+        "default_trust_class": {
+          "description": "EXTERNAL. Every source classifies EXTERNAL until a host exists that can assert a principal for it.",
+          "const": "EXTERNAL"
+        },
+        "pre_granted_autonomous_intake": {
+          "description": "Sources for which AUTONOMOUS_INTAKE_EXECUTION is pre-granted, so a trusted webhook stays autonomous and an unconfigured one does not.",
+          "type": "array",
+          "items": { "$ref": "common.json#/$defs/nonEmptyString" }
+        },
+        "instruction_markers": {
+          "description": "Patterns whose presence in intake content is recorded as an attempted instruction and otherwise ignored.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "properties": {
+              "attempt": {
+                "enum": [
+                  "NAME_TEMPLATE", "REQUEST_STAGE", "SET_CONFIDENCE", "SET_TRUST_CLASS",
+                  "WIDEN_SCOPE", "CLAIM_AUTHORIZATION", "CANCEL_RUN"
+                ]
+              },
+              "patterns": { "type": "array", "minItems": 1, "items": { "$ref": "common.json#/$defs/nonEmptyString" } }
+            },
+            "required": ["attempt", "patterns"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "version", "hosts", "default_trust_class",
+        "pre_granted_autonomous_intake", "instruction_markers"
+      ],
+      "additionalProperties": false
+    },
+
+    "evidencePolicy": {
+      "type": "object",
+      "properties": {
+        "version": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "always_verify": {
+          "type": "array",
+          "minItems": 4,
+          "items": {
+            "enum": [
+              "critical_or_high_finding",
+              "authorization_request",
+              "dod_criterion_met",
+              "fact_contradicting_existing_assertion"
+            ]
+          }
+        },
+        "sample_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "sample_minimum_per_envelope": { "type": "integer", "minimum": 0 },
+        "mismatch_threshold_per_envelope": { "type": "integer", "minimum": 1 },
+        "authorization_mismatch_threshold": { "type": "integer", "minimum": 1 },
+        "comparators": {
+          "type": "array",
+          "minItems": 10,
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": { "$ref": "common.json#/$defs/evidenceKind" },
+              "comparator": {
+                "enum": [
+                  "normalized_exact_match",
+                  "predicate_reevaluation",
+                  "identifier_plus_content_hash",
+                  "not_kernel_verifiable"
+                ]
+              },
+              "requires_predicate": { "type": "boolean" },
+              "note": { "$ref": "common.json#/$defs/nonEmptyString" }
+            },
+            "required": ["kind", "comparator", "requires_predicate", "note"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "version", "always_verify", "sample_rate", "sample_minimum_per_envelope",
+        "mismatch_threshold_per_envelope", "authorization_mismatch_threshold", "comparators"
+      ],
+      "additionalProperties": false
+    },
+
+    "budgetPolicy": {
+      "type": "object",
+      "properties": {
+        "version": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "loops": {
+          "type": "object",
+          "properties": {
+            "rework": { "$ref": "#/$defs/scopedCap" },
+            "architecture": { "$ref": "#/$defs/scopedCap" },
+            "review": { "$ref": "#/$defs/scopedCap" },
+            "discovery": { "$ref": "#/$defs/scopedCap" }
+          },
+          "required": ["rework", "architecture", "review", "discovery"],
+          "additionalProperties": false
+        },
+        "reresolution": { "type": "integer", "minimum": 0 },
+        "decomposition": {
+          "type": "object",
+          "properties": {
+            "max_children": { "type": "integer", "minimum": 1 },
+            "max_depth": { "type": "integer", "minimum": 1 }
+          },
+          "required": ["max_children", "max_depth"],
+          "additionalProperties": false
+        },
+        "cost": {
+          "type": "object",
+          "properties": {
+            "run_usd": { "type": "number", "minimum": 0 },
+            "work_item_usd": { "type": "number", "minimum": 0 },
+            "dispatch_usd": { "type": "number", "minimum": 0 }
+          },
+          "required": ["run_usd", "work_item_usd", "dispatch_usd"],
+          "additionalProperties": false
+        },
+        "wall_clock_ms": {
+          "type": "object",
+          "properties": {
+            "run": { "type": "integer", "minimum": 1 },
+            "dispatch": { "type": "integer", "minimum": 1 }
+          },
+          "required": ["run", "dispatch"],
+          "additionalProperties": false
+        },
+        "dispatches": { "$ref": "#/$defs/scopedCap" },
+        "dispatch_retries": { "type": "integer", "minimum": 0 },
+        "model_escalations_per_dispatch": { "type": "integer", "minimum": 0 },
+        "max_turns_per_dispatch": { "type": "integer", "minimum": 1 },
+        "lease_timeout_ms": { "type": "integer", "minimum": 1 },
+        "authorization_window_ms": { "type": "integer", "minimum": 1 },
+        "question_window_ms": { "type": "integer", "minimum": 1 },
+        "freshness_windows_ms": {
+          "type": "object",
+          "properties": {
+            "git": { "type": "integer", "minimum": 1 },
+            "runtime": { "type": "integer", "minimum": 1 },
+            "repository": { "type": "integer", "minimum": 1 },
+            "intent": { "type": "integer", "minimum": 1 },
+            "agentos": { "type": "integer", "minimum": 1 }
+          },
+          "required": ["git", "runtime", "repository", "intent", "agentos"],
+          "additionalProperties": false
+        },
+        "read_call_log_granularity": {
+          "description": "Reads are logged at this granularity. Aggregation is permitted; omission is not.",
+          "type": "object",
+          "properties": {
+            "aggregate_identical_within_ms": { "type": "integer", "minimum": 0 },
+            "max_aggregated": { "type": "integer", "minimum": 1 }
+          },
+          "required": ["aggregate_identical_within_ms", "max_aggregated"],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "version", "loops", "reresolution", "decomposition", "cost", "wall_clock_ms",
+        "dispatches", "dispatch_retries", "model_escalations_per_dispatch",
+        "max_turns_per_dispatch", "lease_timeout_ms", "authorization_window_ms",
+        "question_window_ms", "freshness_windows_ms", "read_call_log_granularity"
+      ],
+      "additionalProperties": false
+    },
+
+    "scopedCap": {
+      "description": "Per Workflow Run and per Work Item. A budget that resets on every attempt is not a budget.",
+      "type": "object",
+      "properties": {
+        "per_run": { "type": "integer", "minimum": 0 },
+        "per_work_item": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["per_run", "per_work_item"],
+      "additionalProperties": false
+    },
+
+    "pathPolicy": {
+      "description": "policies/paths.json. The absolute deny-list, checked even for paths that pass worktree and mandate checks. Rule 3 is the backstop that holds when 1 and 2 are wrong.",
+      "type": "object",
+      "properties": {
+        "version": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "deny": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "$ref": "common.json#/$defs/nonEmptyString" },
+              "description": { "$ref": "common.json#/$defs/nonEmptyString" },
+              "kind": { "enum": ["installation_relative", "absolute", "home_relative", "name_anywhere"] },
+              "patterns": { "type": "array", "minItems": 1, "items": { "$ref": "common.json#/$defs/pathGlob" } }
+            },
+            "required": ["id", "description", "kind", "patterns"],
+            "additionalProperties": false
+          }
+        },
+        "scratch_roots": {
+          "description": "Where incidental artifacts may land without disqualifying an operation's observation safety.",
+          "type": "array",
+          "items": { "$ref": "common.json#/$defs/pathGlob" }
+        }
+      },
+      "required": ["version", "deny", "scratch_roots"],
+      "additionalProperties": false
+    },
+
+    "gatePolicy": {
+      "type": "object",
+      "properties": {
+        "version": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "gates": {
+          "type": "array",
+          "minItems": 10,
+          "items": { "$ref": "authorization.json#/$defs/gateDefinition" }
+        }
+      },
+      "required": ["version", "gates"],
+      "additionalProperties": false
+    },
+
+    "dodPolicySet": {
+      "type": "object",
+      "properties": {
+        "version": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "criteria": {
+          "description": "The eighteen criteria and their single owning role. A criterion with two owners is decided by whichever ran last.",
+          "type": "array",
+          "minItems": 18,
+          "maxItems": 18,
+          "items": {
+            "type": "object",
+            "properties": {
+              "criterion": { "$ref": "dod.json#/$defs/criterionId" },
+              "name": { "$ref": "common.json#/$defs/nonEmptyString" },
+              "owner_role": { "$ref": "common.json#/$defs/agentRole" },
+              "owner_pass": {
+                "description": "Which pass of the owning role supplies it. The Auditor's second pass owns 6, 16 and 17.",
+                "enum": ["first", "second", "only"]
+              },
+              "evidence_class": {
+                "enum": ["structural", "implementation", "behavioural", "capability", "runtime", "production", "ux", "knowledge"]
+              }
+            },
+            "required": ["criterion", "name", "owner_role", "owner_pass", "evidence_class"],
+            "additionalProperties": false
+          }
+        },
+        "profiles": {
+          "type": "array",
+          "minItems": 7,
+          "items": { "$ref": "dod.json#/$defs/dodProfile" }
+        }
+      },
+      "required": ["version", "criteria", "profiles"],
+      "additionalProperties": false
+    },
+
+    "agentPolicy": {
+      "description": "Which proposals and statuses each role may make, and in which stages. Enforced as cross-field rules on envelope receipt.",
+      "type": "object",
+      "properties": {
+        "version": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "roles": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "properties": {
+              "role": { "$ref": "common.json#/$defs/agentRole" },
+              "may_propose": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "work_item", "workflow", "decomposition", "triage",
+                    "cancellation", "dispatch", "arbitration", "authorization_request"
+                  ]
+                }
+              },
+              "proposal_stages": {
+                "description": "Stage restrictions per proposal key. A decomposition outside DECOMPOSITION is a contract violation.",
+                "type": "object",
+                "patternProperties": {
+                  "^[a-z_]+$": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "oneOf": [{ "$ref": "common.json#/$defs/stage" }, { "const": "*" }]
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "may_return_statuses": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "$ref": "handoff-envelope.json#/$defs/status" }
+              },
+              "permitted_adapters": {
+                "description": "The Orchestrator's is empty on purpose: the component that judges evidence must not also manufacture it.",
+                "type": "array",
+                "items": { "$ref": "common.json#/$defs/nonEmptyString" }
+              },
+              "read_only": { "type": "boolean" }
+            },
+            "required": [
+              "role", "may_propose", "proposal_stages", "may_return_statuses",
+              "permitted_adapters", "read_only"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["version", "roles"],
+      "additionalProperties": false
+    }
+  }
+}

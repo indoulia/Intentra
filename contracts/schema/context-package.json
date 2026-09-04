@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentos.dev/schema/context-package.json",
+  "title": "ContextPackage",
+  "description": "The durable, structured answer to what is actually true about this repository, its intent and its runtime. Twenty-three sections; the section names are the vocabulary of `required_inputs`, so they are load-bearing identifiers and not documentation.",
+  "type": "object",
+  "properties": {
+    "meta": { "$ref": "#/$defs/meta" },
+    "work_item": {
+      "description": "A reference, not a copy. Keeping a third copy would give the run two answers to what it is doing.",
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "current_reality": { "$ref": "#/$defs/currentReality" },
+    "repository": { "$ref": "#/$defs/section" },
+    "product": { "$ref": "#/$defs/section" },
+    "capabilities": {
+      "description": "A reference into the Capability Registry rather than a copy. There is one representation of a capability per run.",
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "architecture": { "$ref": "#/$defs/section" },
+    "domain_model": { "$ref": "#/$defs/section" },
+    "source_map": { "$ref": "#/$defs/section" },
+    "data_map": { "$ref": "#/$defs/section" },
+    "api_map": { "$ref": "#/$defs/section" },
+    "ui_map": { "$ref": "#/$defs/section" },
+    "tests": { "$ref": "#/$defs/section" },
+    "git_state": { "$ref": "#/$defs/section" },
+    "runtime_state": { "$ref": "#/$defs/section" },
+    "production_state": { "$ref": "#/$defs/section" },
+    "intent": { "$ref": "#/$defs/section" },
+    "reconciliation": { "$ref": "#/$defs/reconciliationMatrix" },
+    "agent_capabilities": { "$ref": "#/$defs/section" },
+    "model_capabilities": { "$ref": "#/$defs/section" },
+    "constraints": { "$ref": "#/$defs/section" },
+    "authorization": { "$ref": "#/$defs/section" },
+    "gaps": {
+      "description": "A first-class section, not a footnote. What AgentOS does not know is as operationally important as what it does.",
+      "type": "array",
+      "items": { "$ref": "finding.json#/$defs/unknown" }
+    }
+  },
+  "required": [
+    "meta", "work_item", "current_reality", "repository", "product", "capabilities",
+    "architecture", "domain_model", "source_map", "data_map", "api_map", "ui_map",
+    "tests", "git_state", "runtime_state", "production_state", "intent",
+    "reconciliation", "agent_capabilities", "model_capabilities", "constraints",
+    "authorization", "gaps"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "sectionName": {
+      "enum": [
+        "meta", "work_item", "current_reality", "repository", "product", "capabilities",
+        "architecture", "domain_model", "source_map", "data_map", "api_map", "ui_map",
+        "tests", "git_state", "runtime_state", "production_state", "intent",
+        "reconciliation", "agent_capabilities", "model_capabilities", "constraints",
+        "authorization", "gaps"
+      ]
+    },
+
+    "section": {
+      "description": "Every leaf is an assertion, never a bare value. Probes choose the keys within a section; the section names themselves are fixed.",
+      "type": "object",
+      "patternProperties": { "^[a-z][a-z0-9_]*$": { "$ref": "assertion.json" } },
+      "additionalProperties": false
+    },
+
+    "meta": {
+      "type": "object",
+      "properties": {
+        "run_id": { "$ref": "common.json#/$defs/id" },
+        "work_item_id": { "type": ["string", "null"], "minLength": 1 },
+        "package_version": {
+          "description": "The package is versioned, not appended. On-demand discovery produces a new version.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "assembled_at": { "$ref": "common.json#/$defs/timestamp" },
+        "tier": {
+          "description": "1 orientation, 2 work-item-relevant depth, 3 on-demand.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "probe_coverage": { "type": "array", "items": { "$ref": "#/$defs/probeCoverage" } },
+        "adapter_availability": { "type": "array", "items": { "$ref": "adapter.json#/$defs/availability" } }
+      },
+      "required": [
+        "run_id", "work_item_id", "package_version", "assembled_at", "tier",
+        "probe_coverage", "adapter_availability"
+      ],
+      "additionalProperties": false
+    },
+
+    "probeCoverage": {
+      "description": "An agent must be able to distinguish 'found no orphan readers here' from 'discovery never looked here'.",
+      "type": "object",
+      "properties": {
+        "probe": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "section": { "$ref": "#/$defs/sectionName" },
+        "state": { "enum": ["RAN", "SKIPPED", "UNAVAILABLE", "PARTIAL"] },
+        "reason": { "type": ["string", "null"] },
+        "scope_examined": { "type": "array", "items": { "$ref": "common.json#/$defs/pathGlob" } },
+        "scope_not_examined": { "type": "array", "items": { "$ref": "common.json#/$defs/pathGlob" } },
+        "observed_at": { "$ref": "common.json#/$defs/timestamp" }
+      },
+      "required": [
+        "probe", "section", "state", "reason", "scope_examined",
+        "scope_not_examined", "observed_at"
+      ],
+      "additionalProperties": false
+    },
+
+    "currentReality": {
+      "description": "Written only by probes. No part of it may be derived from the intake text, from a ticket's status field alone, or from an agent's account of a previous run.",
+      "type": "object",
+      "properties": {
+        "implementation_present": { "$ref": "assertion.json" },
+        "tests_present": { "$ref": "assertion.json" },
+        "pr": { "$ref": "assertion.json" },
+        "ci": { "$ref": "assertion.json" },
+        "reviews": { "$ref": "assertion.json" },
+        "merge_state": { "$ref": "assertion.json" },
+        "deployment": { "$ref": "assertion.json" },
+        "outcome_evidence": { "$ref": "assertion.json" },
+        "children": { "$ref": "assertion.json" },
+        "agentos_history": { "$ref": "assertion.json" },
+        "reconciliation": {
+          "description": "The three-way reconciliation applied to the work item rather than to a capability. Same enum, same rule.",
+          "$ref": "common.json#/$defs/reconciliationState"
+        }
+      },
+      "required": [
+        "implementation_present", "tests_present", "pr", "ci", "reviews",
+        "merge_state", "deployment", "outcome_evidence", "children",
+        "agentos_history", "reconciliation"
+      ],
+      "additionalProperties": false
+    },
+
+    "realityElement": {
+      "enum": [
+        "implementation_present", "tests_present", "pr", "ci", "reviews",
+        "merge_state", "deployment", "outcome_evidence", "children", "agentos_history"
+      ]
+    },
+
+    "reconciliationMatrix": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "capability": { "$ref": "common.json#/$defs/id" },
+          "intent": { "$ref": "assertion.json" },
+          "code": { "$ref": "assertion.json" },
+          "runtime": { "$ref": "assertion.json" },
+          "state": { "$ref": "common.json#/$defs/reconciliationState" },
+          "rationale": { "$ref": "common.json#/$defs/nonEmptyString" }
+        },
+        "required": ["capability", "intent", "code", "runtime", "state", "rationale"],
+        "additionalProperties": false
+      }
+    }
+  }
+}

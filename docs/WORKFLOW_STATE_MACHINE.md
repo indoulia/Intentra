@@ -157,6 +157,7 @@ known set is arithmetic.
 {
   "template_id": "defect.standard",
   "version": "1.0",
+  "description": "A defect in an existing capability: root cause before any fix.",
   "applies_to": { "types": ["DEFECT"] },
   "entry": "AUDIT",
   "stages": ["AUDIT", "ROOT_CAUSE", "ARCHITECTURE", "PLAN", "IMPLEMENTATION",
@@ -166,6 +167,7 @@ known set is arithmetic.
   "optional_stages": ["ARCHITECTURE", "UX_REVIEW"],
   "edges": [
     { "from": "AUDIT", "to": "ROOT_CAUSE", "when": "always", "kind": "advance" },
+    { "from": "ROOT_CAUSE", "to": "BLOCKED", "when": "envelope.BLOCKED", "kind": "escalate" },
     { "from": "ROOT_CAUSE", "to": "ARCHITECTURE", "when": "architecture.required", "kind": "branch" },
     { "from": "ROOT_CAUSE", "to": "PLAN", "when": "NOT architecture.required", "kind": "branch" },
     { "from": "VALIDATION", "to": "REWORK", "when": "envelope.REJECTED", "kind": "loop",
@@ -177,6 +179,12 @@ known set is arithmetic.
   "dod_profile_default": "fix"
 }
 ```
+
+The `edges` list above is abbreviated to the edges worth reading; a real template also carries
+the ordinary advance edges between the remaining stages and the escalation edge from every
+stage to `BLOCKED`. `description` is required (amendment A-7): a template is human-authored
+policy data, and a reviewer reading `policies/workflows/` needs to know what each one is for
+without reconstructing it from the stage list.
 
 ### 3.2 The template set
 
@@ -610,17 +618,34 @@ anything, which is exactly the crash this rule exists for.
 
 ```json
 {
-  "event": "mutation",
+  "seq": 37,
+  "at": "2026-09-04T11:02:44Z",
   "work_item_id": "wi_jira_DEF-456",
-  "run_id": "...", "dispatch_id": "d_014", "seq": 37,
-  "adapter": "git", "op": "commit",
-  "target": "worktree/agentos-run-a1b2",
-  "before": { "head": "9f2c1ab" },
-  "after":  { "head": "4de0117" },
-  "reversal": { "op": "reset_hard", "args": { "to": "9f2c1ab" } },
-  "at": "2026-09-04T11:02:44Z"
+  "run_id": "run_2026_09_04_a1b2",
+  "stage": "IMPLEMENTATION",
+  "dispatch_id": "d_014",
+  "agent": "implementer",
+  "event": "mutation",
+  "data": {
+    "work_item_id": "wi_jira_DEF-456",
+    "run_id": "run_2026_09_04_a1b2",
+    "dispatch_id": "d_014",
+    "adapter": "git", "op": "commit",
+    "target": "worktree/agentos-run-a1b2",
+    "before": { "head": "9f2c1ab" },
+    "after":  { "head": "4de0117" },
+    "reversal": { "op": "reset_hard", "args": { "to": "9f2c1ab" } },
+    "at": "2026-09-04T11:02:44Z"
+  }
 }
 ```
+
+**Every log line has the same frame.** `seq`, `at`, `work_item_id`, `run_id`, `stage`,
+`dispatch_id`, `agent` and `event` are common to every record, and the record's own content
+is under `data`. Earlier drafts showed this example flattened, which would have given the
+log two shapes and made a replayer's discriminated union impossible to type (amendment A-8).
+`seq` is monotonic within one log, which is what makes "any prefix of the log" a well-defined
+thing to replay.
 
 Consequences:
 

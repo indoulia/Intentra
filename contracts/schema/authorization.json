@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentos.dev/schema/authorization.json",
+  "title": "Human authorization",
+  "description": "Built before any mutating adapter exists, because building mutation first and adding authorization after is how the gate ends up bypassable.",
+  "$defs": {
+    "draftRequest": {
+      "description": "What an agent may put in an envelope. A draft is not a request: the kernel records the request, and a human decides.",
+      "type": "object",
+      "properties": {
+        "gate": { "$ref": "common.json#/$defs/gate" },
+        "target": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "what": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "why": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "blast_radius": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "reversibility": { "$ref": "#/$defs/reversibility" },
+        "evidence": { "type": "array", "items": { "$ref": "common.json#/$defs/id" } },
+        "unknowns": { "type": "array", "items": { "$ref": "common.json#/$defs/nonEmptyString" } },
+        "alternatives": {
+          "description": "Including doing nothing.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.json#/$defs/nonEmptyString" }
+        },
+        "recommendation": { "$ref": "common.json#/$defs/nonEmptyString" }
+      },
+      "required": [
+        "gate", "target", "what", "why", "blast_radius", "reversibility",
+        "evidence", "unknowns", "alternatives", "recommendation"
+      ],
+      "additionalProperties": false
+    },
+
+    "reversibility": {
+      "type": "object",
+      "properties": {
+        "how": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "verified": { "type": "boolean" },
+        "cost": { "$ref": "common.json#/$defs/nonEmptyString" }
+      },
+      "required": ["how", "verified", "cost"],
+      "additionalProperties": false
+    },
+
+    "authorizationRequest": {
+      "description": "The kernel's record. A human cannot authorize what they cannot evaluate, so every field of the draft survives into the record.",
+      "type": "object",
+      "properties": {
+        "request_id": { "$ref": "common.json#/$defs/id" },
+        "work_item_id": { "$ref": "common.json#/$defs/id" },
+        "run_id": { "$ref": "common.json#/$defs/id" },
+        "stage": { "$ref": "common.json#/$defs/stage" },
+        "requested_by": { "$ref": "common.json#/$defs/agentRole" },
+        "requested_at": { "$ref": "common.json#/$defs/timestamp" },
+        "draft": { "$ref": "#/$defs/draftRequest" },
+        "classification": {
+          "description": "The mechanical classification that fired the gate, if any. A gate that fires only when an agent volunteers is not a gate.",
+          "oneOf": [{ "$ref": "adapter.json#/$defs/classification" }, { "type": "null" }]
+        },
+        "trigger": { "enum": ["classifier", "self_declaration", "kernel_accounting", "kernel_policy"] },
+        "state": { "enum": ["PENDING", "GRANTED", "DENIED", "EXPIRED", "REVOKED"] }
+      },
+      "required": [
+        "request_id", "work_item_id", "run_id", "stage", "requested_by",
+        "requested_at", "draft", "classification", "trigger", "state"
+      ],
+      "additionalProperties": false
+    },
+
+    "authorizationGrant": {
+      "description": "One gate, one target, one run. No blanket grants, no standing approvals.",
+      "type": "object",
+      "properties": {
+        "grant_id": { "$ref": "common.json#/$defs/id" },
+        "run_id": { "$ref": "common.json#/$defs/id" },
+        "work_item_id": { "$ref": "common.json#/$defs/id" },
+        "gate": { "$ref": "common.json#/$defs/gate" },
+        "target": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "scope": { "const": "single_action" },
+        "granted_by": {
+          "description": "The identifier the host asserted. AgentOS records it and refuses to proceed without one; inventing an authorizer is a security floor violation.",
+          "$ref": "common.json#/$defs/nonEmptyString"
+        },
+        "granted_at": { "$ref": "common.json#/$defs/timestamp" },
+        "expires_at": { "$ref": "common.json#/$defs/timestamp" },
+        "conditions": { "type": "array", "items": { "$ref": "common.json#/$defs/nonEmptyString" } },
+        "request_ref": { "$ref": "common.json#/$defs/id" },
+        "evidence_reviewed": { "type": "array", "items": { "$ref": "common.json#/$defs/nonEmptyString" } },
+        "revoked_at": { "type": ["string", "null"], "format": "date-time" }
+      },
+      "required": [
+        "grant_id", "run_id", "work_item_id", "gate", "target", "scope",
+        "granted_by", "granted_at", "expires_at", "conditions", "request_ref",
+        "evidence_reviewed", "revoked_at"
+      ],
+      "additionalProperties": false
+    },
+
+    "gateDefinition": {
+      "description": "policies/gates.json. Classifiers are policy data, not kernel code.",
+      "type": "object",
+      "properties": {
+        "gate": { "$ref": "common.json#/$defs/gate" },
+        "description": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "fires_at_end_of_run": { "type": "boolean" },
+        "once_per_work_item": { "type": "boolean" },
+        "classifiers": { "type": "array", "items": { "$ref": "#/$defs/classifier" } },
+        "pre_grantable_by_policy": {
+          "description": "Whether policy may pre-grant this gate per configured source. Only AUTONOMOUS_INTAKE_EXECUTION is, so a trusted webhook stays autonomous.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "gate", "description", "fires_at_end_of_run", "once_per_work_item",
+        "classifiers", "pre_grantable_by_policy"
+      ],
+      "additionalProperties": false
+    },
+
+    "classifier": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "kind": {
+          "enum": [
+            "path_pattern",
+            "content_pattern",
+            "descriptor_flag",
+            "classification_value",
+            "kernel_accounting",
+            "trust_class_and_mutating_stage",
+            "scope_escape"
+          ]
+        },
+        "patterns": { "type": "array", "items": { "$ref": "common.json#/$defs/nonEmptyString" } },
+        "descriptor_field": { "type": ["string", "null"], "minLength": 1 },
+        "expected": { "type": ["string", "boolean", "null"] },
+        "fires_when_unevaluable": {
+          "description": "A classifier that cannot evaluate fires the gate. Always true; declared so the rule is visible in the data.",
+          "const": true
+        }
+      },
+      "required": ["id", "kind", "patterns", "descriptor_field", "expected", "fires_when_unevaluable"],
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,220 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentos.dev/schema/handoff-envelope.json",
+  "title": "HandoffEnvelope",
+  "description": "The only thing that crosses the boundary between agents. Conversation is never the transport.",
+  "type": "object",
+  "properties": {
+    "envelope_version": { "const": "1.2" },
+    "work_item_id": { "$ref": "common.json#/$defs/id" },
+    "run_id": { "$ref": "common.json#/$defs/id" },
+    "envelope_id": { "$ref": "common.json#/$defs/id" },
+    "dispatch_id": {
+      "description": "Echoes the dispatch this envelope answers, so a substrate returning the wrong envelope is detectable rather than merged.",
+      "$ref": "common.json#/$defs/id"
+    },
+    "agent": { "$ref": "common.json#/$defs/agentRole" },
+    "agent_version": { "$ref": "common.json#/$defs/nonEmptyString" },
+    "model": { "$ref": "common.json#/$defs/nonEmptyString" },
+    "skills_used": { "type": "array", "items": { "$ref": "common.json#/$defs/nonEmptyString" } },
+    "stage_in": { "$ref": "common.json#/$defs/stage" },
+    "started_at": { "$ref": "common.json#/$defs/timestamp" },
+    "completed_at": { "$ref": "common.json#/$defs/timestamp" },
+    "cost": { "$ref": "common.json#/$defs/cost" },
+
+    "status": { "$ref": "#/$defs/status" },
+    "summary": { "$ref": "common.json#/$defs/nonEmptyString" },
+
+    "findings": { "type": "array", "items": { "$ref": "finding.json#/$defs/finding" } },
+    "evidence": { "type": "array", "items": { "$ref": "evidence.json" } },
+    "assumptions": { "type": "array", "items": { "$ref": "finding.json#/$defs/assumption" } },
+    "unknowns": { "type": "array", "items": { "$ref": "finding.json#/$defs/unknown" } },
+    "artifacts_changed": {
+      "type": "array",
+      "items": { "$ref": "finding.json#/$defs/artifactChange" }
+    },
+    "recommendations": {
+      "type": "array",
+      "items": { "$ref": "finding.json#/$defs/recommendation" }
+    },
+    "blockers": { "type": "array", "items": { "$ref": "finding.json#/$defs/blocker" } },
+
+    "coverage": { "$ref": "finding.json#/$defs/coverage" },
+
+    "outputs": {
+      "description": "The dispatch's `required_outputs`, filled. Keyed by output name; a missing or null key is an unfilled output, which is what separates PARTIAL from COMPLETE.",
+      "type": "object",
+      "propertyNames": { "$ref": "common.json#/$defs/nonEmptyString" }
+    },
+
+    "dod_verdicts": {
+      "description": "Per-criterion verdicts this stage owes. The kernel does the arithmetic and never judges a criterion itself.",
+      "type": "array",
+      "items": { "$ref": "dod.json#/$defs/criterionVerdict" }
+    },
+
+    "proposals": { "$ref": "#/$defs/proposals" },
+
+    "next_action": {
+      "description": "A proposal. The kernel validates it against the frozen graph and evaluates the transition predicate itself.",
+      "oneOf": [{ "$ref": "#/$defs/nextAction" }, { "type": "null" }]
+    }
+  },
+  "required": [
+    "envelope_version", "work_item_id", "run_id", "envelope_id", "dispatch_id",
+    "agent", "agent_version", "model", "skills_used", "stage_in",
+    "started_at", "completed_at", "cost", "status", "summary",
+    "findings", "evidence", "assumptions", "unknowns", "artifacts_changed",
+    "recommendations", "blockers", "coverage", "outputs", "dod_verdicts",
+    "proposals", "next_action"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "status": {
+      "description": "Every value maps to exactly one kernel action (WORKFLOW_STATE_MACHINE section 4.2). PARTIAL is never a soft COMPLETE.",
+      "enum": ["COMPLETE", "PARTIAL", "BLOCKED", "BLOCKED_BY_ARCHITECTURE", "FAILED", "REJECTED"]
+    },
+
+    "nextAction": {
+      "type": "object",
+      "properties": {
+        "proposed_stage": { "$ref": "common.json#/$defs/stage" },
+        "proposed_agent": {
+          "oneOf": [{ "$ref": "common.json#/$defs/agentRole" }, { "type": "null" }]
+        },
+        "rationale": { "$ref": "common.json#/$defs/nonEmptyString" }
+      },
+      "required": ["proposed_stage", "proposed_agent", "rationale"],
+      "additionalProperties": false
+    },
+
+    "proposals": {
+      "description": "The only place an agent may ask for something structural. Every key is optional and every one is a proposal the kernel admits, adjusts or refuses.",
+      "type": "object",
+      "properties": {
+        "work_item": { "$ref": "work-item.json#/$defs/proposedWorkItem" },
+        "workflow": { "$ref": "#/$defs/workflowProposal" },
+        "decomposition": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/decompositionProposal" }
+        },
+        "triage": { "type": "array", "items": { "$ref": "#/$defs/triageProposal" } },
+        "cancellation": { "$ref": "#/$defs/cancellationProposal" },
+        "dispatch": { "$ref": "#/$defs/dispatchProposal" },
+        "arbitration": { "$ref": "#/$defs/arbitrationProposal" },
+        "authorization_request": { "$ref": "authorization.json#/$defs/draftRequest" }
+      },
+      "additionalProperties": false
+    },
+
+    "workflowProposal": {
+      "type": "object",
+      "properties": {
+        "template_id": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "include_optional": { "type": "array", "items": { "$ref": "common.json#/$defs/templateStage" } },
+        "exclude_optional": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "stage": { "$ref": "common.json#/$defs/templateStage" },
+              "claim": {
+                "description": "A claim, never a decision. The kernel evaluates the stage's predicate itself and keeps the stage on TRUE or INDETERMINATE.",
+                "$ref": "common.json#/$defs/nonEmptyString"
+              },
+              "rationale": { "$ref": "common.json#/$defs/nonEmptyString" }
+            },
+            "required": ["stage", "claim", "rationale"],
+            "additionalProperties": false
+          }
+        },
+        "stage_mandates": {
+          "description": "Per-stage mandate scope, bounded by and never exceeding the Work Item's admitted scope.",
+          "type": "object",
+          "patternProperties": { "^[A-Z_]+$": { "$ref": "common.json#/$defs/scope" } },
+          "additionalProperties": false
+        },
+        "rationale": { "$ref": "common.json#/$defs/nonEmptyString" }
+      },
+      "required": ["template_id", "include_optional", "exclude_optional", "rationale"],
+      "additionalProperties": false
+    },
+
+    "decompositionProposal": {
+      "type": "object",
+      "properties": {
+        "title": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "type": { "$ref": "common.json#/$defs/workItemType" },
+        "scope": { "$ref": "common.json#/$defs/scope" },
+        "desired_outcome": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "depends_on": { "type": "array", "items": { "$ref": "common.json#/$defs/nonEmptyString" } },
+        "external_identity": { "type": ["string", "null"], "minLength": 1 }
+      },
+      "required": ["title", "type", "scope", "desired_outcome", "depends_on", "external_identity"],
+      "additionalProperties": false
+    },
+
+    "triageProposal": {
+      "type": "object",
+      "properties": {
+        "thread_id": { "$ref": "common.json#/$defs/id" },
+        "reading": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "remediation_scope": { "$ref": "common.json#/$defs/scope" },
+        "separable": {
+          "description": "The agent's reading of whether the remediation can be split off. Undeterminable is expressed as UNKNOWN and counts as inside scope.",
+          "$ref": "common.json#/$defs/predicateValue"
+        },
+        "proposed_route": {
+          "description": "Recorded and ignored. Routing is kernel scope containment.",
+          "enum": ["COMMENT_RESOLUTION", "CHILD_WORK_ITEM", "SCOPE_EXPANSION"]
+        }
+      },
+      "required": ["thread_id", "reading", "remediation_scope", "separable", "proposed_route"],
+      "additionalProperties": false
+    },
+
+    "cancellationProposal": {
+      "type": "object",
+      "properties": {
+        "work_item_id": { "$ref": "common.json#/$defs/id" },
+        "to": { "enum": ["SUPERSEDED", "ABANDONED"] },
+        "evidence": { "type": "array", "minItems": 1, "items": { "$ref": "common.json#/$defs/id" } },
+        "rationale": { "$ref": "common.json#/$defs/nonEmptyString" }
+      },
+      "required": ["work_item_id", "to", "evidence", "rationale"],
+      "additionalProperties": false
+    },
+
+    "dispatchProposal": {
+      "description": "The Orchestrator's proposed next dispatch. The kernel selects; this is an input to ranking, not a bypass of it.",
+      "type": "object",
+      "properties": {
+        "stage": { "$ref": "common.json#/$defs/stage" },
+        "agent": { "$ref": "common.json#/$defs/agentRole" },
+        "objective": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "mandate_scope": { "$ref": "common.json#/$defs/scope" },
+        "advisory_notes": {
+          "description": "Untrusted free text. Grants nothing, and no adapter consults it.",
+          "type": "string"
+        },
+        "model_preference": { "type": ["string", "null"], "minLength": 1 },
+        "skill_preference": { "type": "array", "items": { "$ref": "common.json#/$defs/nonEmptyString" } }
+      },
+      "required": ["stage", "agent", "objective", "mandate_scope", "advisory_notes"],
+      "additionalProperties": false
+    },
+
+    "arbitrationProposal": {
+      "type": "object",
+      "properties": {
+        "conflict_id": { "$ref": "common.json#/$defs/id" },
+        "classification": { "enum": ["FACTUAL", "INTERPRETIVE", "SCOPE"] },
+        "discriminating_observation": { "type": ["string", "null"], "minLength": 1 },
+        "resolution": { "enum": ["A", "B", "CANNOT_SETTLE"] },
+        "rationale": { "$ref": "common.json#/$defs/nonEmptyString" }
+      },
+      "required": ["conflict_id", "classification", "discriminating_observation", "resolution", "rationale"],
+      "additionalProperties": false
+    }
+  }
+}

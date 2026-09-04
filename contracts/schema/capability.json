@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentos.dev/schema/capability.json",
+  "title": "Capability record, chain stage record and capability graph",
+  "description": "The capability is AgentOS's unit of truth. The registry's purpose is blunt: make disconnected architecture visible.",
+  "$defs": {
+    "chainStageRecord": {
+      "description": "`implemented` without `connected` is an orphan. `connected` without `exercised` is a capability that exists only on paper.",
+      "type": "object",
+      "properties": {
+        "stage": { "$ref": "common.json#/$defs/chainStage" },
+        "applicable": { "$ref": "common.json#/$defs/predicateValue" },
+        "not_applicable_reason": { "type": ["string", "null"] },
+        "implemented": { "$ref": "common.json#/$defs/predicateValue" },
+        "connected": { "$ref": "common.json#/$defs/predicateValue" },
+        "exercised": { "$ref": "common.json#/$defs/predicateValue" },
+        "evidence": { "type": "array", "items": { "$ref": "common.json#/$defs/id" } },
+        "semantics": {
+          "description": "How this stage represents absence and uncertainty.",
+          "type": "array",
+          "items": { "$ref": "common.json#/$defs/dataSemantic" }
+        },
+        "defects": { "type": "array", "items": { "$ref": "common.json#/$defs/id" } }
+      },
+      "required": [
+        "stage", "applicable", "not_applicable_reason", "implemented",
+        "connected", "exercised", "evidence", "semantics", "defects"
+      ],
+      "additionalProperties": false
+    },
+
+    "capabilityRecord": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "common.json#/$defs/id" },
+        "name": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "description": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "canonical_entity": { "type": ["string", "null"], "minLength": 1 },
+        "status": { "$ref": "common.json#/$defs/capabilityStatus" },
+        "chain": { "type": "array", "items": { "$ref": "#/$defs/chainStageRecord" } },
+        "inputs": { "type": "array", "items": { "$ref": "#/$defs/reference" } },
+        "writers": { "type": "array", "items": { "$ref": "#/$defs/reference" } },
+        "storage": { "type": "array", "items": { "$ref": "#/$defs/reference" } },
+        "consumers": {
+          "description": "What reads it, from code references rather than assumptions.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/reference" }
+        },
+        "api": { "type": "array", "items": { "$ref": "#/$defs/reference" } },
+        "ui": { "type": "array", "items": { "$ref": "#/$defs/reference" } },
+        "provenance": { "$ref": "common.json#/$defs/predicateValue" },
+        "observability": { "type": "array", "items": { "$ref": "#/$defs/reference" } },
+        "validation": { "type": "array", "items": { "$ref": "#/$defs/layerVerdict" } },
+        "production_evidence": { "type": "array", "items": { "$ref": "common.json#/$defs/id" } },
+        "outcome": { "type": ["string", "null"] },
+        "learning": { "type": ["string", "null"] },
+        "reconciliation": { "$ref": "common.json#/$defs/reconciliationState" },
+        "sources_seen": {
+          "description": "Which of intent, code and runtime named this capability. A capability appearing in only one source is itself a finding, and which source tells you what kind.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["INTENT", "CODE", "RUNTIME"] }
+        },
+        "findings": { "type": "array", "items": { "$ref": "common.json#/$defs/id" } },
+        "confidence": { "$ref": "common.json#/$defs/confidenceClass" },
+        "scope_paths": { "type": "array", "items": { "$ref": "common.json#/$defs/pathGlob" } },
+        "observed_at": { "$ref": "common.json#/$defs/timestamp" },
+        "freshness": { "$ref": "common.json#/$defs/freshness" }
+      },
+      "required": [
+        "id", "name", "description", "canonical_entity", "status", "chain",
+        "inputs", "writers", "storage", "consumers", "api", "ui", "provenance",
+        "observability", "validation", "production_evidence", "outcome",
+        "learning", "reconciliation", "sources_seen", "findings", "confidence",
+        "scope_paths", "observed_at", "freshness"
+      ],
+      "additionalProperties": false
+    },
+
+    "reference": {
+      "type": "object",
+      "properties": {
+        "label": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "locator": { "$ref": "common.json#/$defs/locator" },
+        "confidence": { "$ref": "common.json#/$defs/confidenceClass" }
+      },
+      "required": ["label", "locator", "confidence"],
+      "additionalProperties": false
+    },
+
+    "layerVerdict": {
+      "type": "object",
+      "properties": {
+        "layer": { "enum": ["UNIT", "INTEGRATION", "CAPABILITY", "RUNTIME", "PRODUCTION"] },
+        "verdict": { "enum": ["PASS", "FAIL", "NOT_APPLICABLE", "NOT_VALIDATED"] },
+        "reason": { "type": ["string", "null"] },
+        "evidence": { "type": "array", "items": { "$ref": "common.json#/$defs/id" } }
+      },
+      "required": ["layer", "verdict", "reason", "evidence"],
+      "additionalProperties": false
+    },
+
+    "graphNode": {
+      "type": "object",
+      "properties": {
+        "node_id": { "$ref": "common.json#/$defs/id" },
+        "capability": { "$ref": "common.json#/$defs/id" },
+        "stage": { "$ref": "common.json#/$defs/chainStage" },
+        "label": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "locator": { "$ref": "common.json#/$defs/locator" }
+      },
+      "required": ["node_id", "capability", "stage", "label", "locator"],
+      "additionalProperties": false
+    },
+
+    "graphEdge": {
+      "description": "A structural edge is an INFERENCE; an edge confirmed by tracing a real record through a runtime is a FACT.",
+      "type": "object",
+      "properties": {
+        "from": { "$ref": "common.json#/$defs/id" },
+        "to": { "$ref": "common.json#/$defs/id" },
+        "kind": { "enum": ["DATA_FLOW", "CALL", "READ", "WRITE", "RENDER"] },
+        "confidence": { "$ref": "common.json#/$defs/confidenceClass" },
+        "carries_provenance": { "$ref": "common.json#/$defs/predicateValue" },
+        "evidence": { "type": "array", "items": { "$ref": "common.json#/$defs/id" } }
+      },
+      "required": ["from", "to", "kind", "confidence", "carries_provenance", "evidence"],
+      "additionalProperties": false
+    },
+
+    "capabilityGraph": {
+      "type": "object",
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "nodes": { "type": "array", "items": { "$ref": "#/$defs/graphNode" } },
+        "edges": { "type": "array", "items": { "$ref": "#/$defs/graphEdge" } },
+        "built_at": { "$ref": "common.json#/$defs/timestamp" }
+      },
+      "required": ["version", "nodes", "edges", "built_at"],
+      "additionalProperties": false
+    },
+
+    "capabilityRegistry": {
+      "type": "object",
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "run_id": { "$ref": "common.json#/$defs/id" },
+        "records": { "type": "array", "items": { "$ref": "#/$defs/capabilityRecord" } },
+        "graph": { "$ref": "#/$defs/capabilityGraph" },
+        "assembled_at": { "$ref": "common.json#/$defs/timestamp" }
+      },
+      "required": ["version", "run_id", "records", "graph", "assembled_at"],
+      "additionalProperties": false
+    }
+  }
+}

@@ -28,15 +28,15 @@ freeze.
 - `AGENTOS_PRINCIPLES.md` — `a3914787ce6d0b66`
 - `docs/AGENTOS_ARCHITECTURE.md` — `1573a60c51c2a388`
 - `docs/KERNEL_BOUNDARY.md` — `78113d17cdca79cf`
-- `docs/INTENT_AND_WORK_ITEM_RESOLUTION.md` — `4399cb1cef5dd7a9`
+- `docs/INTENT_AND_WORK_ITEM_RESOLUTION.md` — `dc491a5f0b43dfe7`
 - `docs/AGENT_ROLES.md` — `deac3f391abda1bb`
-- `docs/CONTEXT_MODEL.md` — `00cb581a3d7de54a`
+- `docs/CONTEXT_MODEL.md` — `3709631f74bf9a22`
 - `docs/DATA_SEMANTICS.md` — `82248789997a6e23`
 - `docs/CAPABILITY_MODEL.md` — `49953fc71f677f61`
-- `docs/WORKFLOW_STATE_MACHINE.md` — `0f18f45ea7715854`
-- `docs/AGENT_HANDOFF_CONTRACT.md` — `894082be8aeb540e`
+- `docs/WORKFLOW_STATE_MACHINE.md` — `92b85295c796aafa`
+- `docs/AGENT_HANDOFF_CONTRACT.md` — `593c9d46250991a5`
 - `docs/DEFINITION_OF_DONE.md` — `4a96122456712c78`
-- `docs/HUMAN_AUTHORIZATION.md` — `4727e64466bb653a`
+- `docs/HUMAN_AUTHORIZATION.md` — `a2124c4d081b40b5`
 - `docs/SKILL_AND_MODEL_SELECTION.md` — `318c589f230da316`
 - `docs/REPOSITORY_ADAPTER.md` — `9c224a03a1071842`
 
@@ -74,7 +74,7 @@ and sessions building the kernel.
 2. Decide the amendment against the principles. Where a proposed amendment conflicts with a
    principle, the principle wins and the amendment is wrong.
 3. **Apply the amendment to the document, bump the affected contract's version if a shape
-   changed, and record both in section 9 of this file.** A change that reaches code without
+   changed, and record both in section 8 of this file.** A change that reaches code without
    reaching the document reintroduces exactly the drift the freeze prevents.
 4. Re-run the manifest and commit the new hash with the amendment.
 
@@ -266,5 +266,46 @@ ceremony.
 
 ## 8. Amendment log
 
-None. Amendments are appended here with date, the document and section changed, the
-contradiction that prompted the change, and the contract version bumped if any.
+Amendments are appended here with date, the document and section changed, the contradiction
+that prompted the change, and the contract version bumped if any.
+
+### 2026-09-04 — WP-1, amendments A-1 to A-11
+
+Eleven amendments, all raised by the same activity: writing the JSON Schemas against the frozen
+documents. That is the activity the plan predicted would raise them
+([IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) section 8: "It will happen, and most often
+in WP-1, because writing a schema against a document is the first activity that reads it
+precisely"), and all eleven have the second shape it named — **a rule stated against a field the
+shape did not have.** None changes a normative decision; none touches the kernel boundary, the
+dependency rule, the stage vocabulary, the confidence or absence vocabularies, or the gate
+set, so none requires a v0.4.
+
+**Contract version bumped:** `HandoffEnvelope` 1.1 → **1.2** (A-1, A-2, A-3 add required
+fields). No other contract had a prior published version to bump.
+
+| # | Document · section | Contradiction | Amendment |
+|---|---|---|---|
+| A-1 | AGENT_HANDOFF_CONTRACT · Envelope | `COMPLETE` requires "every `required_output` present", and the envelope had no field carrying a filled output. | Added required `outputs`, keyed by output name. |
+| A-2 | AGENT_HANDOFF_CONTRACT · Envelope | DEFINITION_OF_DONE 3 has agents supply per-criterion verdicts and the kernel do the arithmetic; the envelope is the only transport and had no field for them. | Added required `dod_verdicts`. |
+| A-3 | AGENT_HANDOFF_CONTRACT · Envelope | `artifacts_changed` and `coverage` are reconciled against *the dispatch's* mutation events and call log; the envelope did not name its dispatch. | Added required `dispatch_id`. |
+| A-4 | AGENT_HANDOFF_CONTRACT · proposals | AGENT_ROLES role 1 lists proposed dispatch, arbitration resolutions and draft authorization requests among the Orchestrator's outputs, and `proposals` is the only structural channel; the documented key set omitted all three. | Documented `dispatch`, `arbitration`, `authorization_request`. |
+| A-5 | INTENT_AND_WORK_ITEM_RESOLUTION · 2.2, 3.2 | The `proposed_work_item` example abbreviated its assertions, so the one worked example of an `Assertion` could not satisfy CONTEXT_MODEL 2. `alternatives[]` lacked the reading that section 7 rung 4 asks a human to discriminate between. `IntakeRecord` lacked the content hash the source-drift check in WORKFLOW_STATE_MACHINE 7.4 compares against. | Completed the assertions; added `reading` and `would_do` to `alternatives[]`; added `content_hash` to `IntakeRecord`. |
+| A-6 | AGENT_HANDOFF_CONTRACT · evidence | "Evidence of these kinds must carry a predicate, not just a number" named a field the shape did not have, and the example omitted the mandatory `reproducible`. | Added `predicate` as a typed `{subject, operator, operand}`; added `reproducible` to the example. |
+| A-7 | WORKFLOW_STATE_MACHINE · 3.1 | Templates are human-authored, reviewed policy data, and the shape carried nothing saying what a template is for. | Added required `description` to `WorkflowTemplate`. |
+| A-8 | WORKFLOW_STATE_MACHINE · 7.2 | The mutation-event example was shown flattened while every other event is a uniform log line, which would have given `events.ndjson` two shapes and made a typed replayer impossible. | Framed it as a log record: common `seq`/`at`/ids/`event` frame, content under `data`. |
+| A-9 | HUMAN_AUTHORIZATION · 3 | Denials and grants are recorded at the work-item level so a fresh run is not a way to ask again, and the grant did not name its work item. Revocability is a state the record could not express. | Added required `work_item_id` and `revoked_at`. |
+| A-10 | AGENT_HANDOFF_CONTRACT · Input package | The example carried a `goal` section the document had already removed, and lacked the mandate name, the intake reference the resolution dispatch needs, the materialized sections, the criteria owed, the granted tool surface D-2's conformance check compares against, and the selected model. | Removed `goal`; added `mandate_name`, `intake_ref`, `context_sections`, `dod_criteria_owed`, `tools_granted`, `model`. |
+| A-11 | CONTEXT_MODEL · 2 | The assertion example carried evidence with no `id`, no `locator` and no `reproducible`, so the one worked example of an assertion's evidence was evidence the kernel could not replay — which is the whole point of the field. | Completed the inline evidence, and stated that a package assertion carries evidence inline while an envelope assertion cites ids. |
+
+Two decisions taken while resolving these are recorded because they could otherwise look like
+oversights:
+
+- **`Assertion.evidence` admits either an evidence id or an inline `Evidence`.** CONTEXT_MODEL 2
+  shows evidence inline, because a Context Package assertion stands alone; AGENT_HANDOFF_CONTRACT
+  shows ids, because an envelope carries an `evidence[]` pool to reference. Both forms are in the
+  frozen set and both are the same evidence, so the contract admits both rather than one document
+  being wrong. No amendment.
+- **`Assertion.probe` is required on every assertion, agent-authored inferences included**, and is
+  documented as "the probe or dispatch that produced this assertion". Every assertion naming its
+  source is what makes the confidence discipline auditable; an optional `probe` would have made
+  the most important assertions — the resolution's — the ones with no provenance.

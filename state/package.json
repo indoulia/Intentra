@@ -1,0 +1,12 @@
+{
+  "name": "@agentos/state",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": { ".": "./dist/src/index.js" },
+  "dependencies": {
+    "@agentos/contracts": "0.3.0"
+  }
+}

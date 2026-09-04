@@ -1,0 +1,7 @@
+{
+  "name": "@agentos/tools",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "description": "Build-time only: schema codegen, fixture runner, boundary checks. Never imported by runtime packages."
+}

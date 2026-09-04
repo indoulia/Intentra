@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentos.dev/schema/input-package.json",
+  "title": "InputPackage",
+  "description": "What an agent receives. A typed input, never a conversation. `prior_envelopes` are references to structured envelopes, not transcript text.",
+  "type": "object",
+  "properties": {
+    "work_item_id": { "$ref": "common.json#/$defs/id" },
+    "run_id": { "$ref": "common.json#/$defs/id" },
+    "dispatch_id": {
+      "description": "Seeds idempotency: every mutating adapter call in this dispatch derives its key from it.",
+      "$ref": "common.json#/$defs/id"
+    },
+    "agent": { "$ref": "common.json#/$defs/agentRole" },
+    "mandate_name": {
+      "description": "Which of the role's mandates this dispatch is. Context Discovery has two: `resolution` before admission, `context` after it.",
+      "$ref": "common.json#/$defs/nonEmptyString"
+    },
+    "stage": { "$ref": "common.json#/$defs/stage" },
+    "work_item_ref": {
+      "description": "Replaces v0.2's inlined goal. One authoritative statement of what is being attempted, read by every agent.",
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "intake_ref": {
+      "description": "Populated for the resolution mandate, which runs before a Work Item exists.",
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "workflow": {
+      "description": "Read-only, so an agent knows what comes after it. Insufficient for changing anything: the graph is frozen and the kernel evaluates the edges.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "template_id": { "$ref": "common.json#/$defs/nonEmptyString" },
+            "version": { "$ref": "common.json#/$defs/nonEmptyString" },
+            "stages_remaining": {
+              "type": "array",
+              "items": { "$ref": "common.json#/$defs/templateStage" }
+            }
+          },
+          "required": ["template_id", "version", "stages_remaining"],
+          "additionalProperties": false
+        },
+        { "type": "null" }
+      ]
+    },
+    "context_package_ref": { "type": ["string", "null"], "minLength": 1 },
+    "context_sections": {
+      "description": "The materialized subset. `required_inputs` bounds what is built, which is what keeps input size independent of run length.",
+      "type": "object",
+      "patternProperties": { "^[a-z_]+$": {} },
+      "additionalProperties": false
+    },
+    "capability_registry_ref": { "type": ["string", "null"], "minLength": 1 },
+    "prior_envelopes": { "type": "array", "items": { "$ref": "common.json#/$defs/id" } },
+    "mandate": { "$ref": "#/$defs/mandate" },
+    "required_inputs": {
+      "type": "array",
+      "items": { "$ref": "context-package.json#/$defs/sectionName" }
+    },
+    "required_outputs": {
+      "type": "array",
+      "items": { "$ref": "common.json#/$defs/nonEmptyString" }
+    },
+    "dod_profile_ref": { "type": ["string", "null"], "minLength": 1 },
+    "dod_criteria_owed": {
+      "type": "array",
+      "items": { "$ref": "dod.json#/$defs/criterionId" }
+    },
+    "constraints": { "type": "array", "items": { "$ref": "common.json#/$defs/nonEmptyString" } },
+    "authorization_scope": { "$ref": "#/$defs/authorizationScope" },
+    "tools_granted": {
+      "description": "The exact adapter operations this dispatch may reach. The effective tool surface is an allowlist, and a startup conformance check asserts it equals this set.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/toolGrant" }
+    },
+    "skills_available": { "type": "array", "items": { "$ref": "#/$defs/skillOffer" } },
+    "model": { "$ref": "common.json#/$defs/nonEmptyString" },
+    "budget": { "$ref": "#/$defs/dispatchBudget" }
+  },
+  "required": [
+    "work_item_id", "run_id", "dispatch_id", "agent", "mandate_name", "stage",
+    "work_item_ref", "intake_ref", "workflow", "context_package_ref",
+    "context_sections", "capability_registry_ref", "prior_envelopes", "mandate",
+    "required_inputs", "required_outputs", "dod_profile_ref", "dod_criteria_owed",
+    "constraints", "authorization_scope", "tools_granted", "skills_available",
+    "model", "budget"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "mandate": {
+      "description": "Structured, not prose. The adapters enforce in_scope and out_of_scope as path constraints on top of worktree confinement.",
+      "type": "object",
+      "properties": {
+        "objective": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "in_scope": { "type": "array", "items": { "$ref": "common.json#/$defs/pathGlob" } },
+        "out_of_scope": { "type": "array", "items": { "$ref": "common.json#/$defs/pathGlob" } },
+        "capabilities": { "type": "array", "items": { "$ref": "common.json#/$defs/id" } },
+        "advisory_notes": {
+          "description": "Untrusted free text from the Orchestrator Agent. It grants nothing and no adapter consults it.",
+          "type": "string"
+        }
+      },
+      "required": ["objective", "in_scope", "out_of_scope", "capabilities", "advisory_notes"],
+      "additionalProperties": false
+    },
+
+    "authorizationScope": {
+      "type": "object",
+      "properties": {
+        "autonomous": { "type": "array", "items": { "$ref": "common.json#/$defs/nonEmptyString" } },
+        "gated": { "type": "array", "items": { "$ref": "common.json#/$defs/gate" } },
+        "grants_held": { "type": "array", "items": { "$ref": "common.json#/$defs/id" } }
+      },
+      "required": ["autonomous", "gated", "grants_held"],
+      "additionalProperties": false
+    },
+
+    "toolGrant": {
+      "type": "object",
+      "properties": {
+        "adapter": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "op": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "tool_name": {
+          "description": "The name the substrate exposes. The conformance check compares effective tool names against exactly this set.",
+          "$ref": "common.json#/$defs/nonEmptyString"
+        },
+        "description": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "args_schema": { "type": "object" }
+      },
+      "required": ["adapter", "op", "tool_name", "description", "args_schema"],
+      "additionalProperties": false
+    },
+
+    "skillOffer": {
+      "description": "A suggestion to the agent, not an obligation. A skill that can spawn an agent never appears here.",
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "source": { "enum": ["global", "repository", "plugin", "connector", "mcp", "builtin", "script"] },
+        "description": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "mutating": { "type": "boolean" }
+      },
+      "required": ["id", "source", "description", "mutating"],
+      "additionalProperties": false
+    },
+
+    "dispatchBudget": {
+      "type": "object",
+      "properties": {
+        "max_usd": { "type": "number", "minimum": 0 },
+        "max_turns": { "type": "integer", "minimum": 1 },
+        "max_wall_clock_ms": { "type": "integer", "minimum": 1 }
+      },
+      "required": ["max_usd", "max_turns", "max_wall_clock_ms"],
+      "additionalProperties": false
+    }
+  }
+}

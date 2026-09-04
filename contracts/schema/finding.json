@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentos.dev/schema/finding.json",
+  "title": "Envelope section shapes",
+  "description": "Finding, Blocker, Unknown, Assumption, Recommendation, ArtifactChange and Coverage. Grouped because they are the envelope's sections and only the envelope uses them.",
+  "$defs": {
+    "finding": {
+      "description": "A finding without evidence is not a finding; it is a recommendation of category `hypothesis`.",
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "common.json#/$defs/id" },
+        "title": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "severity": { "$ref": "common.json#/$defs/severity" },
+        "category": { "$ref": "#/$defs/findingCategory" },
+        "capability": { "type": ["string", "null"], "minLength": 1 },
+        "chain_stage": {
+          "oneOf": [{ "$ref": "common.json#/$defs/chainStage" }, { "type": "null" }]
+        },
+        "description": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.json#/$defs/id" }
+        },
+        "confidence": { "$ref": "common.json#/$defs/confidenceClass" },
+        "impact": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "remediation_hint": { "type": "string" }
+      },
+      "required": [
+        "id", "title", "severity", "category", "capability", "chain_stage",
+        "description", "evidence", "confidence", "impact"
+      ],
+      "additionalProperties": false
+    },
+    "findingCategory": {
+      "description": "The ten structural detectors of CAPABILITY_MODEL section 5, plus the data-semantics, test-quality and generic categories the Auditor's standing search list names.",
+      "enum": [
+        "orphan-writer",
+        "orphan-reader",
+        "orphan-store",
+        "dead-calculation",
+        "broken-chain",
+        "phantom-api",
+        "phantom-ui",
+        "duplicate-ownership",
+        "field-loss",
+        "provenance-break",
+        "fabricated-default",
+        "collapsed-absence",
+        "missing-provenance",
+        "missing-timestamp",
+        "stale-documentation",
+        "test-asserts-on-mock",
+        "unproven-completion",
+        "structural",
+        "correctness",
+        "security",
+        "other"
+      ]
+    },
+
+    "blocker": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "common.json#/$defs/id" },
+        "kind": { "$ref": "#/$defs/blockerKind" },
+        "description": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "conflicting_requirements": { "type": "array", "items": { "type": "string" } },
+        "options": { "type": "array", "items": { "type": "string" } },
+        "needs": { "$ref": "#/$defs/needs" },
+        "evidence": { "type": "array", "items": { "$ref": "common.json#/$defs/id" } }
+      },
+      "required": ["id", "kind", "description", "needs", "evidence"],
+      "additionalProperties": false
+    },
+    "blockerKind": {
+      "enum": [
+        "ARCHITECTURE_CONTRADICTION",
+        "MISSING_ACCESS",
+        "MISSING_CAPABILITY",
+        "AMBIGUOUS_GOAL",
+        "AMBIGUOUS_STATE",
+        "WORK_ITEM_MISCLASSIFIED",
+        "AUTHORIZATION_REQUIRED",
+        "BUDGET_EXHAUSTED",
+        "UNRESOLVED_CONFLICT",
+        "EXTERNAL_DEPENDENCY"
+      ]
+    },
+    "needs": {
+      "enum": [
+        "architect_decision",
+        "human_decision",
+        "human_authorization",
+        "access_grant",
+        "additional_discovery",
+        "external_fix",
+        "re_resolution"
+      ]
+    },
+
+    "unknown": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "common.json#/$defs/id" },
+        "subject": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "reason": { "$ref": "common.json#/$defs/absenceReason" },
+        "attempted": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "recoverable_by": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "blocks": {
+          "description": "Downstream obligations that cannot be met. Every entry must name a real obligation; a decorative unknown is a contract violation.",
+          "type": "array",
+          "items": { "$ref": "common.json#/$defs/nonEmptyString" }
+        }
+      },
+      "required": ["id", "subject", "reason", "attempted", "recoverable_by", "blocks"],
+      "additionalProperties": false
+    },
+
+    "assumption": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "common.json#/$defs/id" },
+        "statement": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "breaks_if_wrong": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "verify_by": { "$ref": "common.json#/$defs/nonEmptyString" }
+      },
+      "required": ["id", "statement", "breaks_if_wrong", "verify_by"],
+      "additionalProperties": false
+    },
+
+    "recommendation": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "common.json#/$defs/id" },
+        "category": { "enum": ["hypothesis", "out-of-scope", "improvement", "risk"] },
+        "statement": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "priority": { "$ref": "common.json#/$defs/severity" },
+        "rationale": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "owner_role": {
+          "oneOf": [{ "$ref": "common.json#/$defs/agentRole" }, { "type": "null" }]
+        },
+        "confirming_observation": {
+          "description": "Mandatory for `hypothesis`: the observation that would turn a suspicion into a finding.",
+          "type": ["string", "null"]
+        },
+        "evidence": { "type": "array", "items": { "$ref": "common.json#/$defs/id" } }
+      },
+      "required": ["id", "category", "statement", "priority", "rationale", "owner_role"],
+      "additionalProperties": false
+    },
+
+    "artifactChange": {
+      "description": "The agent's account of a mutation. Reconciled against adapter mutation events; it is not the reversal record.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": ["file", "commit", "branch", "migration", "ticket", "runtime", "pr", "comment"]
+        },
+        "target": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "change": { "enum": ["created", "modified", "deleted", "renamed", "transitioned"] },
+        "sha": { "type": ["string", "null"] },
+        "branch": { "type": ["string", "null"] }
+      },
+      "required": ["kind", "target", "change"],
+      "additionalProperties": false
+    },
+
+    "coverage": {
+      "description": "The difference between 'found nothing there' and 'never looked there'. Mandatory, and reconciled against the dispatch's adapter call log.",
+      "type": "object",
+      "properties": {
+        "scope_examined": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.json#/$defs/pathGlob" }
+        },
+        "scope_not_examined": { "type": "array", "items": { "$ref": "common.json#/$defs/pathGlob" } },
+        "confidence": { "$ref": "common.json#/$defs/confidenceClass" },
+        "notes": { "type": "string" }
+      },
+      "required": ["scope_examined", "scope_not_examined", "confidence"],
+      "additionalProperties": false
+    }
+  }
+}

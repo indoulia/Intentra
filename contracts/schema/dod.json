@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentos.dev/schema/dod.json",
+  "title": "Definition of Done",
+  "description": "Profiles are policy data; per-criterion verdicts come from agents; the arithmetic is the kernel's.",
+  "$defs": {
+    "criterionId": { "type": "integer", "minimum": 1, "maximum": 18 },
+
+    "criterionVerdict": {
+      "description": "One agent owns each criterion, and no agent supplies the verdict on its own work.",
+      "type": "object",
+      "properties": {
+        "criterion": { "$ref": "#/$defs/criterionId" },
+        "verdict": { "$ref": "common.json#/$defs/dodVerdict" },
+        "reason": {
+          "description": "Mandatory for NOT_APPLICABLE and NOT_VALIDATED: a criterion set aside without a reason is a criterion quietly skipped.",
+          "type": ["string", "null"]
+        },
+        "evidence": { "type": "array", "items": { "$ref": "common.json#/$defs/id" } },
+        "capability": { "type": ["string", "null"], "minLength": 1 }
+      },
+      "required": ["criterion", "verdict", "reason", "evidence", "capability"],
+      "additionalProperties": false
+    },
+
+    "dodProfile": {
+      "type": "object",
+      "properties": {
+        "profile_id": { "$ref": "common.json#/$defs/dodProfileId" },
+        "description": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "criteria": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/criterionId" }
+        },
+        "critical_criteria": {
+          "description": "Criteria whose failure makes the verdict INCOMPLETE rather than COMPLETE_WITH_GAPS.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/criterionId" }
+        },
+        "not_applicable_by_default": {
+          "description": "Criteria this kind of thing genuinely does not have, each with the reason. A profile that marks an inconvenient criterion NOT_APPLICABLE without a reason is rejected.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "criterion": { "$ref": "#/$defs/criterionId" },
+              "reason": { "$ref": "common.json#/$defs/nonEmptyString" }
+            },
+            "required": ["criterion", "reason"],
+            "additionalProperties": false
+          }
+        },
+        "evidence_requirements": {
+          "type": "object",
+          "patternProperties": {
+            "^(1[0-8]|[1-9])$": {
+              "type": "object",
+              "properties": {
+                "kinds": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": { "$ref": "common.json#/$defs/evidenceKind" }
+                },
+                "note": { "$ref": "common.json#/$defs/nonEmptyString" }
+              },
+              "required": ["kinds", "note"],
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "applies_when": {
+          "description": "Applicability rules the kernel checks a profile assignment against.",
+          "type": "object",
+          "properties": {
+            "capability_kinds": { "type": "array", "items": { "$ref": "common.json#/$defs/nonEmptyString" } },
+            "work_item_types": {
+              "type": "array",
+              "items": {
+                "oneOf": [{ "$ref": "common.json#/$defs/workItemType" }, { "const": "*" }]
+              }
+            },
+            "requires_access": {
+              "description": "Access classes the profile's criteria need. An outcome binding only to a profile whose access this run lacks is not checkable, and admission says so.",
+              "type": "array",
+              "items": { "enum": ["repository", "git", "project_management", "runtime", "production"] }
+            }
+          },
+          "required": ["capability_kinds", "work_item_types", "requires_access"],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "profile_id", "description", "criteria", "critical_criteria",
+        "not_applicable_by_default", "evidence_requirements", "applies_when"
+      ],
+      "additionalProperties": false
+    },
+
+    "completionReport": {
+      "description": "Written for a reader who was not present and does not trust the run.",
+      "type": "object",
+      "properties": {
+        "work_item_id": { "$ref": "common.json#/$defs/id" },
+        "run_id": { "$ref": "common.json#/$defs/id" },
+        "profile_id": { "$ref": "common.json#/$defs/dodProfileId" },
+        "verdict": { "$ref": "common.json#/$defs/completionVerdict" },
+        "criteria": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "properties": {
+              "criterion": { "$ref": "#/$defs/criterionId" },
+              "verdict": { "$ref": "common.json#/$defs/dodVerdict" },
+              "reason": { "type": ["string", "null"] },
+              "evidence": { "type": "array", "items": { "$ref": "common.json#/$defs/id" } },
+              "owner_role": { "$ref": "common.json#/$defs/agentRole" },
+              "supplied_by_envelope": { "type": ["string", "null"], "minLength": 1 }
+            },
+            "required": ["criterion", "verdict", "reason", "evidence", "owner_role", "supplied_by_envelope"],
+            "additionalProperties": false
+          }
+        },
+        "unmet_critical": { "type": "array", "items": { "$ref": "#/$defs/criterionId" } },
+        "not_validated": { "type": "array", "items": { "$ref": "#/$defs/criterionId" } },
+        "gaps": { "type": "array", "items": { "$ref": "common.json#/$defs/nonEmptyString" } },
+        "route_back_to": {
+          "description": "The stage that owes the missing verdicts. Populated when the verdict is INCOMPLETE.",
+          "oneOf": [{ "$ref": "common.json#/$defs/templateStage" }, { "type": "null" }]
+        },
+        "source_drift": {
+          "oneOf": [{ "$ref": "#/$defs/sourceDrift" }, { "type": "null" }]
+        },
+        "computed_at": { "$ref": "common.json#/$defs/timestamp" }
+      },
+      "required": [
+        "work_item_id", "run_id", "profile_id", "verdict", "criteria",
+        "unmet_critical", "not_validated", "gaps", "route_back_to",
+        "source_drift", "computed_at"
+      ],
+      "additionalProperties": false
+    },
+
+    "sourceDrift": {
+      "description": "The intake's own locator, re-executed at COMPLETION. Disclosure, never chasing.",
+      "type": "object",
+      "properties": {
+        "state": { "enum": ["UNCHANGED", "CHANGED", "UNAVAILABLE"] },
+        "hash_at_admission": { "type": "string" },
+        "hash_now": { "type": ["string", "null"] },
+        "detail": { "type": "string" }
+      },
+      "required": ["state", "hash_at_admission", "hash_now", "detail"],
+      "additionalProperties": false
+    }
+  }
+}

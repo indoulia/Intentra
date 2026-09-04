@@ -1,0 +1,317 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentos.dev/schema/common.json",
+  "title": "AgentOS common vocabulary",
+  "description": "The closed vocabularies every other contract draws on. Defined once so that two components cannot disagree about what a value means.",
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/#-]*$"
+    },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "nonEmptyString": { "type": "string", "minLength": 1 },
+    "pathGlob": { "type": "string", "minLength": 1, "maxLength": 1024 },
+
+    "confidenceClass": {
+      "description": "CONTEXT_MODEL section 1. UNKNOWN never silently becomes FACT.",
+      "enum": ["FACT", "INFERENCE", "UNKNOWN"]
+    },
+    "absenceReason": {
+      "description": "DATA_SEMANTICS. The one absence vocabulary; a probe must not invent a reason string.",
+      "enum": [
+        "UNKNOWN",
+        "UNAVAILABLE",
+        "NOT_APPLICABLE",
+        "NOT_COMPUTED",
+        "INSUFFICIENT_EVIDENCE",
+        "CONFLICTING"
+      ]
+    },
+    "dataSemantic": {
+      "description": "DATA_SEMANTICS full vocabulary, used when describing a target system's values.",
+      "enum": [
+        "ZERO",
+        "NULL",
+        "EMPTY",
+        "UNKNOWN",
+        "UNAVAILABLE",
+        "NOT_APPLICABLE",
+        "NOT_COMPUTED",
+        "STALE",
+        "CONFLICTING",
+        "PARTIAL",
+        "INSUFFICIENT_EVIDENCE"
+      ]
+    },
+    "freshness": {
+      "description": "CONTEXT_MODEL section 2: orthogonal to confidence. A value can be FACT and STALE at once.",
+      "enum": ["CURRENT", "STALE", "UNKNOWN"]
+    },
+    "predicateValue": {
+      "description": "WORKFLOW_STATE_MACHINE section 4.3. A predicate over an UNKNOWN assertion is INDETERMINATE, never FALSE.",
+      "enum": ["TRUE", "FALSE", "INDETERMINATE"]
+    },
+
+    "evidenceKind": {
+      "enum": [
+        "file",
+        "git",
+        "command",
+        "query",
+        "http",
+        "log",
+        "ticket",
+        "document",
+        "screenshot",
+        "metric"
+      ]
+    },
+    "verificationStatus": {
+      "enum": ["VERIFIED", "MISMATCH", "UNREPLAYABLE", "UNVERIFIED", "UNVERIFIABLE"]
+    },
+
+    "severity": { "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"] },
+
+    "agentRole": {
+      "description": "AGENT_ROLES: the eight roles. `context-discovery` covers both the resolution and context mandates.",
+      "enum": [
+        "orchestrator",
+        "context-discovery",
+        "auditor",
+        "architect",
+        "implementer",
+        "validator",
+        "product-ux",
+        "production"
+      ]
+    },
+    "reviewingRole": {
+      "description": "The roles entitled to return REJECTED (AGENT_HANDOFF_CONTRACT cross-field rules).",
+      "enum": ["validator", "product-ux"]
+    },
+
+    "stage": {
+      "description": "WORKFLOW_STATE_MACHINE section 2: prologue, template stages, and control states.",
+      "enum": [
+        "INTAKE_RECEIVED",
+        "RESOLUTION",
+        "CONTEXT_DISCOVERY",
+        "UNDERSTOOD",
+        "WORKFLOW_SELECTED",
+        "AUDIT",
+        "ROOT_CAUSE",
+        "ARCHITECTURE",
+        "PLAN",
+        "DECOMPOSITION",
+        "CHILD_COORDINATION",
+        "IMPLEMENTATION",
+        "VALIDATION",
+        "STRUCTURAL_REAUDIT",
+        "UX_REVIEW",
+        "REWORK",
+        "PR_PREPARATION",
+        "PR_REVIEW",
+        "REVIEW_TRIAGE",
+        "COMMENT_RESOLUTION",
+        "AUTHORIZATION",
+        "MERGE",
+        "DEPLOY",
+        "PRODUCTION_VALIDATION",
+        "COMPLETION",
+        "BLOCKED",
+        "CANCELLED",
+        "COMPLETE"
+      ]
+    },
+    "prologueStage": {
+      "enum": [
+        "INTAKE_RECEIVED",
+        "RESOLUTION",
+        "CONTEXT_DISCOVERY",
+        "UNDERSTOOD",
+        "WORKFLOW_SELECTED"
+      ]
+    },
+    "controlState": { "enum": ["BLOCKED", "CANCELLED", "COMPLETE"] },
+    "templateStage": {
+      "description": "Stages a workflow template may contain. The prologue and the control states are excluded: no template contains them and no proposal can add one.",
+      "enum": [
+        "AUDIT",
+        "ROOT_CAUSE",
+        "ARCHITECTURE",
+        "PLAN",
+        "DECOMPOSITION",
+        "CHILD_COORDINATION",
+        "IMPLEMENTATION",
+        "VALIDATION",
+        "STRUCTURAL_REAUDIT",
+        "UX_REVIEW",
+        "REWORK",
+        "PR_PREPARATION",
+        "PR_REVIEW",
+        "REVIEW_TRIAGE",
+        "COMMENT_RESOLUTION",
+        "AUTHORIZATION",
+        "MERGE",
+        "DEPLOY",
+        "PRODUCTION_VALIDATION",
+        "COMPLETION"
+      ]
+    },
+
+    "workItemType": {
+      "description": "INTENT_AND_WORK_ITEM_RESOLUTION section 3.3. PR and REVIEW are deliberately not types.",
+      "enum": [
+        "EPIC",
+        "FEATURE",
+        "STORY",
+        "DEFECT",
+        "TASK",
+        "INCIDENT",
+        "INVESTIGATION",
+        "CHANGE_REQUEST",
+        "UNKNOWN"
+      ]
+    },
+    "workItemLifecycle": {
+      "enum": ["RESOLVED", "UNDERSTOOD", "EXECUTING", "BLOCKED", "ACHIEVED", "ABANDONED", "SUPERSEDED"]
+    },
+    "workItemLinkKind": {
+      "enum": ["CHILD_OF", "PARENT_OF", "DUPLICATE_OF", "DISCOVERED_BY", "DEPENDS_ON", "SUPERSEDES", "SUPERSEDED_BY"]
+    },
+
+    "intakeSource": {
+      "enum": [
+        "NATURAL_LANGUAGE",
+        "PROJECT_MANAGEMENT",
+        "VCS",
+        "DOCUMENT",
+        "EVENT",
+        "SCHEDULE",
+        "RUNTIME_ALERT"
+      ]
+    },
+    "trustClass": {
+      "description": "Set by the host from authenticated context, never from intake content.",
+      "enum": ["OPERATOR", "INTERNAL", "EXTERNAL"]
+    },
+
+    "reconciliationState": {
+      "description": "CONTEXT_MODEL section 5. Used at capability level and at work-item level.",
+      "enum": [
+        "ALIGNED",
+        "INTENT_ONLY",
+        "CODE_ONLY",
+        "CODE_NO_RUNTIME",
+        "RUNTIME_NO_CODE",
+        "CLAIMED_DONE_UNPROVEN",
+        "CONFLICTING",
+        "INDETERMINATE"
+      ]
+    },
+    "capabilityStatus": {
+      "enum": [
+        "PROVEN",
+        "WORKING",
+        "PARTIAL",
+        "DISCONNECTED",
+        "ORPHANED",
+        "CLAIMED",
+        "ABSENT",
+        "UNKNOWN"
+      ]
+    },
+    "chainStage": {
+      "enum": [
+        "SOURCE",
+        "INGESTION",
+        "NORMALIZATION",
+        "CANONICAL_STORE",
+        "INTELLIGENCE",
+        "API",
+        "UI",
+        "OUTCOME",
+        "LEARNING"
+      ]
+    },
+
+    "riskClass": {
+      "description": "WORKFLOW_STATE_MACHINE section 3.6, derived by the kernel from the admitted graph and scope.",
+      "enum": ["READ_ONLY", "LOCAL_MUTATION", "EXTERNAL_MUTATION", "IRREVERSIBLE"]
+    },
+    "gate": {
+      "enum": [
+        "MERGE_PROTECTED",
+        "DEPLOY_PRODUCTION",
+        "DESTRUCTIVE_MIGRATION",
+        "IRREVERSIBLE_DATA_MUTATION",
+        "CREDENTIAL_OR_SECURITY_CHANGE",
+        "EXTERNAL_COMMUNICATION",
+        "PRODUCTION_WRITE",
+        "SCOPE_EXPANSION",
+        "COST_CEILING_EXCEEDED",
+        "AUTONOMOUS_INTAKE_EXECUTION"
+      ]
+    },
+
+    "dodVerdict": {
+      "description": "DEFINITION_OF_DONE section 1. NOT_VALIDATED is never counted as MET.",
+      "enum": ["MET", "NOT_MET", "NOT_APPLICABLE", "NOT_VALIDATED"]
+    },
+    "completionVerdict": {
+      "enum": ["COMPLETE", "COMPLETE_WITH_GAPS", "INCOMPLETE", "INDETERMINATE"]
+    },
+    "dodProfileId": {
+      "enum": [
+        "data-capability",
+        "service-capability",
+        "ui-capability",
+        "internal-capability",
+        "fix",
+        "audit",
+        "documentation"
+      ]
+    },
+
+    "runOutcome": {
+      "enum": ["COMPLETE", "BLOCKED", "FAILED", "CANCELLED", "RERESOLVED"]
+    },
+
+    "locator": {
+      "description": "A re-executable read. `op: null` marks a genuinely unrepeatable observation, which caps the assertion it supports at INFERENCE.",
+      "type": "object",
+      "properties": {
+        "adapter": { "$ref": "#/$defs/nonEmptyString" },
+        "op": { "type": ["string", "null"], "minLength": 1 },
+        "args": { "type": "object" }
+      },
+      "required": ["adapter", "op", "args"],
+      "additionalProperties": false
+    },
+
+    "scope": {
+      "description": "A typed, bounded scope. Becomes `mandate.in_scope`, so an over-wide scope is an over-wide grant of reach.",
+      "type": "object",
+      "properties": {
+        "paths": { "type": "array", "items": { "$ref": "#/$defs/pathGlob" } },
+        "capabilities": { "type": "array", "items": { "$ref": "#/$defs/id" } },
+        "repositories": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" } }
+      },
+      "required": ["paths", "capabilities", "repositories"],
+      "additionalProperties": false
+    },
+
+    "cost": {
+      "type": "object",
+      "properties": {
+        "input_tokens": { "type": "integer", "minimum": 0 },
+        "output_tokens": { "type": "integer", "minimum": 0 },
+        "usd": { "type": ["number", "null"], "minimum": 0 }
+      },
+      "required": ["input_tokens", "output_tokens"],
+      "additionalProperties": false
+    }
+  }
+}

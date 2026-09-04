@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentos.dev/schema/adapter.json",
+  "title": "Adapter operation descriptors, call records, mutation events and idempotency",
+  "description": "What makes adapters enforceable rather than conventional.",
+  "$defs": {
+    "operationDescriptor": {
+      "description": "REPOSITORY_ADAPTER section 2.3. Fail-closed defaults throughout: an operation whose observation safety cannot be established is observation_safe: false.",
+      "type": "object",
+      "properties": {
+        "adapter": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "op": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "description": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "mutating": {
+          "description": "Does it change authoritative state: repository content, VCS refs, an external system, a data store, or AgentOS run state.",
+          "type": "boolean"
+        },
+        "reversal": {
+          "description": "The operation that undoes it, or null for non-reversible. A dispatch that performed a reversal: null operation is never automatically retried.",
+          "oneOf": [{ "$ref": "#/$defs/reversalSpec" }, { "type": "null" }]
+        },
+        "idempotent_by_key": { "type": "boolean" },
+        "identity_args": {
+          "description": "The argument names the work-item-scoped idempotency key is computed over. For create_pr that is repository, head and base — not the PR body.",
+          "type": "array",
+          "items": { "$ref": "common.json#/$defs/nonEmptyString" }
+        },
+        "external_destination": { "type": "boolean" },
+        "observation_safe": {
+          "description": "May the kernel replay this to verify evidence. observation_safe: true implies mutating: false; the converse does not hold.",
+          "type": "boolean"
+        },
+        "incidental_artifacts": {
+          "description": "Declared by-products: coverage output, caches, temp files. No mutation event, no reversal, and not a loophole — a by-product something else depends on surviving disqualifies the operation.",
+          "type": "array",
+          "items": { "$ref": "common.json#/$defs/pathGlob" }
+        },
+        "args_schema": {
+          "description": "JSON Schema for the operation's arguments, used to build the dispatch tool surface.",
+          "type": "object"
+        },
+        "gates": {
+          "description": "Gates this operation can fire, in addition to whatever the classifiers detect.",
+          "type": "array",
+          "items": { "$ref": "common.json#/$defs/gate" }
+        }
+      },
+      "required": [
+        "adapter", "op", "description", "mutating", "reversal", "idempotent_by_key",
+        "identity_args", "external_destination", "observation_safe",
+        "incidental_artifacts", "args_schema", "gates"
+      ],
+      "additionalProperties": false
+    },
+
+    "reversalSpec": {
+      "type": "object",
+      "properties": {
+        "op": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "args_from": {
+          "description": "How the reversal's arguments are derived from the mutation event's `before` state.",
+          "type": "object"
+        }
+      },
+      "required": ["op", "args_from"],
+      "additionalProperties": false
+    },
+
+    "callRecord": {
+      "description": "Every adapter call, reads included. This is what makes coverage checkable and screenshot provenance verifiable.",
+      "type": "object",
+      "properties": {
+        "call_id": { "$ref": "common.json#/$defs/id" },
+        "dispatch_id": { "type": ["string", "null"], "minLength": 1 },
+        "adapter": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "op": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "args_digest": { "type": "string" },
+        "paths_touched": { "type": "array", "items": { "type": "string" } },
+        "capabilities_touched": { "type": "array", "items": { "type": "string" } },
+        "outcome": { "enum": ["OK", "REFUSED", "ERROR", "DEDUPLICATED", "BLOCKED"] },
+        "refusal": {
+          "oneOf": [
+            { "enum": ["scope_violation", "security_violation", "grant_missing", "ambiguous_state"] },
+            { "type": "null" }
+          ]
+        },
+        "aggregated_count": {
+          "description": "Reads are logged at a policy-defined granularity. Aggregation is permitted; omission is not.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "started_at": { "$ref": "common.json#/$defs/timestamp" },
+        "duration_ms": { "type": "integer", "minimum": 0 }
+      },
+      "required": [
+        "call_id", "dispatch_id", "adapter", "op", "args_digest", "paths_touched",
+        "capabilities_touched", "outcome", "refusal", "aggregated_count",
+        "started_at", "duration_ms"
+      ],
+      "additionalProperties": false
+    },
+
+    "mutationEvent": {
+      "description": "Emitted by the adapter at call time, before returning. The reversal record exists the moment the mutation does.",
+      "type": "object",
+      "properties": {
+        "work_item_id": { "$ref": "common.json#/$defs/id" },
+        "run_id": { "$ref": "common.json#/$defs/id" },
+        "dispatch_id": { "$ref": "common.json#/$defs/id" },
+        "adapter": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "op": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "target": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "before": { "type": "object" },
+        "after": { "type": "object" },
+        "reversal": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "op": { "$ref": "common.json#/$defs/nonEmptyString" },
+                "args": { "type": "object" }
+              },
+              "required": ["op", "args"],
+              "additionalProperties": false
+            },
+            { "type": "null" }
+          ]
+        },
+        "at": { "$ref": "common.json#/$defs/timestamp" }
+      },
+      "required": [
+        "work_item_id", "run_id", "dispatch_id", "adapter", "op", "target",
+        "before", "after", "reversal", "at"
+      ],
+      "additionalProperties": false
+    },
+
+    "idempotencyRecord": {
+      "type": "object",
+      "properties": {
+        "key": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "scope": { "enum": ["dispatch", "work_item"] },
+        "adapter": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "op": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "result": {},
+        "external_locator": {
+          "description": "How to re-read the external resource on a key hit. A work-item-scoped hit is verified, never trusted.",
+          "oneOf": [{ "$ref": "common.json#/$defs/locator" }, { "type": "null" }]
+        },
+        "recorded_at": { "$ref": "common.json#/$defs/timestamp" }
+      },
+      "required": ["key", "scope", "adapter", "op", "result", "external_locator", "recorded_at"],
+      "additionalProperties": false
+    },
+
+    "classification": {
+      "description": "A fail-closed determination, recorded with its confidence so a run that was conservative because it was blind is distinguishable from one that was conservative because the target really was production.",
+      "type": "object",
+      "properties": {
+        "subject": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "kind": { "enum": ["branch_protection", "environment", "observation_safety", "spawns_agents"] },
+        "value": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "confidence": { "$ref": "common.json#/$defs/confidenceClass" },
+        "failed_closed": {
+          "description": "True when the value was chosen because the probe could not establish it.",
+          "type": "boolean"
+        },
+        "probe_detail": { "type": "string" }
+      },
+      "required": ["subject", "kind", "value", "confidence", "failed_closed", "probe_detail"],
+      "additionalProperties": false
+    },
+
+    "availability": {
+      "description": "An unreachable adapter is a recorded UNAVAILABLE, which is a fact about access and not a fact about the system under study.",
+      "type": "object",
+      "properties": {
+        "adapter": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "state": { "enum": ["AVAILABLE", "UNAVAILABLE", "NOT_CONFIGURED", "DENIED"] },
+        "detail": { "type": "string" },
+        "checked_at": { "$ref": "common.json#/$defs/timestamp" }
+      },
+      "required": ["adapter", "state", "detail", "checked_at"],
+      "additionalProperties": false
+    }
+  }
+}

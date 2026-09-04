@@ -89,9 +89,10 @@ decisions, and the adapter availability model already draws that distinction.
   "source_locator": {
     "adapter": "pm.jira", "op": "read_issue", "args": { "key": "EPIC-336" }
   },
-  "principal": { "id": "psingh@example.com", "asserted_by": "host" },
+  "principal": { "id": "psingh@example.com", "asserted_by": "host.cli" },
   "trust_class": "OPERATOR",
   "raw": "...verbatim content, redacted for secrets, never edited...",
+  "content_hash": "c2e51920560a320759f0b9c755b15080ffccb5c161390d883699fa8cd9da0a02",
   "attachments": [],
   "correlation": { "prior_work_item": null, "prior_run": null }
 }
@@ -108,6 +109,10 @@ Three fields do real work:
   from the content. Section 9.
 - **`raw` is verbatim.** No agent summarizes intake before it is recorded. A summary that
   drops the discriminating clause is exactly how a resolution goes wrong invisibly.
+- **`content_hash`** is the SHA-256 of `raw` at admission, and is what makes the source-drift
+  check at `COMPLETION` a comparison rather than a re-reading
+  ([WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md) section 7.4). The check was
+  specified against a hash the record did not carry (amendment A-5).
 
 ---
 
@@ -143,13 +148,31 @@ A **proposed Work Item**. Every field is an `Assertion` with a confidence class 
 {
   "proposed_work_item": {
     "source_intake": "in_0091",
-    "intent": { "value": "RESOLVE_DEFECT", "confidence": "INFERENCE", "derived_from": ["A-11", "A-12"] },
-    "type": { "value": "DEFECT", "confidence": "INFERENCE", "derived_from": ["A-11"] },
-    "external_identity": { "value": "jira:DEF-456", "confidence": "FACT", "evidence": ["E-01"] },
-    "title": { "value": "BSESN namespace not restored after restart", "confidence": "FACT", "evidence": ["E-01"] },
+    "intent": {
+      "value": "RESOLVE_DEFECT", "confidence": "INFERENCE",
+      "derived_from": ["A-11", "A-12"],
+      "reasoning": "the ticket describes incorrect behaviour of an existing capability",
+      "observed_at": "2026-09-04T09:33:00Z", "probe": "resolution", "freshness": "CURRENT"
+    },
+    "type": {
+      "value": "DEFECT", "confidence": "INFERENCE", "derived_from": ["A-11"],
+      "reasoning": "cap.namespace-restore exists and is reported to misbehave",
+      "observed_at": "2026-09-04T09:33:00Z", "probe": "resolution", "freshness": "CURRENT"
+    },
+    "external_identity": {
+      "value": "jira:DEF-456", "confidence": "FACT", "evidence": ["E-01"],
+      "observed_at": "2026-09-04T09:32:00Z", "probe": "pm.jira", "freshness": "CURRENT"
+    },
+    "title": {
+      "value": "BSESN namespace not restored after restart", "confidence": "FACT",
+      "evidence": ["E-01"],
+      "observed_at": "2026-09-04T09:32:00Z", "probe": "pm.jira", "freshness": "CURRENT"
+    },
     "desired_outcome": {
       "value": "BSESN namespace present and correct after a service restart, shown on a real restart",
-      "confidence": "INFERENCE", "derived_from": ["A-11", "A-13"]
+      "confidence": "INFERENCE", "derived_from": ["A-11", "A-13"],
+      "reasoning": "the ticket states the symptom; the outcome names the observation that settles it",
+      "observed_at": "2026-09-04T09:33:00Z", "probe": "resolution", "freshness": "CURRENT"
     },
     "scope": {
       "paths": ["src/namespace/**"],
@@ -159,14 +182,31 @@ A **proposed Work Item**. Every field is an `Assertion` with a confidence class 
     },
     "constraints": [],
     "dependencies": [],
-    "parent": { "value": "jira:EPIC-336", "confidence": "FACT", "evidence": ["E-02"] },
+    "parent": {
+      "value": "jira:EPIC-336", "confidence": "FACT", "evidence": ["E-02"],
+      "observed_at": "2026-09-04T09:32:00Z", "probe": "pm.jira", "freshness": "CURRENT"
+    },
     "resolution_confidence": 0.82,
     "alternatives": [
-      { "type": "INVESTIGATION", "why_rejected": "reproduction steps are present and specific" }
+      { "type": "INVESTIGATION",
+        "reading": "nothing is broken; the reporter misread the namespace listing",
+        "why_rejected": "reproduction steps are present and specific",
+        "would_do": "audit and root cause, then report without changing anything" }
     ]
   }
 }
 ```
+
+Every field is the full `Assertion` of [CONTEXT_MODEL.md](CONTEXT_MODEL.md) section 2 —
+`observed_at`, `probe` and `freshness` included, and `reasoning` on every `INFERENCE`. Earlier
+drafts of this example abbreviated them, which made it the one worked example in the frozen
+set that its own schema could not express (amendment A-5). `probe` names the probe or the
+dispatch that produced the assertion, so an agent-authored inference still says where it came
+from.
+
+`alternatives[]` carries `reading` and `would_do` alongside `why_rejected`, because section 7
+rung 4 and scenario I both ask a human to discriminate between readings and state what AgentOS
+would do under each. `why_rejected` alone cannot be turned into that question.
 
 `resolution_confidence` is the agent's own number and is treated as such: recorded, never the
 reason anything is believed, and consulted by the kernel only at the threshold in section 7.

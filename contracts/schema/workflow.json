@@ -1,0 +1,201 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentos.dev/schema/workflow.json",
+  "title": "Workflow templates, stage descriptors and the frozen run graph",
+  "description": "The machine is data-driven, so its data has a shape before the machine does.",
+  "$defs": {
+    "stageDescriptor": {
+      "description": "policies/stages.json, one per stage. `mutating` is load-bearing in three places: the safe-prefix computation, the resume rule, and the AUTONOMOUS_INTAKE_EXECUTION gate.",
+      "type": "object",
+      "properties": {
+        "stage": { "$ref": "common.json#/$defs/templateStage" },
+        "mutating": { "type": "boolean" },
+        "default_agent": { "$ref": "common.json#/$defs/agentRole" },
+        "required_outputs": {
+          "type": "array",
+          "items": { "$ref": "common.json#/$defs/nonEmptyString" }
+        },
+        "exit_condition": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "satisfied_by": {
+          "description": "The reality predicate meaning 'already done'. `null` where a stage can never be satisfied by prior reality.",
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "gates_possible": { "type": "array", "items": { "$ref": "common.json#/$defs/gate" } },
+        "dod_criteria": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1, "maximum": 18 }
+        },
+        "applicability_predicate": {
+          "description": "Evaluated by the kernel when a proposal asks to exclude this stage. TRUE or INDETERMINATE keeps the stage.",
+          "type": ["string", "null"],
+          "minLength": 1
+        }
+      },
+      "required": [
+        "stage", "mutating", "default_agent", "required_outputs", "exit_condition",
+        "satisfied_by", "gates_possible", "dod_criteria", "applicability_predicate"
+      ],
+      "additionalProperties": false
+    },
+
+    "edge": {
+      "type": "object",
+      "properties": {
+        "from": { "$ref": "common.json#/$defs/templateStage" },
+        "to": { "$ref": "common.json#/$defs/stage" },
+        "when": {
+          "description": "`always`, a named predicate (optionally negated with `NOT `), or `envelope.<STATUS>`.",
+          "$ref": "common.json#/$defs/nonEmptyString"
+        },
+        "kind": { "enum": ["advance", "branch", "loop", "escalate", "terminal"] },
+        "counter": { "type": ["string", "null"], "minLength": 1 },
+        "cap": { "type": ["string", "null"], "minLength": 1 },
+        "blocker_kind": {
+          "oneOf": [{ "$ref": "finding.json#/$defs/blockerKind" }, { "type": "null" }]
+        }
+      },
+      "required": ["from", "to", "when", "kind"],
+      "additionalProperties": false
+    },
+
+    "workflowTemplate": {
+      "type": "object",
+      "properties": {
+        "template_id": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "version": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "description": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "applies_to": {
+          "type": "object",
+          "properties": {
+            "types": {
+              "description": "Work item types, or `[\"*\"]` for a template admissible for every type.",
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "oneOf": [{ "$ref": "common.json#/$defs/workItemType" }, { "const": "*" }]
+              }
+            }
+          },
+          "required": ["types"],
+          "additionalProperties": false
+        },
+        "entry": { "$ref": "common.json#/$defs/templateStage" },
+        "stages": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "common.json#/$defs/templateStage" }
+        },
+        "optional_stages": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "common.json#/$defs/templateStage" }
+        },
+        "edges": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/edge" } },
+        "dod_profile_default": { "$ref": "common.json#/$defs/dodProfileId" }
+      },
+      "required": [
+        "template_id", "version", "description", "applies_to", "entry",
+        "stages", "optional_stages", "edges", "dod_profile_default"
+      ],
+      "additionalProperties": false
+    },
+
+    "frozenGraph": {
+      "description": "The parameterized instance, frozen at run start. Replayed on recovery, never recomputed.",
+      "type": "object",
+      "properties": {
+        "template_id": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "template_version": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "entry": { "$ref": "common.json#/$defs/templateStage" },
+        "stages": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "common.json#/$defs/templateStage" }
+        },
+        "edges": { "type": "array", "items": { "$ref": "#/$defs/edge" } },
+        "excluded_stages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "stage": { "$ref": "common.json#/$defs/templateStage" },
+              "predicate": { "$ref": "common.json#/$defs/nonEmptyString" },
+              "evaluated": { "const": "FALSE" }
+            },
+            "required": ["stage", "predicate", "evaluated"],
+            "additionalProperties": false
+          }
+        },
+        "stage_mandates": {
+          "type": "object",
+          "patternProperties": { "^[A-Z_]+$": { "$ref": "common.json#/$defs/scope" } },
+          "additionalProperties": false
+        },
+        "risk_class": { "$ref": "common.json#/$defs/riskClass" },
+        "dod_profile_default": { "$ref": "common.json#/$defs/dodProfileId" }
+      },
+      "required": [
+        "template_id", "template_version", "entry", "stages", "edges",
+        "excluded_stages", "stage_mandates", "risk_class", "dod_profile_default"
+      ],
+      "additionalProperties": false
+    },
+
+    "stageCursorEntry": {
+      "type": "object",
+      "properties": {
+        "stage": { "$ref": "common.json#/$defs/templateStage" },
+        "state": {
+          "description": "COMPLETED_PRIOR means the mutation has already occurred, not that the criteria are met.",
+          "enum": ["PENDING", "ACTIVE", "COMPLETED", "COMPLETED_PRIOR", "EXCLUDED"]
+        },
+        "reality_evidence": { "type": "array", "items": { "$ref": "common.json#/$defs/id" } },
+        "entered_at": { "type": ["string", "null"], "format": "date-time" },
+        "left_at": { "type": ["string", "null"], "format": "date-time" }
+      },
+      "required": ["stage", "state", "reality_evidence", "entered_at", "left_at"],
+      "additionalProperties": false
+    },
+
+    "run": {
+      "description": "run.json — a projection rebuildable from events.ndjson. If they disagree, the log wins.",
+      "type": "object",
+      "properties": {
+        "run_id": { "$ref": "common.json#/$defs/id" },
+        "work_item_id": { "$ref": "common.json#/$defs/id" },
+        "started_at": { "$ref": "common.json#/$defs/timestamp" },
+        "ended_at": { "type": ["string", "null"], "format": "date-time" },
+        "outcome": {
+          "oneOf": [{ "$ref": "common.json#/$defs/runOutcome" }, { "type": "null" }]
+        },
+        "graph": { "$ref": "#/$defs/frozenGraph" },
+        "current_stage": { "$ref": "common.json#/$defs/stage" },
+        "pre_block_stage": {
+          "oneOf": [{ "$ref": "common.json#/$defs/stage" }, { "type": "null" }]
+        },
+        "cursor": { "type": "array", "items": { "$ref": "#/$defs/stageCursorEntry" } },
+        "loop_counters": {
+          "type": "object",
+          "patternProperties": { "^[a-z_]+$": { "type": "integer", "minimum": 0 } },
+          "additionalProperties": false
+        },
+        "consumed_budget": { "$ref": "work-item.json#/$defs/consumedBudget" },
+        "open_blockers": { "type": "array", "items": { "$ref": "finding.json#/$defs/blocker" } },
+        "pending_authorizations": { "type": "array", "items": { "$ref": "common.json#/$defs/id" } },
+        "envelope_ids": { "type": "array", "items": { "$ref": "common.json#/$defs/id" } },
+        "context_package_version": { "type": ["integer", "null"], "minimum": 1 },
+        "last_seq": { "type": "integer", "minimum": 0 }
+      },
+      "required": [
+        "run_id", "work_item_id", "started_at", "ended_at", "outcome", "graph",
+        "current_stage", "pre_block_stage", "cursor", "loop_counters",
+        "consumed_budget", "open_blockers", "pending_authorizations",
+        "envelope_ids", "context_package_version", "last_seq"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

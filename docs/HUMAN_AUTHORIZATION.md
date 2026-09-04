@@ -157,6 +157,7 @@ A human. Specifically:
 {
   "grant_id": "g_014",
   "run_id": "run_2026_09_04_a1b2",
+  "work_item_id": "wi_jira_DEF-456",
   "gate": "DEPLOY_PRODUCTION",
   "target": "marksy-api :: production :: release v2.14.0",
   "scope": "single_action",
@@ -164,10 +165,17 @@ A human. Specifically:
   "granted_at": "2026-09-04T15:02:00Z",
   "expires_at": "2026-09-04T17:02:00Z",
   "conditions": ["rollback verified", "post-deploy validation required"],
-  "request_ref": "auth/req_014.json",
-  "evidence_reviewed": ["report/validation.md", "report/risk.md"]
+  "request_ref": "req_014",
+  "evidence_reviewed": ["report/validation.md", "report/risk.md"],
+  "revoked_at": null
 }
 ```
+
+`work_item_id` and `revoked_at` are required (amendment A-9). The grant is scoped to one run,
+but denials and grants are both recorded at the *work item* level so that starting a fresh
+Workflow Run is not a way to ask again — a grant that does not name its work item cannot be
+filed there. `revoked_at` is explicit rather than absent because "revocable at any time before
+the action executes" is a state the record has to be able to express.
 
 Rules:
 

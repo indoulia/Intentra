@@ -1,3 +1,12 @@
-# The v0.3 freeze manifest hashes LF content. Pin markdown to LF so
-# `sha256sum -c docs/freeze/v0.3.sha256` verifies on every platform.
-*.md text eol=lf
+# Line endings are LF everywhere, on every platform.
+#
+# Two things depend on it. The v0.3 freeze manifest hashes LF content, so a CRLF checkout
+# would make the freeze checkable only on the machine that created it. And `codegen:check`
+# compares the committed generated types byte for byte against a fresh generation, which a
+# checkout that rewrote line endings would fail for no reason anyone could act on.
+* text=auto eol=lf
+
+# Binary, so never touched.
+*.png binary
+*.jpg binary
+*.pdf binary

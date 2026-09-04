@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentos.dev/schema/rejection.json",
+  "title": "Violations and rejections",
+  "description": "Syntactic validity confers nothing. This is the vocabulary for what the kernel refused and why, so that a refusal is a locatable rule rather than a message.",
+  "$defs": {
+    "violationCode": {
+      "description": "One code per rule the kernel enforces itself. Each maps to a cross-field rule, an invariant, or an admission check.",
+      "enum": [
+        "SCHEMA_INVALID",
+        "COMPLETE_WITH_BLOCKERS",
+        "COMPLETE_WITH_UNFILLED_OUTPUT",
+        "BLOCKED_WITHOUT_BLOCKERS",
+        "BLOCKED_BY_ARCHITECTURE_ILLEGAL_ROLE",
+        "BLOCKED_BY_ARCHITECTURE_ILLEGAL_STAGE",
+        "BLOCKED_BY_ARCHITECTURE_NO_ARCHITECTURE_STAGE",
+        "REJECTED_FROM_NON_REVIEWING_ROLE",
+        "STATUS_ILLEGAL_FOR_STAGE",
+        "PROPOSAL_NOT_PERMITTED_FOR_ROLE",
+        "PROPOSAL_NOT_PERMITTED_IN_STAGE",
+        "PROPOSAL_RESERVES_KERNEL_DECISION",
+        "DANGLING_EVIDENCE_REFERENCE",
+        "DANGLING_BLOCKS_REFERENCE",
+        "FACT_FINDING_WITHOUT_VERIFIED_EVIDENCE",
+        "VERIFICATION_PRESENT_ON_ARRIVAL",
+        "COVERAGE_MISSING",
+        "COVERAGE_OVERSTATED",
+        "PREDICATE_MISSING_ON_LOG_OR_METRIC_EVIDENCE",
+        "UX_VERDICT_WITHOUT_CALL_ANCHORED_EVIDENCE",
+        "ASSERTION_WITHOUT_CONFIDENCE",
+        "ARTIFACTS_UNDER_REPORTED",
+        "ARTIFACTS_OVER_REPORTED",
+        "EVIDENCE_MISMATCH_THRESHOLD",
+        "DISPATCH_ID_MISMATCH",
+        "OUTPUT_NOT_A_REQUIRED_OUTPUT",
+        "DOD_VERDICT_CRITERION_NOT_OWNED",
+        "DOD_VERDICT_MISSING_REASON",
+        "ILLEGAL_TRANSITION",
+        "STAGE_NOT_IN_TEMPLATE",
+        "EXCLUSION_PREDICATE_NOT_FALSE",
+        "SCOPE_EXCEEDS_WORK_ITEM",
+        "UNBOUNDED_SCOPE",
+        "TYPE_WITHOUT_MINIMUM_EVIDENCE",
+        "EXTERNAL_IDENTITY_UNRESOLVED",
+        "OUTCOME_NOT_BINDABLE",
+        "DECOMPOSITION_BOUND_EXCEEDED",
+        "DECOMPOSITION_CYCLE",
+        "CANCELLATION_WITHOUT_EVIDENCE",
+        "INTAKE_INSTRUCTION_IGNORED",
+        "GRANT_MISSING",
+        "GRANT_EXPIRED",
+        "GRANT_MISMATCHED",
+        "SECURITY_FLOOR_VIOLATION",
+        "TOOL_SURFACE_NON_CONFORMANT",
+        "SPAWNING_SKILL_SELECTED",
+        "MUTATING_SKILL_FOR_READ_ONLY_STAGE",
+        "UNLOGGABLE_MUTATION",
+        "OBSERVATION_NOT_SAFE_FOR_REPLAY"
+      ]
+    },
+
+    "violation": {
+      "type": "object",
+      "properties": {
+        "code": { "$ref": "#/$defs/violationCode" },
+        "rule": {
+          "description": "Where the rule is written, e.g. `AGENT_HANDOFF_CONTRACT cross-field rules` or `KERNEL_BOUNDARY section 8 invariant 4`.",
+          "$ref": "common.json#/$defs/nonEmptyString"
+        },
+        "message": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "path": {
+          "description": "JSON Pointer into the offending document, where one applies.",
+          "type": ["string", "null"]
+        },
+        "handled_as": {
+          "description": "A contract violation is handled as BLOCKED; the kernel never guesses what an agent meant.",
+          "enum": ["BLOCKED", "FAILED", "DOWNGRADED", "REFUSED", "OVERRIDDEN"]
+        },
+        "subject": { "type": ["string", "null"] }
+      },
+      "required": ["code", "rule", "message", "path", "handled_as", "subject"],
+      "additionalProperties": false
+    },
+
+    "rejection": {
+      "description": "The result of any kernel admission or receipt. `accepted: false` always carries at least one violation.",
+      "type": "object",
+      "properties": {
+        "accepted": { "type": "boolean" },
+        "violations": { "type": "array", "items": { "$ref": "#/$defs/violation" } }
+      },
+      "required": ["accepted", "violations"],
+      "additionalProperties": false
+    }
+  }
+}

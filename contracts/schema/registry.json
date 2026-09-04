@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentos.dev/schema/registry.json",
+  "title": "Skill, model and agent registry entries",
+  "description": "Three indexes of what exists, sharing one lookup shape: discover, describe, rank, select. Registries rank; the kernel selects.",
+  "$defs": {
+    "skillEntry": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "source": { "enum": ["global", "repository", "plugin", "connector", "mcp", "builtin", "script"] },
+        "description": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "declared_inputs": { "type": "array", "items": { "type": "string" } },
+        "declared_outputs": { "type": "array", "items": { "type": "string" } },
+        "availability": { "$ref": "adapter.json#/$defs/availability" },
+        "mutating": { "type": "boolean" },
+        "spawns_agents": {
+          "description": "A skill with spawns_agents: true is never selectable. A skill whose spawning behaviour cannot be determined is treated as true.",
+          "type": "boolean"
+        },
+        "spawns_agents_determined": { "type": "boolean" },
+        "external_destination": { "type": "boolean" },
+        "reversal": { "type": ["string", "null"], "minLength": 1 },
+        "domains": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "repository_analysis", "git", "database", "api", "ui", "testing",
+              "deployment", "project_management", "documentation"
+            ]
+          }
+        },
+        "operations": { "type": "array", "items": { "enum": ["read", "analyse", "generate", "mutate", "verify"] } },
+        "targets": { "type": "array", "items": { "enum": ["filesystem", "vcs", "data_store", "network", "runtime"] } },
+        "observed_success_rate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "cost_hint": { "enum": ["low", "medium", "high", "unknown"] }
+      },
+      "required": [
+        "id", "source", "description", "declared_inputs", "declared_outputs",
+        "availability", "mutating", "spawns_agents", "spawns_agents_determined",
+        "external_destination", "reversal", "domains", "operations", "targets",
+        "observed_success_rate", "cost_hint"
+      ],
+      "additionalProperties": false
+    },
+
+    "modelEntry": {
+      "description": "Where a property is not knowable it is null, and selection degrades sensibly rather than assuming the best case.",
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "availability": { "$ref": "adapter.json#/$defs/availability" },
+        "context_window": { "type": ["integer", "null"], "minimum": 1 },
+        "reasoning": { "enum": ["shallow", "mid", "deep", "unknown"] },
+        "coding": { "enum": ["none", "basic", "strong", "unknown"] },
+        "vision": { "enum": ["none", "basic", "strong", "unknown"] },
+        "tool_use": { "enum": ["none", "basic", "strong", "unknown"] },
+        "usd_per_mtok_input": { "type": ["number", "null"], "minimum": 0 },
+        "usd_per_mtok_output": { "type": ["number", "null"], "minimum": 0 },
+        "latency_class": { "enum": ["fast", "medium", "slow", "unknown"] },
+        "precision_class": { "enum": ["standard", "high", "unknown"] }
+      },
+      "required": [
+        "id", "availability", "context_window", "reasoning", "coding", "vision",
+        "tool_use", "usd_per_mtok_input", "usd_per_mtok_output", "latency_class",
+        "precision_class"
+      ],
+      "additionalProperties": false
+    },
+
+    "requirement": {
+      "description": "Each agent declares what it needs, not which model it wants.",
+      "type": "object",
+      "properties": {
+        "context": { "enum": ["small", "medium", "large"] },
+        "reasoning": { "enum": ["shallow", "mid", "deep"] },
+        "coding": { "type": "boolean" },
+        "vision": { "type": "boolean" },
+        "tool_use": { "enum": ["none", "basic", "strong"] },
+        "precision": { "enum": ["standard", "high"] }
+      },
+      "required": ["context", "reasoning", "coding", "vision", "tool_use", "precision"],
+      "additionalProperties": false
+    },
+
+    "rankedCandidate": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "score": { "type": "number" },
+        "reasons": { "type": "array", "minItems": 1, "items": { "$ref": "common.json#/$defs/nonEmptyString" } },
+        "excluded_because": { "type": ["string", "null"] }
+      },
+      "required": ["id", "score", "reasons", "excluded_because"],
+      "additionalProperties": false
+    },
+
+    "skillRegistry": {
+      "type": "object",
+      "properties": {
+        "entries": { "type": "array", "items": { "$ref": "#/$defs/skillEntry" } },
+        "enumerated_at": { "$ref": "common.json#/$defs/timestamp" }
+      },
+      "required": ["entries", "enumerated_at"],
+      "additionalProperties": false
+    },
+
+    "modelRegistry": {
+      "type": "object",
+      "properties": {
+        "entries": { "type": "array", "items": { "$ref": "#/$defs/modelEntry" } },
+        "enumerated_at": { "$ref": "common.json#/$defs/timestamp" }
+      },
+      "required": ["entries", "enumerated_at"],
+      "additionalProperties": false
+    },
+
+    "agentSpec": {
+      "description": "An agent is a specification: mandate, required inputs, permitted adapters, output envelope type, and the model and skill requirements it declares.",
+      "type": "object",
+      "properties": {
+        "role": { "$ref": "common.json#/$defs/agentRole" },
+        "mandate_name": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "version": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "objective": { "$ref": "common.json#/$defs/nonEmptyString" },
+        "stages": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.json#/$defs/stage" }
+        },
+        "required_inputs": {
+          "type": "array",
+          "items": { "$ref": "context-package.json#/$defs/sectionName" }
+        },
+        "required_outputs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.json#/$defs/nonEmptyString" }
+        },
+        "permitted_adapters": { "type": "array", "items": { "$ref": "common.json#/$defs/nonEmptyString" } },
+        "read_only": { "type": "boolean" },
+        "hard_limits": {
+          "description": "Hard limits matter as much as mandates. Most multi-agent failure is an agent quietly doing another agent's job.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.json#/$defs/nonEmptyString" }
+        },
+        "must_declare": { "type": "array", "minItems": 1, "items": { "$ref": "common.json#/$defs/nonEmptyString" } },
+        "model_requirement": { "$ref": "#/$defs/requirement" },
+        "dod_criteria_owned": { "type": "array", "items": { "$ref": "dod.json#/$defs/criterionId" } }
+      },
+      "required": [
+        "role", "mandate_name", "version", "objective", "stages", "required_inputs",
+        "required_outputs", "permitted_adapters", "read_only", "hard_limits",
+        "must_declare", "model_requirement", "dod_criteria_owned"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
