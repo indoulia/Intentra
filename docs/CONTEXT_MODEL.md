@@ -4,6 +4,12 @@ The Context Package is the durable, structured answer to "what is actually true 
 repository, its intent, and its runtime?" It is built by discovery probes, consumed by
 every downstream agent, and persisted with the run.
 
+It answers two questions that must not be confused. **What is true about the system** — the
+bulk of the package. And **where this particular piece of work actually stands** — the
+`current_reality` section, which is what makes resumption possible and re-execution
+avoidable ([INTENT_AND_WORK_ITEM_RESOLUTION.md](INTENT_AND_WORK_ITEM_RESOLUTION.md) section
+5).
+
 It exists so that no agent has to re-derive context, and so that a human can audit what
 AgentOS believed and why.
 
@@ -129,9 +135,11 @@ where knowable. See [SKILL_AND_MODEL_SELECTION.md](SKILL_AND_MODEL_SELECTION.md)
 
 ```
 ContextPackage
-  meta            run id, goal, timestamps, probe coverage, package version
-  goal            raw goal, parsed intent, target repository, success criteria,
-                  explicit non-goals
+  meta            run id, work item id, timestamps, probe coverage, package version
+  work_item       -> the admitted Work Item (reference, not a copy)
+  current_reality where this work actually stands: implementation, tests, PR, CI,
+                  reviews, merge state, deployment, outcome evidence, children,
+                  AgentOS history (section 5.5)
   repository      identity, stack, structure, conventions, build & test commands
   product         what the system is for, its users, its domain vocabulary
   capabilities    -> Capability Registry (see CAPABILITY_MODEL.md)
@@ -154,10 +162,14 @@ ContextPackage
   gaps            every UNKNOWN with its reason and how to resolve it
 ```
 
-Two structural notes:
+Three structural notes:
 
 - `capabilities` is a reference into the Capability Registry rather than a copy. There is
   one representation of a capability per run.
+- `work_item` is likewise a reference. v0.2's `goal` section is gone: the raw request now
+  lives verbatim in the `IntakeRecord`, and the interpreted version is the admitted Work
+  Item. Keeping a third copy in the package would give the run two answers to "what are we
+  doing", and the one an agent happened to read would win.
 - `gaps` is a first-class top-level section, not a footnote. What AgentOS does not know is
   as operationally important as what it does, and it drives whether an agent may proceed.
 
@@ -178,17 +190,42 @@ resulting state:
 `INDETERMINATE` is not a failure of the run. It is an honest state, and downstream agents
 must handle it rather than assume the optimistic reading.
 
+### 5.5 Reconciliation at the work-item level
+
+The same enum, the same probes and the same rule applied to the question "where does this
+piece of work stand" rather than "does this capability work". Jira says `Done` with no
+merged commit is `CLAIMED_DONE_UNPROVEN`. The AgentOS log records a PR that GitHub does not
+have is `CONFLICTING`. An unreachable git host is `INDETERMINATE`, which is emphatically not
+"there is no PR".
+
+The authority rule that resolves the contradictions: **each source is authoritative about
+its own subject and nothing else.** Git owns repository content and PR existence; the PM
+system owns the ticket's own status and is at most an `INFERENCE` about the system; the
+AgentOS event log owns what AgentOS did and says nothing about whether it still holds. The
+full list is in
+[INTENT_AND_WORK_ITEM_RESOLUTION.md](INTENT_AND_WORK_ITEM_RESOLUTION.md) section 5.1.
+
+**`current_reality` is written only by probes.** No part of it may be derived from the
+intake text, from a ticket's status field alone, or from an agent's account of a previous
+run. An agent's claim about reality is recorded as a `claim` and ignored, exactly as a
+branch-predicate claim is.
+
 ## 6. Scope and cost
 
 Full discovery of a large repository is expensive and mostly wasted. Discovery runs in
 tiers:
 
-1. **Orientation** (always, cheap) — identity, stack, structure, git state, agent and
-   model capabilities, entry points. Enough to decide what matters.
-2. **Goal-relevant depth** (always) — deep discovery of the subsystems the goal touches,
-   plus their immediate dependencies and consumers.
-3. **On-demand** — anything an agent later requests, dispatched as a targeted probe and
-   merged into the package.
+1. **Orientation** (always, cheap) — identity, stack, structure, git state, PM access,
+   agent and model capabilities, entry points. Enough to resolve the work item.
+2. **Work-item-relevant depth** (always) — deep discovery of the subsystems the admitted
+   Work Item's `scope` touches, plus their immediate dependencies and consumers, and the
+   `current_reality` set for that work item.
+3. **On-demand** — anything an agent later requests, or the uncertainty ladder calls for,
+   dispatched as a targeted probe and merged into the package.
+
+Tier 1 runs before resolution; tier 2 runs after it. This is what answers a question v0.2
+left open — *how does discovery know what is relevant?* It does not, until a Work Item with
+a scope exists, which is why `RESOLUTION` precedes `CONTEXT_DISCOVERY` in the prologue.
 
 Coverage is recorded explicitly. An agent must be able to distinguish "the Auditor found no
 orphan readers here" from "discovery never looked here" — conflating the two produces

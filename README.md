@@ -2,20 +2,29 @@
 
 A durable, repository-agnostic autonomous engineering operating system.
 
-The user supplies a **goal**. AgentOS discovers everything else.
+The user supplies **work**, in whatever form it already exists. AgentOS determines
+everything else.
 
 ```
-"Build X in repository Y."
+"Fix the namespace restoration bug."
+"Work on EPIC-336."
+"Take care of this PR."
+<a webhook, a ticket, a review comment, a scheduled event>
 ```
 
-AgentOS then runs the engineering lifecycle itself: discover context, understand the
-existing system, audit it, architect a solution, plan, implement, validate, review the
-product experience, rework, re-validate, and stop at the human authorization boundary
-before anything high-impact happens.
+AgentOS decides what the work actually is, what state it is already in, what outcome is
+wanted, which workflow suits it, which agents it needs, and how to execute it safely — then
+runs that workflow: discover context, understand the existing system, audit it, architect a
+solution, plan, implement, validate, review the product experience, rework, re-validate,
+handle review feedback, and stop at the human authorization boundary before anything
+high-impact happens.
+
+The user never has to say whether something is an Epic or a Defect, which workflow applies,
+which stages are needed, or whether to resume or start over.
 
 ## Status
 
-**Architecture v0.2 — internally consistent, adversarially traced, implementation-ready,
+**Architecture v0.3 — internally consistent, adversarially traced, implementation-ready,
 zero production code.**
 
 There is no application code in this repository yet, and that is deliberate. This phase
@@ -30,13 +39,13 @@ between agents, an evidence model, and explicit authorization boundaries. Agents
 replaceable; the contracts are the product.
 
 ```
-USER          → GOAL
-AGENTOS       → CONTEXT
+USER          → WORK, IN ANY FORM
+AGENTOS       → WHAT IT IS, WHERE IT STANDS, WHAT IT NEEDS
 AGENTS        → REASONING
 REPOSITORY    → IMPLEMENTATION REALITY
 RUNTIME/PROD  → TRUTH
 TESTS         → EVIDENCE
-ORCHESTRATOR  → COORDINATION
+KERNEL        → COORDINATION, AND THE REFUSAL TO TAKE ANY OF IT ON TRUST
 HUMAN         → AUTHORITY FOR HIGH-IMPACT DECISIONS
 ```
 
@@ -56,16 +65,17 @@ Read in this order.
 2. [docs/AGENTOS_ARCHITECTURE.md](docs/AGENTOS_ARCHITECTURE.md) — system shape, components, repository layout.
 3. [docs/KERNEL_BOUNDARY.md](docs/KERNEL_BOUNDARY.md) — kernel vs agents, the dependency rule, component ownership, invariants.
 4. [docs/AGENT_ROLES.md](docs/AGENT_ROLES.md) — the eight roles, their mandates and limits.
-5. [docs/CONTEXT_MODEL.md](docs/CONTEXT_MODEL.md) — the Context Package and the discovery probes that fill it.
-6. [docs/DATA_SEMANTICS.md](docs/DATA_SEMANTICS.md) — universal meanings of ZERO, NULL, UNKNOWN and friends.
-7. [docs/CAPABILITY_MODEL.md](docs/CAPABILITY_MODEL.md) — capability registry and the capability graph the Auditor builds.
-8. [docs/WORKFLOW_STATE_MACHINE.md](docs/WORKFLOW_STATE_MACHINE.md) — durable run state, transitions, interruption recovery.
-9. [docs/AGENT_HANDOFF_CONTRACT.md](docs/AGENT_HANDOFF_CONTRACT.md) — the envelope every agent returns.
-10. [docs/DEFINITION_OF_DONE.md](docs/DEFINITION_OF_DONE.md) — capability-level completion, dynamically scoped.
-11. [docs/HUMAN_AUTHORIZATION.md](docs/HUMAN_AUTHORIZATION.md) — the gate model and security floor.
-12. [docs/SKILL_AND_MODEL_SELECTION.md](docs/SKILL_AND_MODEL_SELECTION.md) — dynamic skill and model routing.
-13. [docs/REPOSITORY_ADAPTER.md](docs/REPOSITORY_ADAPTER.md) — how AgentOS attaches to any repository.
-14. [docs/IMPLEMENTATION_ROADMAP.md](docs/IMPLEMENTATION_ROADMAP.md) — MVP, phases, and the Marksy proving ground.
+5. [docs/INTENT_AND_WORK_ITEM_RESOLUTION.md](docs/INTENT_AND_WORK_ITEM_RESOLUTION.md) — how any source becomes a Work Item, and how AgentOS finds out where it already stands.
+6. [docs/CONTEXT_MODEL.md](docs/CONTEXT_MODEL.md) — the Context Package and the discovery probes that fill it.
+7. [docs/DATA_SEMANTICS.md](docs/DATA_SEMANTICS.md) — universal meanings of ZERO, NULL, UNKNOWN and friends.
+8. [docs/CAPABILITY_MODEL.md](docs/CAPABILITY_MODEL.md) — capability registry and the capability graph the Auditor builds.
+9. [docs/WORKFLOW_STATE_MACHINE.md](docs/WORKFLOW_STATE_MACHINE.md) — stages, workflow templates, the graph, resumption, durable state, interruption recovery.
+10. [docs/AGENT_HANDOFF_CONTRACT.md](docs/AGENT_HANDOFF_CONTRACT.md) — the envelope every agent returns.
+11. [docs/DEFINITION_OF_DONE.md](docs/DEFINITION_OF_DONE.md) — capability-level completion, dynamically scoped.
+12. [docs/HUMAN_AUTHORIZATION.md](docs/HUMAN_AUTHORIZATION.md) — the gate model and security floor.
+13. [docs/SKILL_AND_MODEL_SELECTION.md](docs/SKILL_AND_MODEL_SELECTION.md) — dynamic skill and model routing.
+14. [docs/REPOSITORY_ADAPTER.md](docs/REPOSITORY_ADAPTER.md) — how AgentOS attaches to any repository.
+15. [docs/IMPLEMENTATION_ROADMAP.md](docs/IMPLEMENTATION_ROADMAP.md) — MVP, phases, and the Marksy proving ground.
 
 ## Repository layout
 
@@ -78,7 +88,7 @@ agent-os/
 ├── registries/   capability, skill and model registries
 ├── policies/     authorization boundaries, security floor, DoD profiles, data semantics
 ├── adapters/     repository, git, project-management, runtime and host adapters
-├── state/        durable run state (schema tracked; run data ignored)
+├── state/        durable work items and their runs (schema tracked; data ignored)
 └── docs/         this design
 ```
 

@@ -135,6 +135,21 @@ Capabilities are identified from evidence, not from a taxonomy:
 A capability that appears in only one source is itself a finding, and which source it
 appears in tells you what kind of finding it is.
 
+## 6.5 Capabilities and Work Items
+
+A **Work Item** is what is being attempted; a **Capability** is what the system can do. They
+are related and must not merge.
+
+- A work item names the capabilities it touches in `scope.capabilities`, and that scope is
+  what the adapters enforce as `mandate.in_scope`.
+- Completion is judged per capability, and the work item's own outcome is judged separately
+  ([DEFINITION_OF_DONE.md](DEFINITION_OF_DONE.md) section 7).
+- A `TASK` may touch no capability at all. That is not a modelling failure; it is why the
+  `documentation` and `internal-capability` profiles exist.
+- Capability identity is durable across runs and is the natural key for carrying knowledge
+  forward. Work item identity is durable across *attempts at one piece of work*. The two
+  lifecycles are independent: a capability outlives every work item that touched it.
+
 ## 7. Registry lifecycle
 
 The registry is built during Context Discovery, deepened during Audit, updated by the

@@ -17,14 +17,15 @@ Three properties follow from that, and they are the point of the contract:
 
 ```json
 {
-  "envelope_version": "1.0",
+  "envelope_version": "1.1",
+  "work_item_id": "wi_jira_DEF-456",
   "run_id": "run_2026_09_04_a1b2",
   "envelope_id": "env_007",
   "agent": "auditor",
   "agent_version": "1.0",
   "model": "claude-opus-5",
   "skills_used": ["repo-graph", "sql-inspect"],
-  "state_in": "AUDIT",
+  "stage_in": "AUDIT",
   "started_at": "2026-09-04T10:14:00Z",
   "completed_at": "2026-09-04T10:41:00Z",
   "cost": { "input_tokens": 412000, "output_tokens": 19000 },
@@ -47,13 +48,19 @@ Three properties follow from that, and they are the point of the contract:
     "confidence": "INFERENCE"
   },
 
+  "proposals": {},
+
   "next_action": {
-    "proposed_state": "AUDIT_COMPLETE",
+    "proposed_stage": "ARCHITECTURE",
     "proposed_agent": "architect",
     "rationale": "..."
   }
 }
 ```
+
+`state_in` became `stage_in` and `proposed_state` became `proposed_stage` in envelope
+version 1.1, following the vocabulary change in
+[WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md) section 2.
 
 ## Status values
 
@@ -69,9 +76,9 @@ Three properties follow from that, and they are the point of the contract:
 has corrupted every downstream decision.
 
 Each status maps to exactly one kernel action, including which statuses are legal from
-which state and agent. That mapping is defined once, in
-[WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md) section 2.1. An envelope carrying a
-status that is illegal for its state or role is a contract violation, logged as such and
+which stage and agent. That mapping is defined once, in
+[WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md) section 4.2. An envelope carrying a
+status that is illegal for its stage or role is a contract violation, logged as such and
 handled as `BLOCKED` — the kernel never guesses what an agent meant.
 
 ## Sections
@@ -172,8 +179,11 @@ through the originating adapter.
    is rejected** and the dispatch is treated as `FAILED`. One fabrication is a defect; two
    is an untrustworthy witness, and nothing it said should be merged.
 
-Verification is read-only by construction: `locator.op` must be an operation the adapter
-declares side-effect-free. An agent cannot use the evidence channel to make the kernel
+Verification cannot itself mutate: `locator.op` must be an operation the adapter declares
+`observation_safe` ([REPOSITORY_ADAPTER.md](REPOSITORY_ADAPTER.md) section 2.3) — replayable
+without altering authoritative state, without consuming what it measured, and with no effect
+beyond its declared incidental artifacts. Test execution and its coverage output qualify; a
+destructive queue read does not. An agent cannot use the evidence channel to make the kernel
 perform a mutation on its behalf.
 
 **Comparison is mechanical, per kind.** The kernel does not judge whether two observations
@@ -213,6 +223,60 @@ found no orphan readers here" from "the Auditor never looked here" — the disti
 whole evidence model rests on. Leaving it as an unchecked self-report would have left the
 most consequential claim in the envelope as the one nobody verified.
 
+### proposals
+
+The v0.3 additions, and the only place an agent may ask for something structural. Every one
+is a **proposal** the kernel admits, adjusts or refuses, and every one is optional — an
+agent fills only the keys its mandate calls for.
+
+```json
+{
+  "proposals": {
+    "work_item": { },
+    "workflow": {
+      "template_id": "defect.standard",
+      "include_optional": ["ARCHITECTURE"],
+      "exclude_optional": [
+        { "stage": "UX_REVIEW", "claim": "ux.required is FALSE", "rationale": "..." }
+      ],
+      "rationale": "..."
+    },
+    "decomposition": [
+      { "title": "...", "type": "STORY", "scope": { }, "desired_outcome": "...",
+        "depends_on": [], "external_identity": "jira:STORY-101" }
+    ],
+    "triage": [
+      { "thread_id": "rt_7", "reading": "...", "remediation_scope": { "paths": ["..."] },
+        "proposed_route": "COMMENT_RESOLUTION" }
+    ],
+    "cancellation": { "work_item_id": "...", "to": "SUPERSEDED", "evidence": ["E-12"] }
+  }
+}
+```
+
+What the kernel does with each:
+
+- **`work_item`** — admitted per
+  [INTENT_AND_WORK_ITEM_RESOLUTION.md](INTENT_AND_WORK_ITEM_RESOLUTION.md) section 3.4:
+  external identity resolved through the adapter, type checked against evidence minimums,
+  scope bounded, outcome required to bind to a checkable DoD profile.
+- **`workflow`** — admitted against the template set and the workflow floor. `exclude_optional`
+  carries a `claim`, never a decision: the kernel evaluates the stage's predicate itself and
+  keeps the stage on `TRUE` or `INDETERMINATE`. A refused parameterization falls back to the
+  most conservative admissible template, and the override is logged.
+- **`decomposition`** — legal only from the Architect, only in `DECOMPOSITION`. Existing
+  children are read from the PM adapter first; a child whose external identity already exists
+  is linked, never recreated. Dependency cycles are refused.
+- **`triage`** — routed by kernel scope containment, not by `proposed_route`. Inside the
+  parent's admitted scope, or undeterminable, means `COMMENT_RESOLUTION`; provably outside
+  means a child Work Item; outside and inseparable means `SCOPE_EXPANSION`.
+- **`cancellation`** — admitted only if `reality.outcome_already_satisfied` evaluates `TRUE`
+  from adapter evidence. Otherwise it escalates to a human.
+
+A proposal an agent is not entitled to make — a workflow proposal from the Implementer, a
+decomposition outside `DECOMPOSITION` — is a contract violation, logged and handled as
+`BLOCKED`.
+
 ### assumptions
 
 Anything the agent relied on that it did not verify. Each carries what breaks if it is
@@ -246,7 +310,7 @@ state.
 
 **This is not the reversal record.** The reversal record is the stream of `mutation` events
 that adapters emit at call time
-([WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md) section 5.2) — those exist whether
+([WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md) section 7.2) — those exist whether
 or not an envelope ever arrives, which is what makes a mid-dispatch crash recoverable.
 
 `artifacts_changed` is a **reconciliation**. On receipt the kernel diffs it against the
@@ -285,11 +349,26 @@ it.
 ```
 
 Kinds: `ARCHITECTURE_CONTRADICTION` · `MISSING_ACCESS` · `MISSING_CAPABILITY` ·
-`AMBIGUOUS_GOAL` · `AUTHORIZATION_REQUIRED` · `BUDGET_EXHAUSTED` · `UNRESOLVED_CONFLICT` ·
-`EXTERNAL_DEPENDENCY`.
+`AMBIGUOUS_GOAL` · `AMBIGUOUS_STATE` · `WORK_ITEM_MISCLASSIFIED` · `AUTHORIZATION_REQUIRED` ·
+`BUDGET_EXHAUSTED` · `UNRESOLVED_CONFLICT` · `EXTERNAL_DEPENDENCY`.
+
+`WORK_ITEM_MISCLASSIFIED` is how a stage reports that the work is not what was resolved — a
+root-cause pass finding that the "broken" feature was never built. It ends the run as
+`RERESOLVED` and starts a new one against the same Work Item, bounded by
+`budgets.reresolution` ([WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md) section 4.5). It
+is a blocker rather than a proposal because the run cannot continue: its graph is for
+different work.
+
+`AMBIGUOUS_STATE` is new in v0.3 and is deliberately distinct from `AMBIGUOUS_GOAL`. "We do
+not know what you want" and "we do not know whether this was already done" call for
+different questions to a human and different evidence to resolve them, and collapsing them
+would hide the more dangerous of the two. It is the terminal rung of the refined
+safer-branch rule: raised only when a mutating stage's "already done" predicate stays
+`INDETERMINATE` after discovery.
 
 `needs` names what would unblock it: `architect_decision`, `human_decision`,
-`human_authorization`, `access_grant`, `additional_discovery`, `external_fix`.
+`human_authorization`, `access_grant`, `additional_discovery`, `external_fix`,
+`re_resolution`.
 
 ### coverage
 
@@ -310,8 +389,11 @@ a contract violation handled as `BLOCKED`:
 
 - `status: COMPLETE` requires `blockers` empty and every `required_output` present.
 - `status: BLOCKED` and `BLOCKED_BY_ARCHITECTURE` require `blockers` non-empty.
-- `status: BLOCKED_BY_ARCHITECTURE` is legal only from the Implementer, only in state
-  `IMPLEMENTATION`.
+- `status: BLOCKED_BY_ARCHITECTURE` is legal only from the Implementer, only in stage
+  `IMPLEMENTATION`, and only where the frozen graph contains an `ARCHITECTURE` stage.
+- Every key in `proposals` is legal only for the role and stage that owns it, and a proposal
+  carrying a decision the kernel reserves — a resolved transition, a `verification` block, a
+  granted authorization — is a contract violation.
 - `status: REJECTED` is legal only from the Validator or Product/UX.
 - Every id in `findings[].evidence` must exist in `evidence[]`. Dangling references are
   rejected, not ignored.
@@ -338,8 +420,8 @@ On receipt, in this order — later steps do not run if an earlier one rejects:
 4. Verifies evidence per the verification policy, downgrading or rejecting as specified.
 5. Rejects a `next_action` that is not a legal transition, and evaluates the transition's
    predicate itself rather than accepting the agent's claim
-   ([WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md) section 2.3).
-6. Persists the envelope immutably under `state/runs/<run-id>/envelopes/`, including the
+   ([WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md) section 4.3).
+6. Persists the envelope immutably under the run's `envelopes/` directory, including the
    verification results it added.
 7. Merges surviving findings, capability updates, unknowns and assumptions into run state.
 8. Cross-checks new assertions against existing ones and raises a conflict for arbitration
@@ -354,10 +436,13 @@ Symmetrically, an agent receives a typed input, never a conversation:
 
 ```json
 {
+  "work_item_id": "wi_jira_DEF-456",
   "run_id": "...",
   "agent": "architect",
-  "state": "ARCHITECTURE",
-  "goal": { },
+  "stage": "ARCHITECTURE",
+  "work_item_ref": "../work-item.json",
+  "workflow": { "template_id": "defect.standard", "version": "1.0",
+                "stages_remaining": ["PLAN", "IMPLEMENTATION", "..."] },
   "context_package_ref": "context/v3.json",
   "capability_registry_ref": "capabilities/v2.json",
   "prior_envelopes": ["env_002", "env_007"],
@@ -380,6 +465,12 @@ Symmetrically, an agent receives a typed input, never a conversation:
 
 `prior_envelopes` are references to structured envelopes, not transcript text.
 
+**`work_item_ref` replaces v0.2's inlined `goal`.** There is one authoritative statement of
+what is being attempted, and every agent reads the same one. `workflow` is supplied
+read-only so an agent knows what comes after it — useful for writing a handoff, and
+insufficient for changing anything, since the graph is frozen and the kernel evaluates the
+edges.
+
 **`mandate` is structured, not prose.** `objective`, `in_scope` and `out_of_scope` are
 typed fields the kernel derives from the approved plan and work unit — not from the
 Orchestrator Agent's free text. The adapters enforce `in_scope` and `out_of_scope` as path
@@ -393,7 +484,7 @@ without making one agent's text a way to widen another agent's reach.
 
 **`dispatch_id` seeds idempotency.** Every mutating adapter call made during this dispatch
 derives its idempotency key from it
-([WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md) section 5.3).
+([WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md) section 7.3).
 
 **`required_inputs` bounds what is materialized.** An agent declares which Context Package
 sections it needs and the kernel builds only those into the dispatch. This is what keeps

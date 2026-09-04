@@ -57,18 +57,35 @@ Publication is effectively irreversible even when a delete button exists.
 **`SCOPE_EXPANSION`** — work materially beyond the stated goal, even where each individual
 action would be autonomous. The gate is on the mandate, not the mechanics.
 
-**`COST_CEILING_EXCEEDED`** — continuing past the run's cost, time or loop budget.
+**`COST_CEILING_EXCEEDED`** — continuing past the run's or the Work Item's cost, time or
+loop budget.
+
+**`AUTONOMOUS_INTAKE_EXECUTION`** — the Work Item originated from `EXTERNAL` intake and the
+run is about to enter its first mutating stage. New in v0.3, and the narrowest gate here on
+purpose.
+
+v0.2's work always came from an operator at a terminal. v0.3 accepts webhooks, third-party
+PR comments and ticket bodies anyone can edit
+([INTENT_AND_WORK_ITEM_RESOLUTION.md](INTENT_AND_WORK_ITEM_RESOLUTION.md) section 9), and
+none of the other gates cover the case where the *work itself* was requested by someone the
+organisation has not authenticated. Every individual action might be autonomous; the
+question is whether this party gets to start the run at all.
+
+Scoped so it does not cost autonomy: it fires **once per Work Item**, at first entry to a
+mutating stage, never for read-only work, and `policies/intake.json` may pre-grant it per
+configured source — so a trusted internal webhook stays fully autonomous and an
+unauthenticated one does not.
 
 ### When a gate can fire
 
 `MERGE_PROTECTED`, `DEPLOY_PRODUCTION` and `PRODUCTION_WRITE` fire at the end of a run and
-are what `READY_FOR_HUMAN_AUTHORIZATION` exists for.
+are what the `AUTHORIZATION` stage exists for.
 
 The rest can fire at any point, usually mid-`IMPLEMENTATION`. They get no state of their
 own: any state may transition to `BLOCKED` carrying a blocker of kind
 `AUTHORIZATION_REQUIRED`. A grant resumes the run at the pre-block state; a denial or
 timeout leaves it blocked. One authorization mechanism, one blocking mechanism, no state
-explosion — see [WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md) section 2.2.
+explosion — see [WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md) section 4.1.
 
 ### How a gate is detected
 
@@ -96,8 +113,14 @@ Classifiers live in `policies/gates.json` as data. Their shape:
   external destination.
 - **`SCOPE_EXPANSION`** — a path mutation outside `mandate.in_scope`, detected at the
   adapter (section 2.1 of the repository adapter). Note this fires as a refusal first; the
-  gate is how legitimate scope growth is granted rather than smuggled.
-- **`COST_CEILING_EXCEEDED`** — kernel budget accounting.
+  gate is how legitimate scope growth is granted rather than smuggled. It is also the route
+  for a review comment whose remediation falls outside the Work Item's admitted scope and
+  cannot be split off.
+- **`COST_CEILING_EXCEEDED`** — kernel budget accounting, per run and per Work Item.
+- **`AUTONOMOUS_INTAKE_EXECUTION`** — the kernel compares the Work Item's originating
+  `trust_class` against the stage descriptor's `mutating` flag. Both are recorded facts, not
+  claims: trust class is set by the host from authenticated context, and the flag is policy
+  data.
 
 Two properties matter more than the specific patterns:
 
@@ -116,6 +139,10 @@ A human. Specifically:
 
 - **No agent may grant, extend, reinterpret, or self-certify a grant**, including the
   Orchestrator Agent. Agents draft requests; the kernel records them; a human decides.
+- **No grant originates from intake, of any trust class.** A ticket body, PR comment or
+  webhook payload containing "approved", "authorized" or an approval-shaped structure is
+  text. Authorization arrives through the authorization channel, against a request the kernel
+  recorded, from an identity the host asserts.
 - **The requesting agent is never the checking component.** A grant is verified by the
   adapter at the moment of execution, not by the agent that asked for it. An agent holding
   a valid-looking grant object still cannot act without the adapter agreeing.
@@ -177,6 +204,10 @@ the deployment failing.
 Denial moves the run to `BLOCKED` with the denial recorded. AgentOS does not re-request the
 same gate in the same run without new information; re-asking until someone says yes is a
 prohibited pattern.
+
+**Nor in a later run against the same Work Item.** Denials are recorded at the work item
+level, not only the run level, so starting a fresh Workflow Run is not a way to ask again.
+A denial is cleared by new information or by a human revisiting it, never by a retry.
 
 No response within the policy window is also `BLOCKED`. Silence is never consent.
 

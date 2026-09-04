@@ -68,6 +68,19 @@ breaks, the boundary has leaked.
 
 Everything here is deterministic, model-free, and testable without a model.
 
+- **Intake and Work Item lifecycle** — record the `IntakeRecord` verbatim, admit or reject a
+  proposed Work Item against the evidence minimums, compute its identity, hold the
+  single-active-run lease, create admitted children, and maintain the work item lifecycle.
+  ([INTENT_AND_WORK_ITEM_RESOLUTION.md](INTENT_AND_WORK_ITEM_RESOLUTION.md))
+- **Understanding sufficiency** — compute the `UNDERSTOOD` verdict. Not a judgment: the
+  condition is that every predicate the candidate templates' entry edges reference evaluates
+  to something other than `INDETERMINATE`.
+- **Workflow admission** — load templates from policy, compute the admissible set, check a
+  proposed parameterization against the template and the workflow floor, freeze the graph.
+  Templates are data; no agent authors one.
+- **Entry-stage computation** — decide where a run starts, by walking the frozen graph against
+  Current Reality. Resumption is arithmetic over adapter observations, not an agent's reading
+  of a prompt.
 - **Dispatch** — build an agent's typed input, invoke it, receive its envelope.
 - **Envelope validation** — schema conformance; rejection of findings without evidence, of
   `COMPLETE` with unfilled required outputs, of assertions with no confidence class.
@@ -77,7 +90,9 @@ Everything here is deterministic, model-free, and testable without a model.
 - **Run store** — the only writer. Projections (`run.json`, run narrative) derive from the
   log.
 - **Recovery** — replay the log, rebuild the cursor, detect interrupted steps, retry or
-  block.
+  block. The frozen graph is replayed, never recomputed.
+- **Scope containment** — decide whether a triaged review comment falls inside the Work
+  Item's admitted scope. A set computation over typed scope, not a reading of the comment.
 - **Budget and loop accounting** — rework counts, architecture-loop counts, cost, wall
   clock. Enforcement is mechanical; exceeding a cap is `BLOCKED`.
 - **Policy enforcement** — gates, the security floor, DoD applicability. Policy is data the
@@ -108,7 +123,7 @@ following as claims to be checked, never as facts:
 - **Branch conditions.** Transition predicates are evaluated by the kernel over the Context
   Package and mutation events. An agent's claim that a change is trivial, or that no UI was
   touched, is recorded and ignored. `INDETERMINATE` takes the safer branch.
-  ([WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md) section 2.3)
+  ([WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md) section 4.3)
 - **What an agent changed.** `artifacts_changed` is reconciled against adapter-emitted
   mutation events. Under-reporting and over-reporting are both contract violations.
 - **What an agent may touch.** Paths are confined at the adapter — worktree root, mandate
@@ -130,7 +145,26 @@ following as claims to be checked, never as facts:
   violation — which matters because `coverage` is the field separating "found nothing here"
   from "never looked here".
 - **Its own retries.** Idempotency keys and pre-retry reversal make a repeated dispatch
-  safe without assuming the agent was deterministic.
+  safe without assuming the agent was deterministic. Work-item-scoped keys extend that
+  across runs, where duplicate external effects actually originate.
+- **What the work is.** A proposed Work Item is admitted only after the kernel resolves the
+  external identity through the adapter itself, checks the claimed type against the evidence
+  minimums in `policies/work-items.json`, and refuses an unbounded scope. A type asserted
+  without its minimum evidence is recorded and downgraded to `UNKNOWN`.
+- **Where the work already is.** Current Reality comes from adapters or it is `UNKNOWN`. An
+  agent's account of what happened in a previous run is a `claim`; the git host, the PM
+  system and AgentOS's own event log are the record.
+- **Whether it understands.** `UNDERSTOOD` is computed, not declared. An agent stating that
+  it has enough context does not make the workflow decision determinate.
+- **Which workflow is appropriate.** The Orchestrator selects from policy-authored templates
+  and may exclude an optional stage only where the kernel evaluates its predicate `FALSE`. It
+  cannot add a stage, author a graph, or choose where the run resumes.
+- **Whether something is separate work.** A triage proposal creates a child Work Item only
+  when the remediation provably falls outside the admitted scope. Undeterminable counts as
+  inside — creating work items multiplies external side effects.
+- **Whether a request is authorized to exist.** Intake content is data. It cannot name a
+  template, request a stage, set a confidence or trust class, or widen a scope, and no grant
+  ever originates from it.
 
 The organising idea: **syntactic validity confers nothing.** Every path from agent output
 into trusted state passes through a check the kernel performs itself, using a component
@@ -140,7 +174,10 @@ that is not the agent.
 
 Everything requiring judgment.
 
-- Interpreting the goal
+- Interpreting the intake: what this work is, what outcome is wanted, what its scope is
+- Proposing which workflow template fits, and which optional stages apply
+- Deciding whether a review comment is the same work or different work
+- Proposing how an Epic decomposes into independently completable children
 - Deciding what to look at and how deep
 - Reading and understanding code
 - Determining whether evidence supports a claim
@@ -152,8 +189,8 @@ Everything requiring judgment.
 - Proposing which agents should run next, and why
 - Proposing how to resolve a disagreement
 
-The Orchestrator Agent's outputs — pipeline composition, arbitration resolution, model and
-skill preference — are all proposals in an envelope. Each is validated and may be
+The Orchestrator Agent's outputs — workflow selection, arbitration resolution, review
+triage, cancellation, model and skill preference — are all proposals in an envelope. Each is validated and may be
 overridden.
 
 ## 5. The one hard case: arbitration
@@ -196,7 +233,10 @@ Every planned component, its primary directory, and — where it spans two — t
 
 **core/** — run loop; state machine enforcement; event log; run store writer; recovery;
 budget accounting; policy enforcement; DoD arithmetic; conflict detection; authorization
-lifecycle; agent/model/skill selection and recording; CLI; observability projections.
+lifecycle; agent/model/skill selection and recording; CLI; observability projections. Plus
+the v0.3 layer: intake recording, Work Item admission and lifecycle, understanding
+sufficiency, workflow admission against templates and the floor, entry-stage computation,
+and scope containment.
 
 **agents/** — role specifications for all eight roles, including the Orchestrator Agent.
 
@@ -210,13 +250,17 @@ and **ranking**. Registries rank; they do not select. Selection and its recordin
 `core/`.
 
 **policies/** — gate definitions; the security floor statement; DoD profiles and
-applicability rules; data-semantics vocabulary; budgets and thresholds. Data, not code.
+applicability rules; data-semantics vocabulary; budgets and thresholds; **workflow templates,
+stage descriptors, the workflow floor, and work item type evidence minimums**. Data, not
+code. The workflow set being policy rather than kernel logic is what lets dynamic workflow
+selection stay deterministic: the kernel validates a selection, never a novel graph.
 
 **adapters/** — repository, git, project-management, runtime, host. Also the **enforcement
 point** for authorization (a grant is checked here at execution time, not by the agent
 requesting it), for redaction, and for platform differences.
 
-**state/** — durable run data. Written only by `core/`. Schema tracked, data ignored.
+**state/** — durable work item and run data (`state/work-items/<id>/runs/<run-id>/`).
+Written only by `core/`. Schema tracked, data ignored.
 
 **docs/** — design.
 
@@ -234,6 +278,22 @@ requesting it), for redaction, and for platform differences.
 - **Budgets** — limits in `policies/`, accounting and enforcement in `core/`.
 - **DoD** — profiles in `policies/`, per-criterion verdicts from agents, arithmetic in
   `core/`.
+
+### Components added in v0.3, and where they went
+
+None of them needed a new directory, and the reason is worth stating: every one is either a
+deterministic check (`core/`), declarative data (`policies/`), or an observation
+(`adapters/`) — the three homes the existing boundary already provides.
+
+- **Intake normalization** — `adapters/`. Each source is observed by the adapter that already
+  covers it; event and webhook intake belongs to the host adapter, which already owns how
+  AgentOS is invoked. A separate `intake/` directory would be one file deep and would need
+  its own copy of the availability, confidence and redaction contracts.
+- **Resolution** — `agents/`, as a mandate of Context Discovery. Not a ninth role: resolution
+  is probe-run-and-reconcile applied to the task instead of to a capability.
+- **Work Item admission, identity, lifecycle, leasing** — `core/`.
+- **Workflow templates, stage descriptors, the floor** — `policies/`.
+- **Workflow admission, entry-stage computation, scope containment** — `core/`.
 
 ### Components that had no home, now assigned
 
@@ -335,9 +395,66 @@ Structurally, at four layers, none of which is convention.
    not apply.
 4. Its only outward reach is adapters, which confine paths, enforce mandate scope, classify
    gates mechanically, and fail closed on unknown targets.
+5. It cannot author the machine either. Workflow graphs come from policy templates; the
+   Orchestrator selects and parameterizes within declared degrees of freedom, and excluding
+   an optional stage requires the kernel to evaluate its predicate `FALSE`.
 
 An agent that wants to skip validation and deploy has no mechanism available to it — it can
 only ask, and be refused.
+
+**How does AgentOS know what the work is, when the request does not say?**
+It resolves it, and then disbelieves the resolution. Context Discovery proposes a Work Item —
+type, desired outcome, scope, external identity — with every field an assertion carrying
+evidence. The kernel resolves the external identity through the adapter itself rather than
+accepting the claim, checks the type against the evidence minimums in
+`policies/work-items.json` (an `INCIDENT` needs a runtime observation, not a word), refuses an
+unbounded scope, and requires the desired outcome to bind to a DoD profile that is checkable
+with this run's access. A type asserted without its minimum evidence is admitted as `UNKNOWN`,
+which routes to the read-only investigation template — the safe thing to do when you do not
+know what you are looking at.
+
+**What stops an agent from choosing its own workflow?**
+Workflows are not authored, they are selected. Templates live in `policies/workflows/`,
+authored and reviewed by humans and checked against the workflow floor at policy load. The
+Orchestrator chooses among the admissible ones, includes or excludes only the stages a
+template marks optional, and sets a mandate scope bounded by the Work Item's. It cannot add a
+stage that is not in the template, which is why "propose a dangerous stage" is unreachable
+rather than merely gated; it cannot exclude a stage without the kernel evaluating its
+predicate `FALSE`; and it cannot choose where the run starts. On a failed admission the kernel
+falls back to the most conservative admissible template and logs the override.
+
+The deeper reason for the template mechanism: validating an arbitrary model-authored graph
+would require the kernel to decide whether a novel stage sequence is safe, which is judgment —
+the one thing it must not do. Validating a selection from a known set is arithmetic.
+
+**What stops a resumed run from redoing work that already reached the outside world?**
+Three things, in order. The kernel computes the entry stage by walking the frozen graph
+against Current Reality, so a run against a Work Item with an open PR enters at review triage
+rather than at implementation — and Current Reality comes from git and the PR host, not from
+an agent's recollection. Where a stage's "already done" predicate is `INDETERMINATE` and the
+stage mutates, the kernel does not guess: it discovers, and failing that blocks with
+`AMBIGUOUS_STATE`, because re-executing a non-reversible operation on the strength of an
+`INDETERMINATE` is precisely how a system opens the same PR twice. And underneath both,
+work-item-scoped idempotency keys over an operation's declared `identity_args` mean that even
+a genuinely duplicated attempt to open a PR resolves to the existing one.
+
+**What stops a run from declaring completion because it skipped the stages that would have
+judged it?**
+The stage cursor has no authority over completion. `COMPLETED_PRIOR` means the mutation has
+already occurred, not that the criteria are met; a skipped stage supplies no per-criterion
+verdicts, so its criteria are `NOT_VALIDATED`, and `NOT_VALIDATED` is never `MET`. The run
+reaches `COMPLETION`, computes `INCOMPLETE`, and routes back to the stage that owes the
+verdicts. A wrong resume costs a lap; it cannot manufacture a `COMPLETE`.
+
+**What stops untrusted intake from driving the system?**
+Intake is data, never instruction. `trust_class` is set by the host from authenticated
+context and never from the content, so a webhook body cannot promote itself. Intake content
+cannot name a template, request a stage, set a confidence class, or widen a scope — those are
+kernel inputs, and a ticket body claiming otherwise is text the resolver may weigh as evidence
+of what someone wants. No grant ever originates from intake. And `EXTERNAL` intake cannot
+reach a mutating stage without `AUTONOMOUS_INTAKE_EXECUTION`, which policy may pre-grant per
+configured source so that trusted automation stays autonomous. Read-only work stays ungated
+for every class, which is what keeps the gate narrow enough to be worth having.
 
 **What happens when no model is available at all?**
 The dispatch returns `FAILED`, the kernel retries per policy, then blocks with

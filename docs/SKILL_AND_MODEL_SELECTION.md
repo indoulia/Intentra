@@ -64,6 +64,10 @@ management, documentation), operation (read, analyse, generate, mutate, verify),
 (filesystem, VCS, data store, network, runtime), and risk (read-only, reversible,
 irreversible).
 
+The risk dimension is not the agent's to guess. The stage descriptor declares whether the
+stage mutates, and a non-mutating stage may not select a mutating skill — checked by the
+kernel at selection, not remembered by the agent.
+
 ### Ranking and selection are different jobs
 
 **The registries rank; the kernel selects.** Registries produce an ordered candidate list
@@ -139,8 +143,14 @@ Typical assignments, indicative and not binding:
 - Validator — high; must resist the temptation to accept plausible-looking output
 - Product/UX — vision capability where screenshots exist; mid otherwise
 - Production — high precision; consequences are irreversible
-- Orchestrator Agent — mid, except arbitration, which is high (the kernel itself uses no
-  model)
+- Orchestrator Agent — mid, except arbitration and review triage, which are high (the
+  kernel itself uses no model)
+- Context Discovery, resolution mandate — mid, and **high precision**. It runs before
+  anything else and every later decision inherits its reading of the work; a wrong type or a
+  wrong scope is the one error the downstream checks cannot catch, because they all validate
+  against it. The kernel's admission checks bound the damage — evidence minimums, identity
+  resolution, scope bounds — but they cannot tell a plausible wrong answer from a right one.
+  This is the highest precision-per-token dispatch in the system
 
 Escalation triggers, all evidence-based: the agent returned `PARTIAL` or `FAILED`; output
 failed schema validation twice; the agent's own stated confidence is low; arbitration is

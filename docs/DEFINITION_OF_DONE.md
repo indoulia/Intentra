@@ -3,6 +3,12 @@
 Completion is judged at the **capability** level, against a **DoD profile** whose criteria
 are selected dynamically for that capability.
 
+**Two things are being completed, and they are not the same.** A *capability* is complete
+when its chain works and is proven. A *Work Item* is achieved when its `desired_outcome`
+holds. Usually the second follows from the first, and where it does not — an Epic whose
+children all shipped but whose outcome nobody can demonstrate — the difference is the finding
+worth having. Section 7.
+
 Done is explicitly not "tests pass". A green suite over a disconnected writer is a green
 suite over nothing, and that failure mode is common enough to be the reason this document
 exists.
@@ -93,6 +99,14 @@ The Architect assigns a profile per work unit; the kernel validates the assignme
 the capability record and the profile's applicability rules in `policies/`. A profile that marks an inconvenient criterion
 `NOT_APPLICABLE` without a reason is rejected.
 
+**Profiles are not Work Item Types.** A type says what kind of *work* arrived
+(`DEFECT`, `EPIC`, `INVESTIGATION`, …); a profile says what kind of *thing* is being
+completed. A `DEFECT` against a data pipeline is the `fix` profile evaluated inside a
+`data-capability`; an `INVESTIGATION` uses `audit`. They are chosen independently, at
+different times, by different components: the type at resolution, the profile by the
+Architect per work unit. Collapsing them would make the type decide the evidence bar, which
+is precisely the shortcut that lets a "small task" skip a criterion it needed.
+
 ## 3. Ownership
 
 Every criterion has exactly one agent that supplies its verdict. Without this, criteria
@@ -154,6 +168,33 @@ criterion 6; the graph does.
 `INDETERMINATE` must never be reported as `COMPLETE_WITH_GAPS`. "We could not check" and
 "we checked and accepted a gap" are different facts about the world, and only one of them
 is a decision someone made.
+
+### Resumption does not shortcut this
+
+A stage the kernel skipped because Current Reality showed its mutation had already happened
+is marked `COMPLETED_PRIOR`. It supplied no per-criterion verdicts, so its criteria are
+`NOT_VALIDATED` — and `NOT_VALIDATED` is never `MET`. The run reaches `COMPLETION`, computes
+`INCOMPLETE`, and routes back to the stage that owes the verdicts.
+
+This is deliberate and load-bearing. Resumption is an optimization over *work*; it has no
+authority over *completion*. A wrong resume costs a wasted lap and cannot manufacture a
+`COMPLETE` — which is what makes it safe to be aggressive about not redoing work.
+
+## 7. Work Item outcome
+
+A Work Item is `ACHIEVED` when its `desired_outcome` holds, with evidence. Every capability
+the work item touched being `COMPLETE` is necessary and not sufficient.
+
+The gap between the two is largest for an **Epic**, whose children may all be `ACHIEVED`
+while the outcome the Epic existed for has no supporting evidence. The rule follows the rest
+of the model: all children terminal permits the Epic to reach `COMPLETION`; the Epic's own
+outcome is then evaluated against its own profile, and an unevidenced outcome is
+`COMPLETE_WITH_GAPS` at best, with the gap named.
+
+That is `CLAIMED_DONE_UNPROVEN` applied to AgentOS's own work. It is the least comfortable
+place to apply the rule and the one where applying it matters most: a system that catches
+unproven completeness claims everywhere except in its own output has not internalized the
+rule, it has implemented a feature.
 
 ## 6. Reporting
 

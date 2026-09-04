@@ -95,20 +95,71 @@ The classification and its confidence are recorded on every gated operation, so 
 was conservative because it was blind is distinguishable from one that was conservative
 because the target really was production.
 
-## 2.3 Idempotent operations
+## 2.3 Operation descriptors
 
-Every mutating adapter operation accepts an idempotency key derived from the dispatch
-([WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md) section 5.3) and records completed
-keys. Replaying a known key performs no work and returns the recorded result.
+Every adapter operation carries a descriptor. Five fields, and the last one is what makes
+evidence verification possible without turning the verification channel into a mutation
+channel.
 
-Each operation declares in its descriptor:
+- **`mutating`** — does it change **authoritative state**: repository content, VCS refs, an
+  external system, a data store, or AgentOS run state. A mutating operation must emit a
+  `mutation` event at call time and declare a `reversal`
+  ([WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md) section 7.2).
+- **`reversal`** — the operation that undoes it, or `null` for non-reversible. A dispatch
+  that performed a `reversal: null` operation is never automatically retried.
+- **`idempotent_by_key`** — whether key-based deduplication is sound for it. Every mutating
+  operation accepts an idempotency key and records completed keys; replaying a known key
+  performs no work and returns the recorded result
+  ([WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md) section 7.3).
+- **`external_destination`** — can it send anything outside the organisation's boundary.
+  Fires `EXTERNAL_COMMUNICATION`.
+- **`observation_safe`** — may the kernel replay this operation to verify evidence.
+  Defined below.
 
-- `mutating` — does it change anything
-- `reversal` — the operation that undoes it, or `null`
-- `idempotent_by_key` — whether key-based deduplication is sound for it
+### `observation_safe`
 
-An operation with `reversal: null` is non-reversible; a dispatch that performed one is never
-automatically retried.
+Earlier drafts called this field `side_effect_free`, which was wrong in a way that would
+have bitten during implementation. Executing a test suite is the archetypal
+evidence-producing operation, and it writes coverage files, populates build and dependency
+caches, emits logs and leaves test output directories behind. Under a literal reading of
+"side-effect-free" no test run could ever be replayed, and the evidence model's central
+verification would have been unavailable for a large class of its most important evidence.
+
+The property actually wanted is not that an operation produces no effects. It is that
+**replaying it cannot change any state the run's conclusions rest on.**
+
+> An operation is `observation_safe` when re-executing it with the same arguments cannot
+> alter authoritative state, cannot consume or destroy the observation it reports, and
+> produces no effect outside its declared incidental artifacts.
+
+Three conditions, all checkable from the descriptor:
+
+1. **`mutating: false`.** Authoritative state is untouched: no source file changed, no ref
+   moved, no row written, no ticket updated, no call with an external destination.
+2. **Effects confined and declared.** Any by-product lies within the worktree or the run's
+   scratch area and matches a pattern in the operation's **`incidental_artifacts`** list —
+   coverage output, build and package caches, compiled intermediates, temp directories, log
+   files. These require no `mutation` event and no reversal; they are declared once in the
+   descriptor rather than recorded per call, because nothing a decision rests on depends on
+   them.
+3. **Repeatable.** Re-execution neither consumes a one-shot resource nor destroys what it
+   measured. A destructive queue read, a single-use token exchange, a log tail that advances
+   a cursor — all `observation_safe: false`, though all are `mutating: false`.
+
+The two flags are orthogonal in one direction only: `observation_safe: true` implies
+`mutating: false`; `mutating: false` does not imply `observation_safe: true`.
+
+**Incidental artifacts are not a loophole.** A by-product qualifies only when nothing else
+depends on it surviving. Where one is itself cited as `Evidence` — a coverage report a DoD
+criterion rests on — the adapter snapshots it into `artifacts/` before replay, so the cited
+observation stays readable after the replay overwrites the live file. A by-product that
+cannot be snapshotted and would be destroyed by replay makes the operation
+`observation_safe: false`.
+
+**An operation whose observation safety cannot be established is `observation_safe:
+false`.** Same fail-closed rule as branch protection and environment classification. The
+consequence of guessing wrong here is a mutation performed under cover of verification,
+which is precisely what the evidence channel must never become.
 
 ## 3. The optional `.agent/` directory
 

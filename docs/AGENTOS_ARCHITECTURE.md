@@ -3,9 +3,16 @@
 ## 1. What AgentOS is
 
 AgentOS is a kernel that runs an engineering lifecycle over an arbitrary repository. It
-holds durable state, decides which specialist agent runs next, gives that agent a typed
-input package, records the typed envelope it returns, and enforces the boundaries where a
-human must decide.
+takes work from any source, determines what that work actually is and what state it is
+already in, selects a workflow for it, holds durable state, decides which specialist agent
+runs next, gives that agent a typed input package, records the typed envelope it returns, and
+enforces the boundaries where a human must decide.
+
+**The user supplies work, not a specification of how to do it.** They do not say whether
+something is an Epic or a Defect, which workflow applies, which agents to run, which stages
+are needed, whether to resume or start, or how review feedback should be handled. AgentOS
+determines all of it — from evidence, and subject to the kernel's checks
+([INTENT_AND_WORK_ITEM_RESOLUTION.md](INTENT_AND_WORK_ITEM_RESOLUTION.md)).
 
 The intelligence lives in the agents. The **durability, coordination, evidence discipline
 and safety** live in the kernel. That split is the whole design: agents are swappable and
@@ -14,9 +21,17 @@ occasionally wrong, and the kernel must remain correct anyway.
 ## 2. System shape
 
 ```
+  prompt . Epic . Story . Defect . Task . Incident . PR . review . doc . webhook . schedule
+                                    |
+                                    v
+       +--------------------------------------------------------------+
+       |  INTAKE -> RESOLUTION -> CURRENT REALITY -> UNDERSTOOD        |
+       |  -> WORKFLOW SELECTION  (kernel admits; templates are policy) |
+       +------------------------------+-------------------------------+
+                                      v
                          +------------------------------+
-   GOAL  ---------------->        ORCHESTRATOR          |
-                         |  (kernel: plan -> dispatch ->|
+   WORK ITEM ----------->|           KERNEL             |
+                         |  (frozen graph: dispatch ->  |
                          |   record -> decide -> repeat)|
                          +------+---------------+-------+
                                 |               |
@@ -24,16 +39,17 @@ occasionally wrong, and the kernel must remain correct anyway.
                   typed input   |               |
                                 v               v
        +--------------------------------+   +------------------------+
-       |        SPECIALIST AGENTS       |   |      RUN STORE         |
-       |                                |   |  state machine cursor  |
-       |  Context Discovery             |   |  event log (append)    |
-       |  Auditor / Forensics           |   |  Context Package       |
-       |  Architect                     |   |  Capability Registry   |
-       |  Implementer                   |   |  handoff envelopes     |
-       |  Validator                     |   |  decisions & evidence  |
-       |  Product / UX                  |   |  authorization records |
-       |  Production                    |   +------------------------+
-       +-----------+--------------------+
+       |        SPECIALIST AGENTS       |   |    WORK ITEM STORE     |
+       |                                |   |  work item + lifecycle |
+       |  Orchestrator Agent            |   |  one dir per run:      |
+       |  Context Discovery             |   |    graph + cursor      |
+       |  Auditor / Forensics           |   |    event log (append)  |
+       |  Architect                     |   |    Context Package     |
+       |  Implementer                   |   |    Capability Registry |
+       |  Validator                     |   |    handoff envelopes   |
+       |  Product / UX                  |   |    decisions, evidence |
+       |  Production                    |   |    authorization       |
+       +-----------+--------------------+   +------------------------+
                    |  every agent works only through
                    v
        +------------------------------------------------------------+
@@ -43,6 +59,11 @@ occasionally wrong, and the kernel must remain correct anyway.
                    v
        target repository . git remote . Jira/GitHub . DB/API/logs . prod
 ```
+
+Adapters appear at both ends for a reason: they are how work *arrives* as well as how it is
+*done*. An `IntakeRecord` is an adapter observation carrying a re-executable locator like any
+other piece of evidence, which is what makes "the ticket said X" checkable rather than
+remembered.
 
 Agents never touch the outside world directly. Every read and every mutation goes through
 an adapter, which is where capability detection, redaction and the authorization
@@ -65,11 +86,17 @@ behaving well.**
 
 Kernel responsibilities:
 
+- **Intake, resolution admission and Work Item lifecycle** — normalize any source into an
+  `IntakeRecord`, admit or reject a proposed Work Item against evidence minimums, compute
+  identity and deduplicate, hold the single-active-run lease.
+- **Workflow admission** — load templates from `policies/workflows/`, compute the admissible
+  set, check a proposed parameterization against the template and the workflow floor, freeze
+  the graph for the run, and compute the entry stage from Current Reality.
 - **Run loop** — `select next agent -> build input -> invoke -> validate envelope ->
   persist -> transition state`. The loop is deterministic with respect to the run store:
   given the same store and the same envelopes it makes the same decision, which is what
   makes a run resumable.
-- **State machine** — the phases and legal transitions in
+- **State machine** — the stages, the frozen graph and its legal transitions in
   [WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md). The kernel refuses illegal
   transitions rather than trusting an agent's claimed `next_action`.
 - **Run ledger and event log** — append-only. Every dispatch, envelope, decision,
@@ -97,10 +124,12 @@ mandate, required inputs, permitted adapters, output envelope type, and the mode
 requirements it declares. Multiple implementations of a role may exist (a cheap Auditor
 and a deep Auditor); the kernel selects one via the model registry.
 
-**Not every role runs for every goal.** The Orchestrator composes the pipeline from the
-goal and the discovered context — a documentation change may run Context Discovery ->
-Implementer -> Validator and nothing else. Roles are skipped explicitly with a recorded
-reason, never silently.
+**Not every role runs for every work item.** The workflow template determines which stages
+exist, and each stage names its owning role — a documentation change may run Context
+Discovery -> Implementer -> Validator and nothing else. The Orchestrator Agent selects the
+template and may include or exclude the stages the template marks optional; excluding one
+requires the kernel to evaluate its applicability predicate `FALSE`. Roles are skipped
+explicitly with a recorded reason, never silently.
 
 ### 3.3 Contracts
 
@@ -108,6 +137,8 @@ Schemas, versioned, machine-checkable. The kernel rejects any envelope that fail
 schema and treats that as an agent failure, not a data quirk.
 
 - `HandoffEnvelope` — [AGENT_HANDOFF_CONTRACT.md](AGENT_HANDOFF_CONTRACT.md)
+- `IntakeRecord`, `WorkItem` — [INTENT_AND_WORK_ITEM_RESOLUTION.md](INTENT_AND_WORK_ITEM_RESOLUTION.md)
+- `WorkflowTemplate`, `StageDescriptor` — [WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md)
 - `ContextPackage` — [CONTEXT_MODEL.md](CONTEXT_MODEL.md)
 - `CapabilityRecord` and `CapabilityGraph` — [CAPABILITY_MODEL.md](CAPABILITY_MODEL.md)
 - `Evidence`, `Assertion` (with `FACT | INFERENCE | UNKNOWN`)
@@ -144,6 +175,7 @@ resolution machinery. They are *not* one namespace.
 Declarative, human-readable, versioned in git:
 
 - authorization boundaries and gate definitions
+- workflow templates, stage descriptors, the workflow floor, work item evidence minimums
 - the security floor (non-overridable)
 - Definition-of-Done profiles and applicability rules
 - data semantics vocabulary ([DATA_SEMANTICS.md](DATA_SEMANTICS.md))
@@ -176,26 +208,43 @@ inspectable without AgentOS running.
 
 ## 4. The lifecycle
 
+There is no single lifecycle. There is a fixed prologue the kernel always runs, and then a
+graph selected for the work.
+
+**The prologue — every run, no exceptions, no template can alter it:**
+
 ```
-GOAL
- +-> CONTEXT DISCOVERY --> reconcile intent vs code vs runtime
-      +-> AUDIT ---------> capability graph, orphans, gaps, provenance
-           +-> ARCHITECT -> domain model, ownership, contracts, failure semantics
-                +-> PLAN --> ordered work units, each with a DoD profile
-                     +-> IMPLEMENT
-                          +-> VALIDATE (unit . integration . capability . runtime . prod)
-                               +-> PRODUCT/UX REVIEW (where a UI exists)
-                                    +-> REWORK --+
-                                         +-------+ (bounded loop)
-                                              +-> READY
-                                                   +-> HUMAN AUTHORIZATION (where required)
-                                                        +-> MERGE / DEPLOY
-                                                             +-> PRODUCTION VALIDATION
-                                                                  +-> COMPLETE
+INTAKE_RECEIVED -> RESOLUTION -> CONTEXT_DISCOVERY -> UNDERSTOOD -> WORKFLOW_SELECTED
 ```
 
+This is where the request stops being authoritative. Resolution says what the work is;
+discovery says what already exists; `UNDERSTOOD` is a kernel-computed verdict that the
+workflow decision is determinate. An Orchestrator that would like to skip the analysis never
+gets the chance — the analysis precedes its first proposal.
+
+**Then the selected graph.** The fullest form, for a feature reaching production:
+
+```
+AUDIT -> ARCHITECTURE -> PLAN -> IMPLEMENTATION -> VALIDATION -> STRUCTURAL_REAUDIT
+      -> UX_REVIEW -> PR_PREPARATION -> PR_REVIEW -> AUTHORIZATION -> MERGE
+      -> DEPLOY -> PRODUCTION_VALIDATION -> COMPLETION
+         with REWORK and REVIEW_TRIAGE / COMMENT_RESOLUTION as bounded loops
+```
+
+The shortest, for a typo fix:
+
+```
+IMPLEMENTATION -> VALIDATION -> PR_PREPARATION -> AUTHORIZATION -> MERGE -> COMPLETION
+```
+
+An Epic's graph contains no implementation at all — it decomposes into child Work Items and
+coordinates them. A work item whose PR is already open and under review enters at
+`REVIEW_TRIAGE`, because that is what the git host says, not because anyone asserted it.
+
 Stages are gated by evidence, not by wall clock. A stage that cannot produce its required
-evidence declares a blocker; it does not proceed on optimism.
+evidence declares a blocker; it does not proceed on optimism. And a stage skipped because
+reality shows its mutation already happened still owes its Definition-of-Done verdicts —
+the cursor has no authority over completion.
 
 ## 5. The three-way reconciliation
 
@@ -241,8 +290,10 @@ Disagreement is expected and is treated as information.
      probe or targeted validation and decides by result. Cheapest and most common path.
    - *Interpretive* -> it applies policy and DoD; if still tied, one additional independent
      review is requested with both positions supplied, unattributed.
-   - *Scope* -> re-read the goal; if the goal is genuinely ambiguous between the two, this
-     is one of the rare legitimate reasons to ask the human.
+   - *Scope* -> re-read the Work Item's admitted `desired_outcome` and `scope`, which are
+     typed fields rather than prose, so most scope conflicts resolve by containment. Where
+     the outcome itself is genuinely ambiguous between the two positions, that is one of the
+     rare legitimate reasons to ask the human.
 5. **Record.** The decision, the losing position, and the evidence go in the event log.
    A reversed decision must be traceable later.
 
@@ -255,16 +306,24 @@ nobody proposed, never let the most recent envelope win by recency.
 ## 7. Observability
 
 The event log is designed so a human can reconstruct a run without a model. Every record
-carries: run id, timestamp, state, agent, model, skills used, adapter calls, decision,
-evidence references, artifacts changed, cost, and outcome.
+carries: work item id, run id, timestamp, stage, agent, model, skills used, adapter calls,
+decision, evidence references, artifacts changed, cost, and outcome.
 
-Two derived views, both required:
+Three derived views, all required:
 
-- **Live view** — current state, running agent, model, elapsed, what it is waiting on,
-  pending authorizations, rework loop count.
-- **Run narrative** — the ordered story of the run: what was discovered, what was decided
-  and why, what failed, what was reworked, what a human authorized, and how completion was
-  judged.
+- **Live view** — current stage, running agent, model, elapsed, what it is waiting on,
+  pending authorizations, loop counters, and the frozen graph with stages skipped as already
+  done marked as such.
+- **Work item view** — where this piece of work stands across attempts: lifecycle, every run
+  and its outcome, children and their states, links.
+- **Run narrative** — the ordered story of the run, beginning with **what AgentOS decided
+  the work was and why**: the resolution and its evidence, the reality it found, the template
+  it selected, what it skipped as already done — then what was discovered, decided, built,
+  failed, reworked, authorized, and how completion was judged.
+
+The narrative's first obligation is new in v0.3 and exists because v0.3 introduces a new
+failure mode: **doing the wrong thing correctly.** A run that misread its intake and then
+executed flawlessly is invisible unless resolution is narrated alongside execution.
 
 If a run's story cannot be told from the log alone, the log is deficient — that is a
 kernel bug, not a documentation gap.
@@ -273,14 +332,16 @@ kernel bug, not a documentation gap.
 
 ```
 agent-os/
-  core/         run loop . state machine . run ledger . event log . arbitration
+  core/         intake . work items . workflow admission . run loop . state machine .
+                run ledger . event log . arbitration
   agents/       role specifications
   contracts/    versioned schemas
   discovery/    probes
   registries/   capability . skill . model
-  policies/     authorization . security floor . DoD profiles . data semantics . budgets
+  policies/     authorization . security floor . DoD profiles . data semantics . budgets .
+                workflow templates . stage descriptors . workflow floor
   adapters/     repo . git . pm . runtime . host
-  state/        durable run store (schema tracked, data ignored)
+  state/        durable work items and their runs (schema tracked, data ignored)
   docs/         design
 ```
 
@@ -295,10 +356,16 @@ Deviations from the structure suggested in the brief, with reasons:
 - **`state/` kept separate from `core/`.** Durable state must be inspectable and
   restorable independently of the code that writes it. That separation is what makes
   interruption recovery credible.
+- **No `intake/` and no `workflows/` directory, added in v0.3 and then not.** Intake
+  normalization is an adapter concern — each source is observed by the adapter that already
+  covers it — and workflow templates are policy data. A directory for either would be one
+  file deep and would need its own copy of contracts the existing homes already carry.
 
 Nine directories, each with one reason to change — justified component by component in
 [KERNEL_BOUNDARY.md](KERNEL_BOUNDARY.md), which maps every planned component to exactly
-one primary directory and states the split for the seven that span two. Every code
+one primary directory and states the split for those that span two. v0.3 added a layer above
+the kernel and still needed none, which is a reasonable check that the original split was cut
+along the right joints. Every code
 directory currently contains only a README stating its purpose; there is no implementation
 in Phase 0.
 
@@ -316,4 +383,10 @@ Recorded here so they are not mistaken for oversights. Resolution is scheduled i
   later if concurrency demands it.
 - **Concurrency.** Sequential-by-default in the MVP. Parallel probes are obviously safe;
   parallel *implementers* are not, and the arbitration model must be proven serially
-  first.
+  first. Child Work Items are the natural first parallelism — they are independently
+  executable by construction — but they run sequentially until the single-active-run lease
+  and cross-child conflict detection are exercised.
+- **Work item identity without an external key.** Content-derived ids plus a duplicate
+  check that surfaces rather than merges. The similarity function must be deterministic and
+  model-free to sit in the kernel, and it is not yet specified; a conservative first cut
+  will under-match, which is the right direction to be wrong in.

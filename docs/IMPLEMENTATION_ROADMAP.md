@@ -106,19 +106,154 @@ cleanly and resumes, because every kernel function runs model-free.
 New policy files this implies, all data rather than code: `gates.json`, `paths.json`,
 `predicates.json`, `evidence.json`. No new directories.
 
+## 2.7 Architecture v0.3 — intent, work items and dynamic workflows
+
+v0.2 made the kernel disbelieve agents about *execution*. It still believed one thing without
+checking: that the run began with a well-formed goal an operator had typed. Real work arrives
+as a ticket key, a PR link, a complaint, a webhook or a half-finished Epic, and v0.2 had no
+way to say what a request *was*, what state it was *already in*, or which workflow suited it
+— there was one workflow and every run walked it.
+
+**Contract correction carried in first.** `side_effect_free`, the descriptor field gating
+evidence replay, was too absolute: test execution writes coverage files, caches and output
+directories, so under a literal reading the evidence model could never have verified its most
+important evidence. Replaced by **`observation_safe`** plus a declared `incidental_artifacts`
+list, defined in [REPOSITORY_ADAPTER.md](REPOSITORY_ADAPTER.md) section 2.3. Same fail-closed
+default; the property is now "replay cannot change what the conclusions rest on" rather than
+"produces no effects".
+
+Closed in v0.3:
+
+- **X1 Source-agnostic intake** — one `IntakeRecord` produced by whichever adapter observed
+  the source. No per-source architecture, no new directory; event and webhook intake belongs
+  to the host adapter. The intake carries a re-executable locator, so "the ticket said X" is
+  checkable.
+- **X2 Resolution as an admitted proposal** — Context Discovery, in a `resolution` mandate,
+  proposes a Work Item with every field an assertion. The kernel resolves the external
+  identity itself, checks the claimed type against evidence minimums, bounds the scope, and
+  requires the desired outcome to bind to a checkable DoD profile. No ninth role.
+- **X3 Work Item / Workflow Run split** — the Work Item is durable and outlives every attempt;
+  a run is one attempt. `state/runs/` becomes `state/work-items/<id>/runs/<run-id>/`. A lease
+  enforces one active run per work item.
+- **X4 Workflow templates as policy** — graphs live in `policies/workflows/`, authored by
+  humans, checked against the workflow floor at policy load. The Orchestrator selects and
+  parameterizes; it cannot author a graph. This is what keeps "the kernel disposes" true under
+  dynamic workflow selection: validating a selection is arithmetic, validating a novel graph
+  would be judgment.
+- **X5 Stage vocabulary and graph** — completion markers became exit conditions and failure
+  states became edge conditions, because `X`/`X_COMPLETE` does not survive branching. Loops,
+  branches, escalation and cancellation are first-class.
+- **X6 Kernel-computed entry stage** — resumption is a walk of the frozen graph against Current
+  Reality, not an agent's reading of a prompt. A work item with an open PR under review enters
+  at `REVIEW_TRIAGE`.
+- **X7 `UNDERSTOOD` as computation** — replaces `CONTEXT_READY`. Understanding is sufficient
+  exactly when every predicate the candidate templates' entry edges reference is determinate.
+- **X8 The refined safer-branch rule** — `INDETERMINATE` takes the branch that does more
+  verification and less irreversible mutation. Where those disagree, the kernel discovers, then
+  blocks with the new `AMBIGUOUS_STATE`. v0.2's rule is the special case with no irreversible
+  mutation in play.
+- **X9 Work-item-scoped idempotency** — keys over an operation's declared `identity_args` for
+  `external_destination` and `reversal: null` operations, so a second run does not open a
+  second PR. v0.2's dispatch-scoped keys only ever protected within one run.
+- **X10 Review feedback as a loop with a mechanical escape** — triage is agent judgment, but
+  creating a child Work Item requires the remediation to fall provably outside the admitted
+  scope. Undeterminable counts as in-scope. Outside-and-inseparable is `SCOPE_EXPANSION`.
+- **X11 Epic decomposition into child Work Items** — replaces v0.2's sub-runs, which shared the
+  parent's identity. The `epic` template contains no `IMPLEMENTATION` stage, so an Epic cannot
+  become one enormous pipeline. Children are discovered before they are created.
+- **X12 Intake is data, never instruction** — `trust_class` set by the host from authenticated
+  context; content cannot name a template, request a stage, set a confidence class or widen a
+  scope; no grant originates from intake; and the new narrow gate
+  `AUTONOMOUS_INTAKE_EXECUTION` covers `EXTERNAL` intake reaching a mutating stage. This is the
+  attack surface v0.3 opens and v0.2 did not have.
+
+### The adversarial trace, and what it found
+
+Twenty scenarios traced against the v0.3 draft. Thirteen held as written. Seven found real
+gaps, every one of them the same shape: **a check keyed on something a model had resolved,
+rather than on something an adapter had observed.** All seven are closed, and the pattern is
+worth naming because it is where the next round of defects will be.
+
+- **Y1 The regression floor rule.** A defect misclassified as a `TASK` selects a template with
+  no `ROOT_CAUSE` stage — and the floor rule that would have demanded one was keyed on the type
+  that was wrong. Added `regression.suspected`: outcome not satisfied **and** scope intersects a
+  `WORKING`/`PROVEN` capability. Both are lookups, so it is arithmetic, and it cannot be
+  defeated by misclassification. Generalized rule: where a floor rule can be keyed on reality
+  instead of a resolved field, key it on reality.
+  (WORKFLOW_STATE_MACHINE 3.5)
+- **Y2 Re-resolution.** The draft said re-selecting a workflow was possible without saying who
+  triggers it or what bounds it, leaving a misresolved run to a wasted completion. Added the
+  `WORK_ITEM_MISCLASSIFIED` blocker: the run ends `RERESOLVED`, resolution re-runs with the new
+  evidence, a new run starts against the **same** Work Item, capped at one.
+  (WORKFLOW_STATE_MACHINE 4.5)
+- **Y3 Decomposition caps.** Nothing bounded an Epic's children, and each child carries its own
+  run and budget — so an over-enthusiastic decomposition was an unbounded cost commitment made
+  as a side effect. Capped at 12 children and depth 2; exceeding is `BLOCKED` with the proposal
+  attached, not truncated. (INTENT_AND_WORK_ITEM_RESOLUTION 10)
+- **Y4 Verified idempotency.** The sharpest one. Work-item-scoped keys stop a second run from
+  opening a second PR — but a *cached* key hit tells the run it has a PR that someone may since
+  have closed. A key hit now re-reads the external resource: present → return the record; absent
+  → invalidate and proceed; unreachable → `AMBIGUOUS_STATE`, neither trusting the record nor
+  re-executing. **AgentOS's own ledger is authoritative about the past, not the present** — the
+  same standard it already applied to a ticket's status field, now applied to itself.
+  (WORKFLOW_STATE_MACHINE 7.3)
+- **Y5 Reality re-probed, not snapshotted.** Reality predicates read the Context Package, and
+  git state expires in minutes. Evaluating the review loop against a package assembled two
+  stages ago would make a comment arriving mid-implementation invisible for the rest of the run.
+  Stale elements are re-probed before a predicate is evaluated, never used stale.
+  (WORKFLOW_STATE_MACHINE 4.3)
+- **Y6 Source drift.** A ticket edited mid-run left a run completing correctly against a request
+  that had moved, and saying nothing. At `COMPLETION` the kernel re-executes the intake locator
+  and compares content hashes — the existing `ticket`/`document` comparator applied to the
+  intake. Changed means disclosed, not chased. (WORKFLOW_STATE_MACHINE 7.4)
+- **Y7 Atomic lease.** The one-active-run-per-work-item lease was specified without acquisition
+  semantics, so its only job — two processes starting at the same moment — was the case it lost.
+  Atomic create, plus a `lease_timeout` so a crashed run does not hold its work item forever.
+  (WORKFLOW_STATE_MACHINE 1)
+
+Two smaller corrections from the same pass: an intake that **names** an unresolvable external
+item now blocks with `EXTERNAL_DEPENDENCY` rather than degrading to investigating something else
+(INTENT_AND_WORK_ITEM_RESOLUTION 3.4), and `investigation.readonly` is declared universally
+applicable so the admissible template set is never empty (WORKFLOW_STATE_MACHINE 3.2).
+
+### Residual risk, stated rather than closed
+
+**The admitted Work Item is derived from untrusted content and is read by every agent.** Its
+`title`, `desired_outcome` and `scope` are typed, bounded and non-authoritative for anything the
+kernel decides — a scope cannot exceed the repository, an outcome must bind to a checkable
+profile, no field can name a template or request a gate — and `AUTONOMOUS_INTAKE_EXECUTION`
+covers the `EXTERNAL` case. What remains is that a *plausible wrong reading* of a legitimate
+request flows downstream as the run's statement of purpose, and no mechanical check distinguishes
+plausible-and-wrong from right. The mitigations are the narrative obligation (resolution is
+narrated alongside execution, so a run that did the wrong thing correctly is legible) and Y2
+(a stage that discovers the misreading can end the run honestly). This is the residual, and it
+is the reason the resolution dispatch is the highest-precision dispatch in the system.
+
+New policy files, all data rather than code: `workflows/*.json`, `stages.json`,
+`workflow-floor.json`, `work-items.json`, `intake.json`. Extended: `predicates.json` (the
+reality predicates), `budgets.json` (per-work-item budgets, the review loop cap, `reresolution`,
+`decomposition`, `lease_timeout`). No new directories; nine still stands.
+
+Open after v0.3: the two items added to section 11.
+
 ## 3. Phase 1 — Contracts and kernel skeleton
 
 Deliverables:
 
-- **READY** — Versioned schemas: `Assertion`, `Evidence`, `Finding`, `Blocker`,
-  `HandoffEnvelope`, `ContextPackage`, `CapabilityRecord`, `AuthorizationRequest`/`Grant`,
-  `DoDProfile`. These are the minimum contracts; nothing else can be built first
-  (section 3.5).
+- **READY** — Versioned schemas: `Assertion`, `Evidence`, `IntakeRecord`, `WorkItem`,
+  `Finding`, `Blocker`, `HandoffEnvelope`, `ContextPackage`, `CapabilityRecord`,
+  `AuthorizationRequest`/`Grant`, `DoDProfile`, `WorkflowTemplate`, `StageDescriptor`. These
+  are the minimum contracts; nothing else can be built first (section 3.5).
 - **READY** — Schema validation with useful rejection messages.
-- **READY** — Run store: `run.json`, `events.ndjson`, envelope persistence. Files, not
-  SQLite; the backend decision is deferred but files are correct for Phase 1 regardless.
-- **READY** — State machine with transition enforcement, including the envelope-status
-  mapping (WORKFLOW_STATE_MACHINE.md section 2.1).
+- **READY** — Work item and run store: `work-item.json`, `run.json`, `events.ndjson` at both
+  levels, envelope persistence, the single-active-run lease. Files, not SQLite; the backend
+  decision is deferred but files are correct for Phase 1 regardless.
+- **READY** — Template loader and workflow-floor check at policy load. Model-free, and the
+  first thing that fails loudly if a template is authored wrong.
+- **READY** — Workflow admission, entry-stage computation and the frozen graph. All arithmetic
+  over templates and Current Reality; testable against fixture reality sets with no model.
+- **READY** — State machine with transition enforcement over a frozen graph, including the
+  envelope-status mapping (WORKFLOW_STATE_MACHINE.md section 4.2).
 - **BLOCKED** — Run loop dispatching an agent. Depends on the agent execution substrate
   (section 11). The loop's *logic* is specified; how it invokes an agent is not.
 - **READY** — CLI: `agentos run`, `agentos status`, `agentos narrate`. Lives in `core/`.
@@ -130,6 +265,18 @@ first increment: **a kernel that replays envelopes**.
 **Exit test:** start a run, kill the process mid-agent, restart, and have it resume
 correctly from the log — not from memory, and not by starting over.
 
+**Second exit test, new in v0.3:** run twice against the same fixture Work Item, where the
+first run reached a simulated open PR. The second run must enter at `REVIEW_TRIAGE`, must not
+re-enter `IMPLEMENTATION`, and must not issue a second `create_pr`. This exercises the entry
+computation, the reality predicates and work-item-scoped idempotency together, with no model
+in the loop.
+
+**Third exit test:** the same fixture, but the simulated PR has been deleted between runs, and
+then a variant where the PR host is unreachable. The first must invalidate the idempotency
+record and open a PR; the second must block with `AMBIGUOUS_STATE` and open nothing. A design
+that passes the second exit test and fails this one has built a cache and called it
+idempotency.
+
 ## 3.5 The minimum contract set
 
 Six schemas must exist before any other implementation. They are the ones every other
@@ -137,8 +284,8 @@ component references, and inventing them ad hoc later means rewriting everything
 against the guesses.
 
 1. **`Assertion`** — value plus `FACT | INFERENCE | UNKNOWN` plus evidence plus
-   `observed_at` plus freshness. Every leaf value in the system is one. Nothing else can be
-   defined until this is.
+   `observed_at` plus freshness. Every leaf value in the system is one, including every field
+   of a proposed Work Item. Nothing else can be defined until this is.
 2. **`Evidence`** — the ten-kind closed set, a mandatory re-executable `locator`, `ref`,
    `excerpt`, `observed_at`, `reproducible`, and a kernel-owned `verification` block.
    Shared verbatim by the Context Package and the envelope. Build this before anything that
@@ -151,6 +298,15 @@ against the guesses.
 6. **`AuthorizationRequest` / `Grant`** — must exist before any mutating adapter, because
    the adapter checks the grant. Building mutation first and adding authorization after is
    how the gate ends up bypassable.
+
+To those six, v0.3 adds two more that must exist before the kernel can run anything:
+
+7. **`IntakeRecord` / `WorkItem`** — the run's identity now hangs off the work item, so the
+   store layout, the event log and every envelope reference it. Retrofitting this later means
+   rewriting every path in `state/`.
+8. **`WorkflowTemplate` / `StageDescriptor`** — the state machine is data-driven, so the
+   machine cannot be built before the shape of its data. `StageDescriptor.mutating` in
+   particular is read by the safe-prefix computation, the resume rule and a gate.
 
 `Finding`, `Blocker`, `DoDProfile`, `AdapterOperationDescriptor` and `MutationEvent` are
 needed slightly later but are cheap once the six above exist. The last two are what make
@@ -167,7 +323,12 @@ writing code against it.
 Deliverables:
 
 - **READY** — Repository adapter with language/stack/convention detection.
-- **READY** — Git adapter.
+- **READY** — Git adapter, including PR, review-thread and CI state — which `current_reality`
+  and every resume decision depend on.
+- **NEEDS CONTRACT** — Intake normalization across host, PM, git and runtime adapters. Needs
+  `IntakeRecord`.
+- **BLOCKED** — Resolution dispatch. Depends on the agent execution substrate, like every
+  other dispatch.
 - **BLOCKED** — Host adapter: skill, tool and model enumeration. Depends on the agent
   execution substrate; what is enumerable differs entirely between a Claude Code host and
   a direct-API host.
@@ -257,18 +418,25 @@ hit — no more, no fewer — and a run narrative a person who was absent can fo
 
 ## 9. Phase 7 — Refinement
 
-Multi-agent arbitration under real disagreement, sub-runs, parallelism, carried-forward
-`.agent/` knowledge, selection heuristics replaced by measured data.
+Multi-agent arbitration under real disagreement, parallel child Work Items, parallelism
+within a run, carried-forward `.agent/` knowledge, selection heuristics replaced by measured
+data.
 
 ## 10. MVP definition
 
 **The MVP is Phases 1–3: a read-only AgentOS that discovers and audits.**
 
 ```
-agentos audit --repo <path> --goal "<goal>"
+agentos work --repo <path> "<anything>"
 ```
 
-Given a repository path and a goal, it produces:
+The MVP accepts any intake source and resolves it, but every admissible template for it is
+read-only — `investigation.readonly` and the audit path — because nothing mutates yet. That
+is a useful property rather than a limitation: **the whole resolution and workflow-selection
+layer can be exercised and judged before AgentOS can write anything.** Whether it correctly
+identifies what a request is, and where that work already stands, is testable with zero risk.
+
+Given a repository and any request, it produces:
 
 - a Context Package with honest confidence classification
 - a capability registry and capability graph
@@ -285,7 +453,7 @@ shipping even if AgentOS never writes a line of code.
 
 **Explicitly out of MVP scope:** implementation, validation beyond static analysis, UX
 review, authorization gates (nothing is gated when nothing mutates), deployment,
-parallelism, sub-runs.
+parallelism, parallel child Work Items.
 
 **The MVP is not currently unblocked.** Three decisions in section 11 sit inside it: the
 agent execution substrate (blocks dispatch), static-analysis depth (blocks the capability
@@ -322,6 +490,15 @@ Listed with when they must be resolved.
 - **Human interaction channel** (Phase 6). Where authorization requests appear — CLI, PR
   comment, Jira, chat. Affects response-window policy.
 - **Multi-repository capability graphs** (Phase 7). Design sketched, not specified.
+- **Work item identity without an external key** (Phase 1). Content-derived ids and the
+  similarity check that surfaces a possible duplicate are specified in principle; the
+  similarity function is not, and it must be deterministic and model-free to sit in the
+  kernel. A conservative first cut — exact scope plus normalized title match — is
+  implementable now and will under-match, which is the right direction to be wrong in.
+- **Intake trust classification on each host** (Phase 2). The rule is settled: `trust_class`
+  comes from the host's authenticated context, never from content. What a given host can
+  actually assert is not, and it differs sharply between a CLI, a CI runner and a webhook
+  receiver. A host that cannot assert a principal must classify as `EXTERNAL`.
 
 None of these block Phase 1 except the first two.
 

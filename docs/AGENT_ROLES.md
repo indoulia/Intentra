@@ -12,10 +12,13 @@ agent's transcript.
 
 ## Applicability
 
-The Orchestrator Agent proposes the pipeline per goal; the kernel validates it. Rough
-guidance, decided from context, not from the goal text alone:
+Which roles run is determined by the workflow template's stages, each of which names an
+owning role. The Orchestrator Agent proposes the template and its optional stages; the
+kernel admits it ([WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md) section 3). Rough
+guidance, decided from context, never from the request's wording:
 
-- **Always** — Orchestrator Agent, Context Discovery.
+- **Always** — Context Discovery (which also owns the resolution mandate in the prologue),
+  Orchestrator Agent.
 - **Almost always** — Implementer, Validator.
 - **When the goal touches an existing system** — Auditor. Skipped only for a genuinely
   greenfield component. The Auditor also runs a second, narrow pass after implementation
@@ -37,21 +40,32 @@ machine, budgets, policy and persistence. The Orchestrator Agent is a model-back
 that *advises* it. It proposes; the kernel disposes, and logs any override. See
 [KERNEL_BOUNDARY.md](KERNEL_BOUNDARY.md).
 
-**Mandate.** Supply the judgment the kernel cannot: which agents this goal needs and in
-what order, what each should be told to do, which model and skills fit, how a surviving
+**Mandate.** Supply the judgment the kernel cannot: which workflow template fits this work
+item and its reality, which optional stages apply, what each dispatch should be told to do,
+which model and skills fit, what a review comment is actually asking for, how a surviving
 disagreement should be resolved, and what a human needs to see in an authorization request.
 
-**Inputs.** Goal, run state, prior envelopes (by reference), policies, ranked registry
-candidates.
+**Inputs.** Work Item, Current Reality, run state, prior envelopes (by reference), the
+admissible template set, policies, ranked registry candidates.
 
-**Outputs.** Proposed pipeline, proposed dispatch (agent, mandate, model, skills),
-arbitration resolutions, draft authorization requests, the final run report.
+**Outputs.** Proposed workflow selection and parameterization, proposed dispatch (agent,
+mandate, model, skills), review triage, proposed child-item cancellation, arbitration
+resolutions, draft authorization requests, the final run report.
 
 **Adapters.** None. The Orchestrator Agent does not touch the target repository. This is
 deliberate — the component that judges evidence must not also manufacture it.
 
 **Hard limits.**
 - Does not write code, design architecture, or produce findings of its own.
+- **Does not author a workflow.** It selects among policy-defined templates and includes or
+  excludes only the stages a template marks optional. It cannot add a stage, and excluding
+  one requires the kernel to evaluate its predicate `FALSE`.
+- **Does not decide where a run resumes.** The entry stage is computed by the kernel from
+  Current Reality.
+- **Does not decide that a review comment is separate work.** It proposes a reading; the
+  kernel decides by scope containment.
+- **Does not decide that a work item is unnecessary.** Cancellation needs adapter evidence
+  that the outcome already holds, or a human.
 - Does not overrule a Validator failure by reasoning; only new evidence clears a failure.
 - Does not grant authorization. It drafts a request; a human grants.
 - Does not transition state, write to the run store, or invoke another agent. It has no
@@ -59,8 +73,9 @@ deliberate — the component that judges evidence must not also manufacture it.
 - Does not exceed budget caps or loop counts; the kernel stops it, and this is enforced
   rather than trusted.
 
-**Must declare.** Unresolvable disagreement, exhausted rework budget, missing capability
-required by the goal, ambiguity in the goal that changes the deliverable.
+**Must declare.** Unresolvable disagreement, exhausted rework or review budget, missing
+capability required by the work item, and ambiguity that changes the deliverable — including
+where two candidate templates diverge and the divergence matters.
 
 ---
 
@@ -70,10 +85,35 @@ required by the goal, ambiguity in the goal that changes the deliverable.
 assertion `FACT | INFERENCE | UNKNOWN`, and perform the three-way reconciliation of
 project intent, code and runtime reality.
 
-**Inputs.** Goal, repository path, adapter availability, prior Context Package if resuming.
+**Inputs.** Work Item (or, in the resolution mandate, the `IntakeRecord`), repository path,
+adapter availability, prior Context Package if resuming.
 
-**Outputs.** Context Package, reconciliation matrix, discovery gap list (what could not be
-discovered and why), a proposed relevance scope for the goal.
+**Outputs.** Context Package, reconciliation matrix, `current_reality` for the work item,
+discovery gap list (what could not be discovered and why).
+
+### The resolution mandate
+
+Context Discovery is dispatched twice with different mandates, and the first one runs before
+any workflow exists.
+
+**`resolution`** — given an `IntakeRecord`, produce a *proposed Work Item*: intent, type,
+external identity, desired outcome, scope, constraints, dependencies, parent, alternatives
+considered. Runs against tier-1 orientation discovery only. Every field is an assertion with
+a confidence class, the type included. See
+[INTENT_AND_WORK_ITEM_RESOLUTION.md](INTENT_AND_WORK_ITEM_RESOLUTION.md) section 3.
+
+**`context`** — the ordinary mandate above, run after admission, scoped by the admitted Work
+Item, and additionally producing `current_reality`.
+
+This is a mandate, not a ninth role, because resolution is exactly what this role already
+does — run probes, classify assertions, reconcile intent against code against runtime —
+applied to the task rather than to a capability. It is not the Orchestrator's job for a
+concrete reason: the Orchestrator holds no adapters, deliberately, and resolution is nothing
+but adapter observations.
+
+**In the resolution mandate it additionally must not:** propose a workflow, propose a stage,
+or state that the work is already complete. It reports what the sources say; whether that
+amounts to completion is a DoD question, decided elsewhere.
 
 **Adapters.** All, read-only.
 
@@ -88,7 +128,9 @@ discovered and why), a proposed relevance scope for the goal.
 
 **Must declare.** Every unreachable source, every permission denial, every place where
 intent, code and runtime disagree, and its own coverage (what fraction of the relevant
-system it actually inspected).
+system it actually inspected). In the resolution mandate: every alternative reading it
+considered and why it rejected each, since that list is what the uncertainty ladder and any
+question to a human are built from.
 
 ---
 
@@ -160,6 +202,13 @@ contracts, failure-semantics specification, migration and rollout approach, an o
 plan of work units each with an applicable [DoD profile](DEFINITION_OF_DONE.md), and
 recorded architectural decisions with rationale and rejected alternatives.
 
+**In the `DECOMPOSITION` stage** it additionally proposes child Work Items for an Epic. This
+is the same mandate at a coarser grain: a child Work Item is a work unit that earned its own
+identity, and the test for that is whether it is independently completable. Existing children
+are read from the project-management adapter before any are proposed; the kernel links rather
+than recreates one that already exists. See
+[INTENT_AND_WORK_ITEM_RESOLUTION.md](INTENT_AND_WORK_ITEM_RESOLUTION.md) section 10.
+
 **Adapters.** Repository and git, read-only.
 
 **Hard limits.**
@@ -169,6 +218,8 @@ recorded architectural decisions with rationale and rejected alternatives.
 - Does not invent facts to make a design work. A design resting on an `UNKNOWN` must state
   the dependency and either request discovery or present alternatives per branch.
 - Does not silently change canonical ownership. Ownership changes are decisions, recorded.
+- Does not create work items. It proposes children; the kernel creates them, and refuses a
+  dependency cycle.
 
 **Must declare.** Assumptions the design depends on, contracts that must change, blast
 radius, irreversible steps, and anything requiring authorization.
