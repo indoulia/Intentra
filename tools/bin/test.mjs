@@ -67,3 +67,29 @@ try {
 } catch {
   process.exit(1);
 }
+
+/*
+ * A skipped test is a failing test nobody has to look at.
+ *
+ * The suite is the evidence that the invariants hold, so a test that does not run is a
+ * claim withdrawn without anyone deciding to withdraw it — and `skipped 0` printed in a
+ * summary is not a check, it is a number scrolling past. Re-running under the TAP reporter
+ * is cheap next to the whole suite and turns it into one.
+ */
+const tap = execFileSync(
+  process.execPath,
+  ['--test', '--test-reporter=tap', ...files],
+  { cwd: ROOT, encoding: 'utf8', maxBuffer: 1024 * 1024 * 64 },
+);
+const skipped = [...tap.matchAll(/^(?:not ok|ok) \d+ - (.*?) # (SKIP|TODO)\b(.*)$/gm)];
+if (skipped.length > 0) {
+  console.log('');
+  console.log('these tests did not run:');
+  for (const [, name, kind, detail] of skipped) {
+    console.log(`  ${kind}  ${name}${detail.trim() === '' ? '' : ` (${detail.trim()})`}`);
+  }
+  console.log('');
+  console.log('A skipped test is a claim withdrawn without anyone deciding to withdraw it.');
+  console.log('Delete it, fix it, or state in the commit why the claim no longer holds.');
+  process.exit(1);
+}

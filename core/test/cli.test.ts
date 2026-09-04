@@ -286,16 +286,22 @@ describe('the command line', () => {
     assert.match(cli.err.join('\n'), /unknown command deploy-everything/);
   });
 
-  test('work says the build cannot start a run, rather than pretending to', async () => {
+  test('work names the repository it needs rather than guessing one', async () => {
     /*
-     * Absent rather than stubbed. Starting a run needs a live adapter registry, a discovery
-     * implementation and an agent substrate; a command that accepted the invocation and did
-     * nothing useful would be worse than one that says what is missing.
+     * `work` was absent rather than stubbed until the ports it needs existed (decision I-19).
+     * They do now, so the command runs — and the thing it must not do is invent the one
+     * argument that decides what it will read. A run against the wrong worktree is a run
+     * whose every observation is about the wrong system, and defaulting to the current
+     * directory is how that happens quietly.
      */
     const cli = capture();
     assert.equal(await main(['work', 'fix the typo'], cli.io), 2);
-    assert.match(cli.err.join('\n'), /not available in this build/);
-    assert.match(cli.err.join('\n'), /agentos replay/);
+    assert.match(cli.err.join('\n'), /--repo/);
+    assert.doesNotMatch(
+      cli.err.join('\n'),
+      /not available in this build/,
+      'the command exists now, and a stale refusal would misdescribe the build',
+    );
   });
 
   test('status on an empty state root says so rather than failing', async () => {
