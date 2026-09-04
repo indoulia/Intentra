@@ -101,23 +101,131 @@ export type RuleResolution =
     readonly winner: 'A' | 'B';
     readonly rule: string;
     readonly detail: string;
+    /**
+     * A discrepancy worth recording whatever action follows. "AgentOS believes it opened a PR
+     * that does not exist" is worth knowing even once the external system has won.
+     */
+    readonly finding?: string;
   }
   | {
     readonly phase: 'DELEGATED';
     readonly winner: 'NONE';
     readonly rule: null;
     readonly detail: string;
+    readonly finding?: string;
   };
+
+/**
+ * Who is authoritative about what.
+ *
+ * "Each source is authoritative about its own subject and about nothing else. Stating this
+ * precisely is what makes the contradictions resolvable by rule"
+ * ([INTENT_AND_WORK_ITEM_RESOLUTION.md](../../docs/INTENT_AND_WORK_ITEM_RESOLUTION.md) 5.1).
+ */
+export type AuthoritySubject =
+  /** What the repository contains, and whether a change is proposed. */
+  | 'repository'
+  /** What reviewers said. */
+  | 'reviews'
+  /** Whether it builds and tests pass. */
+  | 'ci'
+  /** What runs in an environment. */
+  | 'runtime'
+  /** What someone intended, and the ticket's own status. */
+  | 'intent'
+  /** What AgentOS previously did — and nothing external. */
+  | 'agentos_log';
+
+/** Which source class a conflict position came from, from the source name it carries. */
+export function sourceAuthority(source: string): AuthoritySubject | null {
+  const name = source.toLowerCase();
+  if (/agentos|kernel|event.?log|ledger|prior.?run/.test(name)) return 'agentos_log';
+  if (/\bci\b|build|pipeline|actions|workflow.?run/.test(name)) return 'ci';
+  if (/git|github|gitlab|bitbucket|vcs|repo/.test(name)) return 'repository';
+  if (/review/.test(name)) return 'reviews';
+  if (/runtime|prod|environment|deploy|telemetry|metrics|logs/.test(name)) return 'runtime';
+  if (/\bpm\b|jira|linear|ticket|issue|project.?management|backlog/.test(name)) return 'intent';
+  return null;
+}
+
+/** Which source class is authoritative about a conflict's subject. */
+export function subjectAuthority(subject: string): AuthoritySubject | null {
+  const name = subject.toLowerCase();
+  if (/review|thread|approval/.test(name)) return 'reviews';
+  if (/\bci\b|build|test.?result|pipeline/.test(name)) return 'ci';
+  if (/\bpr\b|pull.?request|branch|commit|merge|head.?sha|worktree|diff/.test(name)) {
+    return 'repository';
+  }
+  if (/deployment|environment|runtime|production|observed.?behaviour/.test(name)) return 'runtime';
+  if (/ticket|issue.?status|intent|desired.?outcome|requirement/.test(name)) return 'intent';
+  if (/agentos.?(history|run|action)/.test(name)) return 'agentos_log';
+  return null;
+}
+
+/**
+ * The authority rule, applied **before** anything else and before escalation.
+ *
+ * The external system wins on its own state. The AgentOS event log is authoritative about
+ * AgentOS's own actions and nothing external — it records that a PR was opened, not that the
+ * PR is still open — so a log-against-host conflict is settled by rule rather than delegated,
+ * and **the discrepancy is itself recorded as a finding**.
+ *
+ * `null` where no authority applies: neither position speaks for the subject, or both do, and
+ * a rule that picked between two equally authoritative sources would be inventing one.
+ */
+export function resolveByAuthority(conflict: Conflict): RuleResolution | null {
+  const subject = subjectAuthority(conflict.subject);
+  if (subject === null) return null;
+
+  const a = sourceAuthority(conflict.positionA.source);
+  const b = sourceAuthority(conflict.positionB.source);
+  if (a === b) return null;
+
+  const winner = a === subject ? 'A' : b === subject ? 'B' : null;
+  if (winner === null) return null;
+
+  const loser = winner === 'A' ? conflict.positionB : conflict.positionA;
+  const won = winner === 'A' ? conflict.positionA : conflict.positionB;
+  const loserAuthority = winner === 'A' ? b : a;
+
+  return {
+    phase: 'RESOLVED_BY_RULE',
+    winner,
+    rule: `${won.source} is authoritative about ${conflict.subject}`,
+    detail:
+      `each source is authoritative about its own subject and about nothing else, so `
+      + `${won.source} wins on ${conflict.subject} and ${loser.source} does not. Settled by `
+      + 'rule with no model involved',
+    finding: loserAuthority === 'agentos_log'
+      ? `AgentOS's own ledger says ${loser.claim} for ${conflict.subject} and ${won.source} `
+        + `says ${won.claim}. The ledger is authoritative about what AgentOS did and says `
+        + 'nothing about whether it still holds, so the external system wins — and the '
+        + 'discrepancy is worth knowing regardless of which action follows'
+      : `${loser.source} claimed ${loser.claim} about ${conflict.subject}, which it is not `
+        + `authoritative for; ${won.source} says ${won.claim}`,
+  };
+}
 
 /**
  * Step 3 of arbitration: classify by rule where possible.
  *
- * `FACT` beats `INFERENCE` beats `UNKNOWN`, decided by the kernel with no model involved.
- * Where the classes are equal there is no rule, and the conflict is delegated on the merits —
- * **not** resolved by whichever envelope arrived later, and **not** by which model was more
- * expensive.
+ * Two rules, in order. **Authority first**: the external system wins on its own state, and a
+ * conflict between AgentOS's log and an external system is settled here with the discrepancy
+ * recorded as a finding. Then confidence class: `FACT` beats `INFERENCE` beats `UNKNOWN`,
+ * decided by the kernel with no model involved.
+ *
+ * Authority precedes confidence deliberately. A `FACT` from a source that does not speak for
+ * the subject — AgentOS's own log about the present state of a pull request — would otherwise
+ * beat an `INFERENCE` from the source that does, which is the exact inversion section 5.1
+ * exists to prevent.
+ *
+ * Where neither rule selects a winner the conflict is delegated on the merits — **not**
+ * resolved by whichever envelope arrived later, and **not** by which model was more expensive.
  */
 export function resolveByRule(conflict: Conflict): RuleResolution {
+  const byAuthority = resolveByAuthority(conflict);
+  if (byAuthority !== null) return byAuthority;
+
   const rankA = RANK[conflict.positionA.confidence];
   const rankB = RANK[conflict.positionB.confidence];
   if (rankA > rankB) {
@@ -141,7 +249,8 @@ export function resolveByRule(conflict: Conflict): RuleResolution {
     winner: 'NONE',
     rule: null,
     detail:
-      `both positions are ${conflict.positionA.confidence}, so no rule selects a winner. The `
+      `both positions are ${conflict.positionA.confidence}, no source is authoritative about `
+      + `${conflict.subject} where the other is not, so no rule selects a winner. The `
       + 'Orchestrator Agent resolves it on the merits: a factual conflict by naming the '
       + 'discriminating observation, an interpretive one by applying policy and DoD',
   };

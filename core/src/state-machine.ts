@@ -39,6 +39,16 @@ export type KernelAction =
     readonly overridden: boolean;
     readonly proposedStage: Stage | null;
     readonly evaluations: readonly PredicateEvaluation[];
+    /**
+     * Outputs a `PARTIAL` envelope left unfilled that the exit condition did not require.
+     *
+     * "Not required → proceed, **recording the gap as an `unknown`**"
+     * ([WORKFLOW_STATE_MACHINE.md](../../docs/WORKFLOW_STATE_MACHINE.md) 4.2). Proceeding
+     * without recording it is how a `PARTIAL` becomes a soft `COMPLETE`: the run advances,
+     * nothing says what was left undone, and the report reads as though the stage filled
+     * everything it was asked for.
+     */
+    readonly unfilledOutputs?: readonly string[];
   }
   | {
     /** Stay in the stage and dispatch again, with the gap named. */
@@ -161,7 +171,18 @@ export async function decideAction(
       );
       const missingRequired = context.requiredForExit.filter((name) => !filled.has(name));
       if (missingRequired.length === 0) {
-        return advance(envelope, context);
+        /*
+         * Not required by the exit condition, so the run proceeds — and the gap is recorded.
+         * Everything the envelope declared as an output and did not fill is carried onto the
+         * transition, so the log says what a PARTIAL left undone rather than reading like a
+         * COMPLETE that happened to be labelled otherwise.
+         */
+        const unfilled = Object.entries(envelope.outputs)
+          .filter(([, value]) => value === null || value === undefined)
+          .map(([name]) => name);
+        const advanced = await advance(envelope, context);
+        if (advanced.kind !== 'TRANSITION') return advanced;
+        return { ...advanced, unfilledOutputs: unfilled };
       }
       if (context.dispatchAttempt <= 1) {
         return {

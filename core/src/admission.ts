@@ -19,6 +19,7 @@ import {
 import type { CheckOutcome } from '@agentos/contracts';
 import type { PolicySet } from '@agentos/policies';
 import { pathMatches, scopesIntersect } from './predicates.js';
+import type { VerificationReport } from './evidence-verification.js';
 
 /**
  * Work Item admission — the six checks of INTENT_AND_WORK_ITEM_RESOLUTION 3.4.
@@ -63,7 +64,34 @@ export interface AdmissionInput {
   readonly policies: PolicySet;
   readonly context: ContextPackage;
   readonly capabilities: readonly CapabilityRecord[];
+  /**
+   * True where the capability registry was actually available to supply `capabilities`.
+   *
+   * The distinction is load-bearing. `no_capability_record_intersecting_scope` is satisfied
+   * by an empty registry, so a `FEATURE` asserted against a registry nobody could read would
+   * pass its minimum for the reason that nothing was looked at — and `DEFECT`, which needs a
+   * record to exist, would downgrade for the same reason. An unavailable registry is
+   * `INDETERMINATE`, never "no capabilities".
+   */
+  readonly capabilityRegistryAvailable?: boolean;
   readonly identity: IdentityResolution;
+  /**
+   * The proposing envelope's evidence pool.
+   *
+   * An envelope-form proposal cites evidence **ids** into this pool (decision I-5), so a
+   * proposal whose pool never reached admission is a proposal with no evidence at all — which
+   * would fail every type minimum the worked examples state. Both forms are the same
+   * evidence and both resolve here.
+   */
+  readonly evidence?: readonly Evidence[];
+  /**
+   * What replaying that pool through the originating adapter found.
+   *
+   * Section 3.4 check 1 ends "the evidence replays". Evidence that came back `MISMATCH` or
+   * `UNREPLAYABLE` supports nothing, so it is withdrawn from the pool the type minimums are
+   * judged against, and the two-strikes rule refuses the whole proposal.
+   */
+  readonly verification?: VerificationReport | null;
   /** Work items already in the store, for the similarity check. */
   readonly existing: readonly WorkItem[];
   /** Access classes this run actually has, for the outcome-bindability check. */
@@ -79,6 +107,19 @@ export type AdmissionResult =
     /** True where a claimed type lacked its minimum evidence and became UNKNOWN. */
     readonly typeDowngraded: boolean;
     readonly duplicateCandidates: readonly string[];
+    /**
+     * What resolution decided the work *is*, carried out of admission because the `WorkItem`
+     * contract has no field for it.
+     *
+     * The narrative's v0.3 obligation is to state what AgentOS decided the work was and why
+     * ([WORKFLOW_STATE_MACHINE.md](../../docs/WORKFLOW_STATE_MACHINE.md) section 8), and an
+     * intent nothing durable records is an obligation nothing can discharge. It is written to
+     * the work-item event log instead. **This is a contract gap**, reported rather than fixed
+     * by widening `contracts/`.
+     */
+    readonly intent: Assertion;
+    /** The agent's own number, for the uncertainty ladder's threshold. */
+    readonly resolutionConfidence: number;
   }
   | {
     readonly outcome: 'REJECTED';
@@ -188,6 +229,15 @@ export function checkTypeEvidence(
   identity: IdentityResolution,
   context: ContextPackage,
   policy: WorkItemPolicy,
+  /**
+   * Whether the capability registry was actually readable.
+   *
+   * `false` makes both capability requirements `INDETERMINATE` rather than answering them
+   * from an empty list — an empty registry and an unreadable one are the same array and
+   * opposite facts, and the second must not silently admit every `FEATURE` while downgrading
+   * every `DEFECT`.
+   */
+  capabilityRegistryAvailable = true,
 ): { readonly outcome: CheckOutcome; readonly admittedType: WorkItemType } {
   const entry = policy.types.find((t) => t.type === claimedType);
   if (entry === undefined) {
@@ -214,19 +264,23 @@ export function checkTypeEvidence(
   const kinds = new Set<EvidenceKind>(evidence.map((e) => e.kind));
   const satisfied: string[] = [];
   const unsatisfied: string[] = [];
+  /** Requirements nothing could answer, kept apart from the ones answered "no". */
+  const indeterminate: string[] = [];
 
   for (const requirement of entry.minimum_evidence) {
     const kindOk = requirement.kinds.length === 0
       || requirement.kinds.some((kind) => kinds.has(kind));
-    let structuralOk: boolean;
+    /** `null` where the requirement could not be evaluated at all. */
+    let structuralOk: boolean | null;
     switch (requirement.requirement) {
       case 'external_item_of_this_type':
         structuralOk = identity.outcome === 'RESOLVED';
         break;
       case 'child_items_exist': {
         const children = context.current_reality.children;
-        structuralOk = children.confidence !== 'UNKNOWN'
-          && Array.isArray(children.value) && children.value.length > 0;
+        structuralOk = children.confidence === 'UNKNOWN'
+          ? null
+          : Array.isArray(children.value) && children.value.length > 0;
         break;
       }
       case 'runtime_or_production_observation':
@@ -236,20 +290,33 @@ export function checkTypeEvidence(
         );
         break;
       case 'capability_record_intersecting_scope':
-        structuralOk = capabilities.some((c) => scopesIntersect(c.scope_paths, scope.paths))
-          || scope.capabilities.some((id) => capabilities.some((c) => c.id === id));
+        structuralOk = capabilityRegistryAvailable
+          ? capabilities.some((c) => scopesIntersect(c.scope_paths, scope.paths))
+            || scope.capabilities.some((id) => capabilities.some((c) => c.id === id))
+          : null;
         break;
       case 'no_capability_record_intersecting_scope':
-        structuralOk = !capabilities.some((c) => scopesIntersect(c.scope_paths, scope.paths));
+        structuralOk = capabilityRegistryAvailable
+          ? !capabilities.some((c) => scopesIntersect(c.scope_paths, scope.paths))
+          : null;
         break;
       case 'named_path_exists':
-        structuralOk = evidence.some(
-          (e) => e.kind === 'file' && scope.paths.some((p) => pathMatches(pathArg(e.locator.args), p)),
-        ) || evidence.some((e) => e.kind === 'file');
+        /*
+         * The evidence has to establish *the named path*. Any file evidence anywhere used to
+         * satisfy this, which made "the work names something that exists" mean "the agent
+         * read some file" — a requirement the proposal could satisfy without its scope being
+         * bounded by anything at all.
+         */
+        structuralOk = evidence.some((e) => {
+          if (e.kind !== 'file') return false;
+          const path = pathArg(e.locator.args);
+          if (path.length === 0) return false;
+          return scope.paths.some((p) => pathMatches(path, p) || pathMatches(p, path));
+        });
         break;
       case 'existing_change_proposal': {
         const pr = context.current_reality.pr;
-        structuralOk = pr.confidence !== 'UNKNOWN' && pr.value !== null;
+        structuralOk = pr.confidence === 'UNKNOWN' ? null : pr.value !== null;
         break;
       }
       case 'reproduction_or_incorrect_behaviour_report':
@@ -261,12 +328,13 @@ export function checkTypeEvidence(
       default:
         structuralOk = false;
     }
-    if (kindOk && structuralOk) satisfied.push(requirement.requirement);
+    if (structuralOk === null) indeterminate.push(requirement.requirement);
+    else if (kindOk && structuralOk) satisfied.push(requirement.requirement);
     else unsatisfied.push(requirement.requirement);
   }
 
   const met = entry.satisfied_by === 'ALL'
-    ? unsatisfied.length === 0
+    ? unsatisfied.length === 0 && indeterminate.length === 0
     : satisfied.length > 0;
 
   if (met) {
@@ -277,6 +345,31 @@ export function checkTypeEvidence(
         detail: `${claimedType} satisfied ${entry.satisfied_by} of its minimums: ${satisfied.join(', ')}`,
       },
       admittedType: claimedType,
+    };
+  }
+
+  if (indeterminate.length > 0) {
+    /*
+     * Nothing could answer the requirement, so the type is not admissible *and the reason is
+     * not that the evidence was absent*. Recording it as PASS would admit a FEATURE because
+     * nobody could read the registry; recording it as FAIL would say the evidence was looked
+     * for and missing. It is INDETERMINATE, the type downgrades, and the reason is stated.
+     */
+    return {
+      outcome: {
+        check: 'type_minimum_evidence',
+        result: 'INDETERMINATE',
+        detail:
+          `${claimedType} could not be judged: ${indeterminate.join(', ')} could not be `
+          + 'evaluated'
+          + (capabilityRegistryAvailable
+            ? ''
+            : ', because the capability registry was not available to this admission. An '
+              + 'unreadable registry is not an empty one')
+          + '. Admitted as UNKNOWN, which routes to the read-only investigation template, and '
+          + 'the claimed type is recorded',
+      },
+      admittedType: 'UNKNOWN',
     };
   }
 
@@ -461,26 +554,106 @@ export function admitWorkItem(input: AdmissionInput): AdmissionResult {
   /* ------------------------------------ 1. schema and confidence discipline ---- */
 
   /*
-   * Every field is an assertion; every FACT carries evidence. The schema enforces the shape,
-   * so what is left to check here is that a FACT's evidence exists in the proposal at all —
-   * a FACT citing an evidence id nothing supplies is a FACT nothing supports.
+   * Every field is an assertion; every `FACT` carries evidence; the evidence replays.
+   *
+   * The pool is the proposing envelope's `evidence[]`, and an envelope-form proposal cites
+   * ids into it (decision I-5). Both forms are the same evidence, so both are resolved here —
+   * and a `FACT` citing an id the pool does not contain is a dangling reference and a
+   * violation, not a `FACT` with slightly less support than it claimed.
    */
-  const proposalEvidence = new Map<string, Evidence>();
-  for (const assertion of [
-    proposal.intent, proposal.type, proposal.external_identity,
-    proposal.title, proposal.desired_outcome, proposal.parent,
-  ]) {
-    if (assertion.confidence !== 'FACT') continue;
-    for (const reference of assertion.evidence) {
-      if (typeof reference !== 'string') proposalEvidence.set(reference.id, reference);
+  const pool = new Map<string, Evidence>();
+  for (const item of input.evidence ?? []) pool.set(item.id, item);
+
+  const withdrawn = new Set<string>();
+  for (const outcome of input.verification?.outcomes ?? []) {
+    if (outcome.status === 'MISMATCH' || outcome.status === 'UNREPLAYABLE') {
+      withdrawn.add(outcome.evidence_id);
     }
   }
-  const inlineEvidence = [...proposalEvidence.values()];
+
+  const fields: readonly (readonly [string, Assertion])[] = [
+    ['/intent', proposal.intent],
+    ['/type', proposal.type],
+    ['/external_identity', proposal.external_identity],
+    ['/title', proposal.title],
+    ['/desired_outcome', proposal.desired_outcome],
+    ['/parent', proposal.parent],
+  ];
+
+  const cited = new Map<string, Evidence>();
+  const dangling: string[] = [];
+  const unsupportedFacts: string[] = [];
+
+  for (const [path, assertion] of fields) {
+    const references = assertion.confidence === 'UNKNOWN' ? [] : assertion.evidence ?? [];
+    if (assertion.confidence === 'FACT' && references.length === 0) {
+      unsupportedFacts.push(path);
+    }
+    for (const reference of references) {
+      if (typeof reference !== 'string') {
+        pool.set(reference.id, reference);
+        cited.set(reference.id, reference);
+        continue;
+      }
+      const resolved = pool.get(reference);
+      if (resolved === undefined) {
+        if (assertion.confidence === 'FACT') dangling.push(`${path} cites ${reference}`);
+        continue;
+      }
+      cited.set(resolved.id, resolved);
+    }
+  }
+
+  /*
+   * Evidence the replay could not confirm supports nothing. It is withdrawn from the pool the
+   * type minimums are judged against rather than being counted and annotated, because a type
+   * admitted on evidence that did not replay is a type admitted on nothing.
+   */
+  const admissibleEvidence = [...pool.values()].filter((e) => !withdrawn.has(e.id));
+
+  for (const path of unsupportedFacts) {
+    violations.push(violation(
+      'ASSERTION_WITHOUT_CONFIDENCE',
+      `${path} is asserted FACT and cites no evidence. A FACT with no evidence is an `
+      + 'INFERENCE that has not admitted it',
+      path,
+    ));
+  }
+  for (const reference of dangling) {
+    violations.push(violation(
+      'DANGLING_EVIDENCE_REFERENCE',
+      `${reference}, and no evidence with that id is in the proposal or its envelope's `
+      + 'evidence pool. A FACT resting on an id nothing supplies is a FACT nothing supports',
+      reference.split(' ')[0] ?? null,
+    ));
+  }
+  if (input.verification?.rejectEnvelope === true) {
+    /*
+     * The two-strikes rule. One fabrication is a defect; two is an untrustworthy witness, and
+     * a resolution is exactly the thing that must not be built on one.
+     */
+    violations.push(violation(
+      'EVIDENCE_MISMATCH_THRESHOLD',
+      `${input.verification.mismatchCount} evidence item(s) in the resolution envelope failed `
+      + 'to replay through their originating adapters. The proposal is refused rather than '
+      + 'admitted on evidence that does not exist',
+      '/evidence',
+    ));
+  }
+
   checks.push({
     check: 'schema_and_confidence',
-    result: 'PASS',
+    result: violations.length > 0
+      ? 'FAIL'
+      : withdrawn.size > 0 ? 'INDETERMINATE' : 'PASS',
     detail:
-      `${inlineEvidence.length} inline evidence item(s); every field carries a confidence class`,
+      `${fields.length} field(s), each an assertion with a confidence class; `
+      + `${cited.size} evidence reference(s) resolved against a pool of ${pool.size}; `
+      + `${dangling.length} dangling; `
+      + (input.verification === null || input.verification === undefined
+        ? 'the evidence was not replayed for this admission'
+        : `${input.verification.outcomes.filter((o) => o.status === 'VERIFIED').length} `
+          + `replayed and matched, ${withdrawn.size} withdrawn as unconfirmed`),
   });
 
   /* --------------------------------------- 2. external identity is verified ---- */
@@ -555,12 +728,13 @@ export function admitWorkItem(input: AdmissionInput): AdmissionResult {
   const claimedType = (claimedTypeRaw ?? 'UNKNOWN') as WorkItemType;
   const typeResult = checkTypeEvidence(
     claimedType,
-    inlineEvidence,
+    admissibleEvidence,
     scope,
     input.capabilities,
     input.identity,
     input.context,
     policies.workItems,
+    input.capabilityRegistryAvailable ?? true,
   );
   checks.push(typeResult.outcome);
   const admittedType = typeResult.admittedType;
@@ -610,6 +784,19 @@ export function admitWorkItem(input: AdmissionInput): AdmissionResult {
       + 'the uncertainty ladder applies',
   });
 
+  /*
+   * The proposal's declared dependencies and parent, carried onto the record.
+   *
+   * Dropping them silently made a proposed `parent` unrepresentable — an Epic's child would
+   * have arrived with no `CHILD_OF` link, so nothing downstream could tell it was one — and
+   * made declared ordering between siblings vanish at the moment it became durable.
+   */
+  const dependencies = [...new Set(proposal.dependencies)];
+  const parentValue = stringValue(proposal.parent);
+  const links: WorkItem['links'] = parentValue === null
+    ? []
+    : [{ kind: 'CHILD_OF', target: workItemIdFromExternalIdentity(parentValue) }];
+
   const workItem: WorkItem = {
     work_item_id: identity.workItemId,
     created_at: input.now,
@@ -622,10 +809,10 @@ export function admitWorkItem(input: AdmissionInput): AdmissionResult {
     desired_outcome: outcomeText,
     scope,
     constraints: proposal.constraints,
-    dependencies: [],
+    dependencies,
     lifecycle: 'RESOLVED',
     candidate_dod_profiles: outcomeResult.profiles,
-    links: [],
+    links,
     duplicate_candidates: identity.duplicateCandidates,
     lease: null,
     runs: [],
@@ -641,5 +828,7 @@ export function admitWorkItem(input: AdmissionInput): AdmissionResult {
     checks,
     typeDowngraded,
     duplicateCandidates: identity.duplicateCandidates,
+    intent: proposal.intent,
+    resolutionConfidence: proposal.resolution_confidence,
   };
 }

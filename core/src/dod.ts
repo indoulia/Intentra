@@ -212,10 +212,18 @@ export function computeDod(input: DodInput): DodComputation {
     );
   } else if (unmetCritical.length > 0) {
     verdict = 'INCOMPLETE';
-    const first = unmetCritical[0];
-    routeBackTo = first === undefined
-      ? null
-      : stageOwning(input.policies, first, input.graphStages);
+    /*
+     * The first unmet critical criterion **some stage in this graph owns**.
+     *
+     * Not simply the first unmet one: criterion 1 is owned by no template stage — the prologue
+     * supplies it — so taking the numerically first would route back to `null` whenever a
+     * prologue criterion is among the unmet, which is exactly the run that most needs to route
+     * back. "Routes back into the graph at the stage owning the missing verdicts" names a
+     * stage, so the criterion chosen has to be one a stage owns.
+     */
+    routeBackTo = unmetCritical
+      .map((criterion) => stageOwning(input.policies, criterion, input.graphStages))
+      .find((stage) => stage !== null) ?? null;
     rationale.push(
       `critical criteria ${unmetCritical.join(', ')} are not met. NOT_VALIDATED is never MET, `
       + 'so the run routes back to the stage that owes the verdicts rather than declaring '

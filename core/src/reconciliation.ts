@@ -41,8 +41,15 @@ export interface ReconciliationResult {
   readonly underReported: readonly MutationEvent[];
   /** Declared changes no mutation event supports. */
   readonly overReported: readonly ArtifactChange[];
-  /** Claimed scope no adapter call touched. */
+  /** Claimed scope no adapter call touched, where the call log could have answered. */
   readonly unsupportedScope: readonly string[];
+  /**
+   * Claimed scope the call log **cannot** answer — a capability id, with no call in this
+   * dispatch carrying any `capabilities_touched` to reconcile it against. Not a violation and
+   * not a pass: recorded so the gap is visible rather than either failing every envelope or
+   * silently accepting every capability-shaped coverage claim.
+   */
+  readonly unreconciledScope: readonly string[];
 }
 
 /**
@@ -98,6 +105,33 @@ function callSupports(entry: string, call: CallRecord): boolean {
   if (call.capabilities_touched.some((c) => normalizeTarget(c) === normalized)) return true;
   const matcher = globToRegExp(normalized);
   return call.paths_touched.some((path) => matcher.test(normalizeTarget(path)));
+}
+
+/** Does this scope entry read as a capability id rather than as a path? */
+function looksLikeCapability(entry: string): boolean {
+  return /^cap[.:]/i.test(entry.trim());
+}
+
+/**
+ * Can the call log answer a claim about this entry at all?
+ *
+ * `capabilities_touched` is required on every `CallRecord` and is populated by mapping the
+ * paths a call touched onto capability ids — which needs a capability registry, and the
+ * registry is a later work package. Until then every call carries an empty
+ * `capabilities_touched`, and a coverage claim naming a capability has nothing to reconcile
+ * against.
+ *
+ * Both ways of collapsing that are wrong. Rejecting every such envelope would turn a missing
+ * work package into a contract violation by every agent; accepting every such claim would make
+ * `coverage` — the field distinguishing "found nothing there" from "never looked there" —
+ * exactly the unchecked self-report the whole design removes. So it degrades honestly: a
+ * capability claim is reconciled on paths where the registry populated the field, and reported
+ * as **unreconciled** where it did not. Unreconciled is neither supported nor overstated, and
+ * the envelope is not rejected for it.
+ */
+function reconcilable(entry: string, calls: readonly CallRecord[]): boolean {
+  if (!looksLikeCapability(entry)) return true;
+  return calls.some((call) => call.capabilities_touched.length > 0);
 }
 
 /** A deliberately small glob: `**` crosses separators, `*` does not, `?` is one character. */
@@ -188,8 +222,11 @@ export function reconcile(input: ReconciliationInput): ReconciliationResult {
    * Touched-but-unclaimed is not — an agent that read more than its coverage statement claims
    * has understated its own thoroughness, which costs nothing and is not a lie.
    */
+  const unreconciledScope = envelope.coverage.scope_examined.filter(
+    (entry) => !calls.some((call) => callSupports(entry, call)) && !reconcilable(entry, calls),
+  );
   const unsupportedScope = envelope.coverage.scope_examined.filter(
-    (entry) => !calls.some((call) => callSupports(entry, call)),
+    (entry) => !calls.some((call) => callSupports(entry, call)) && reconcilable(entry, calls),
   );
 
   for (const entry of unsupportedScope) {
@@ -207,7 +244,7 @@ export function reconcile(input: ReconciliationInput): ReconciliationResult {
     });
   }
 
-  return { violations, underReported, overReported, unsupportedScope };
+  return { violations, underReported, overReported, unsupportedScope, unreconciledScope };
 }
 
 /**

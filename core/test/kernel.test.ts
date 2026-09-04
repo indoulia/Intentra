@@ -11,6 +11,7 @@ import {
   auditEnvelope,
   completionEnvelope,
   harness,
+  README_CONTENT,
   resolutionEnvelope,
   rootCauseEnvelope,
   workflowEnvelope,
@@ -28,7 +29,7 @@ import {
 
 const README = {
   path: 'README.md',
-  content: 'AgentOs is an operating system for agents.',
+  content: README_CONTENT,
 };
 
 const cleanup: (() => void)[] = [];

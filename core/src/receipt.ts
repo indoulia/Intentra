@@ -176,10 +176,21 @@ export async function receiveEnvelope(input: ReceiptInput): Promise<ReceiptResul
   }
   steps.push({
     check: 'reconciliation',
-    result: 'PASS',
+    /*
+     * A coverage claim the call log cannot answer is neither supported nor overstated. It is
+     * reported as INDETERMINATE rather than PASS so the gap is visible: silently passing a
+     * capability-shaped claim nothing could check would leave the field that distinguishes
+     * "found nothing there" from "never looked there" as the one nobody verified.
+     */
+    result: reconciliation.unreconciledScope.length === 0 ? 'PASS' : 'INDETERMINATE',
     detail:
       `${input.mutations.length} mutation event(s) and ${input.calls.length} adapter call(s) `
-      + 'account for what was declared, in both directions',
+      + 'account for what was declared, in both directions'
+      + (reconciliation.unreconciledScope.length === 0
+        ? ''
+        : `. ${reconciliation.unreconciledScope.join(', ')} name capabilities and no call in `
+          + 'this dispatch carried any capabilities_touched to reconcile them against, so they '
+          + 'are unreconciled rather than accepted'),
   });
 
   /* -------------------------------------------------------- 4. verification ---- */

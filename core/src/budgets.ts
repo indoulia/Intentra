@@ -179,6 +179,61 @@ export function reresolutionAllowed(
   };
 }
 
+/**
+ * Whether one more discovery loop is affordable, per run and per work item.
+ *
+ * The discovery loop is the one an on-demand probe spends: the uncertainty ladder's rung 2,
+ * the targeted probe the resume sweep dispatches for an `INDETERMINATE` mutating stage, and
+ * the re-resolution those can lead to. It is bounded precisely so that "the kernel discovers
+ * rather than choosing" cannot become "the kernel discovers forever" — and a counter nothing
+ * increments is a bound nothing enforces.
+ */
+export function discoveryLoopAllowed(
+  consumed: { readonly run: number; readonly workItem: number },
+  budgets: BudgetPolicy,
+): {
+    readonly allowed: boolean;
+    readonly scope: 'run' | 'work_item' | null;
+    readonly value: number;
+    readonly cap: number;
+    readonly reason: string;
+  } {
+  const cap = budgets.loops.discovery;
+  const run = consumed.run + 1;
+  if (run > cap.per_run) {
+    return {
+      allowed: false,
+      scope: 'run',
+      value: run,
+      cap: cap.per_run,
+      reason:
+        `the discovery loop is spent for this run (${run} of ${cap.per_run}). Exceeding a cap `
+        + 'is BLOCKED or a stop, never a quiet retry',
+    };
+  }
+  const workItem = consumed.workItem + 1;
+  if (workItem > cap.per_work_item) {
+    return {
+      allowed: false,
+      scope: 'work_item',
+      value: workItem,
+      cap: cap.per_work_item,
+      reason:
+        `the discovery loop is spent for this work item (${workItem} of `
+        + `${cap.per_work_item}) across all its runs. A budget that resets on every attempt is `
+        + 'not a budget',
+    };
+  }
+  return {
+    allowed: true,
+    scope: null,
+    value: run,
+    cap: cap.per_run,
+    reason: `discovery loop ${run} of ${cap.per_run} this run, ${workItem} of `
+      + `${cap.per_work_item} this work item`,
+  };
+}
+
 /** Whether a proposed decomposition is within the breadth and depth bounds. */
 export function decompositionWithinBounds(
   childCount: number,

@@ -114,6 +114,25 @@ export function deriveRiskClass(
 }
 
 /**
+ * Templates admissible for a work item type in *this installation*.
+ *
+ * Two filters, and the second is the one that makes this build read-only: `applies_to` admits
+ * by type, and `execution.admissible_risk_classes` admits by what the installation will
+ * execute at all. Exposed because the uncertainty ladder's rung 3 intersects the same set,
+ * and a rung 3 computed over templates the installation would refuse would propose a prefix
+ * nothing could run.
+ */
+export function admissibleTemplatesFor(
+  type: WorkItem['type'],
+  policies: PolicySet,
+): readonly WorkflowTemplate[] {
+  const allowedRisk = new Set(policies.execution.admissible_risk_classes);
+  return policies.admissibleTemplates(type).filter(
+    (template) => allowedRisk.has(deriveRiskClass(template.stages, policies).riskClass),
+  );
+}
+
+/**
  * The most conservative admissible template.
  *
  * "The one whose stage set is a superset of the others, or `investigation.readonly` if none

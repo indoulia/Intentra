@@ -1,8 +1,12 @@
-import type {
-  ContextPackage,
-  DodProfileId,
-  WorkItem,
-  WorkflowTemplate,
+import {
+  REALITY_ELEMENTS,
+  type ContextPackage,
+  type CurrentReality,
+  type DodProfileId,
+  type RealityElement,
+  type UnknownRecord,
+  type WorkItem,
+  type WorkflowTemplate,
 } from '@agentos/contracts';
 import type { PolicySet } from '@agentos/policies';
 import { predicateOf } from '@agentos/policies';
@@ -37,6 +41,17 @@ export interface UnderstoodInput {
   readonly resolutionConfidence: number;
   /** Set where the uncertainty ladder has already been applied and its outcome recorded. */
   readonly ladderApplied: boolean;
+  /**
+   * Gap ids the kernel has recorded a handling for.
+   *
+   * Condition 4 admits two ways out, and this is the second: a blocking unknown is sufficient
+   * when it has been **resolved** — the reality element it names is determinate now — *or*
+   * when the run recorded what it did about it: a ladder rung that dispatched the recovery
+   * the gap named, a human answer, or a deferral written to the log. The gap's own
+   * `attempted` and `recoverable_by` are the agent's account of itself and are not a
+   * handling; nobody supplies `UNDERSTOOD`.
+   */
+  readonly recordedHandlings?: ReadonlySet<string>;
 }
 
 export interface UnderstoodVerdict {
@@ -102,6 +117,48 @@ export function entryPredicates(
   return [...out.values()].sort(
     (a, b) => a.predicate.localeCompare(b.predicate) || (a.stage ?? '').localeCompare(b.stage ?? ''),
   );
+}
+
+/**
+ * The obligations a candidate template *must* discharge.
+ *
+ * An optional stage is not a mandatory obligation: a gap blocking `UX_REVIEW` in a template
+ * that may legitimately exclude it does not make the workflow decision indeterminate. Every
+ * other included stage is, as is every DoD criterion those stages owe.
+ */
+export function mandatoryObligations(
+  templates: readonly WorkflowTemplate[],
+  policies: PolicySet,
+): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const template of templates) {
+    const optional = new Set(template.optional_stages);
+    for (const stage of template.stages) {
+      if (optional.has(stage)) continue;
+      out.add(stage.toLowerCase());
+      const descriptor = policies.stages.get(stage);
+      for (const output of descriptor?.required_outputs ?? []) out.add(output.toLowerCase());
+      for (const criterion of descriptor?.dod_criteria ?? []) out.add(`criterion.${criterion}`);
+    }
+  }
+  return out;
+}
+
+/**
+ * Has the reality element this gap is about been settled since the gap was recorded?
+ *
+ * Matched on the element name appearing in the gap's subject, which is how a discovery probe
+ * names what it could not read. A gap naming no reality element is not resolvable this way
+ * and needs a recorded handling instead — the conservative direction, because a gap the
+ * kernel cannot match is a gap the kernel has not seen settled.
+ */
+function gapResolved(gap: UnknownRecord, reality: CurrentReality): boolean {
+  const subject = gap.subject.toLowerCase();
+  const named = REALITY_ELEMENTS.filter(
+    (element: RealityElement) => subject.includes(element.toLowerCase()),
+  );
+  if (named.length === 0) return false;
+  return named.every((element) => reality[element].confidence !== 'UNKNOWN');
 }
 
 export async function computeUnderstood(
@@ -177,17 +234,38 @@ export async function computeUnderstood(
 
   /* --------------------- 4. every UNKNOWN that blocks a mandatory stage is handled ---- */
 
-  const blockingUnknowns = input.context.gaps.filter((gap) => gap.blocks.length > 0);
-  const unhandled = blockingUnknowns.filter(
-    (gap) => gap.recoverable_by.trim().length === 0,
+  /*
+   * Two branches, and they are different questions. A gap is **resolved** when the reality
+   * element it names is no longer UNKNOWN — discovery has since settled it. A gap has a
+   * **recorded handling** when the run wrote down what it did about it. Neither is the gap's
+   * own `recoverable_by`: that field is required and non-empty by schema, so a check keyed on
+   * it passes for every schema-valid package and decides nothing.
+   */
+  const mandatory = mandatoryObligations(admissible, policies);
+  const handlings = input.recordedHandlings ?? new Set<string>();
+  const blockingUnknowns = input.context.gaps.filter(
+    (gap) => gap.blocks.some((obligation) => mandatory.has(obligation.toLowerCase())),
   );
+
+  const resolved: UnknownRecord[] = [];
+  const handled: UnknownRecord[] = [];
+  const unhandled: UnknownRecord[] = [];
+  for (const gap of blockingUnknowns) {
+    if (gapResolved(gap, input.context.current_reality)) resolved.push(gap);
+    else if (handlings.has(gap.id)) handled.push(gap);
+    else unhandled.push(gap);
+  }
+
   conditions.push({
     check: 'blocking_unknowns_handled',
     result: unhandled.length === 0 ? 'PASS' : 'FAIL',
     detail: unhandled.length === 0
-      ? `${blockingUnknowns.length} unknown(s) block a downstream obligation and each names `
-        + 'what would recover it'
-      : `${unhandled.map((g) => g.id).join(', ')} block an obligation and name no recovery`,
+      ? `${blockingUnknowns.length} unknown(s) block a mandatory obligation: `
+        + `${resolved.length} resolved since, ${handled.length} with a recorded handling`
+      : `${unhandled.map((g) => g.id).join(', ')} block a mandatory obligation `
+        + `(${unhandled.map((g) => g.blocks.join('/')).join('; ')}), the reality element each `
+        + 'names is still UNKNOWN, and nothing recorded a handling. What the gap says would '
+        + 'recover it is the agent\'s account of itself, and nobody supplies UNDERSTOOD',
   });
 
   /* ----------------------------------- 5. resolution confidence, or the ladder ---- */

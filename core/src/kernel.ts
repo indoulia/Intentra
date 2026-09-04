@@ -1,6 +1,7 @@
 import {
   runId as makeRunId,
   sequentialId,
+  validators,
   type AdapterCallContext,
   type AdapterRegistry,
   type AgentCatalog,
@@ -11,6 +12,7 @@ import {
   type CallRecord,
   type CapabilityRecord,
   type CheckOutcome,
+  type Classification,
   type Clock,
   type ContextPackage,
   type ContextSectionName,
@@ -27,6 +29,9 @@ import {
   type Locator,
   type MutationEvent,
   type ProposedWorkItem,
+  type CapabilityRegistry,
+  type ResolutionAlternative,
+  type RealityElement,
   type Registries,
   type RunOutcome,
   type Scope,
@@ -43,17 +48,38 @@ import type { PolicySet } from '@agentos/policies';
 import type { RunStore } from '@agentos/state';
 import { Journal } from './journal.js';
 import { admitWorkItem, type IdentityResolution } from './admission.js';
-import { computeUnderstood } from './understood.js';
-import { admitWorkflow, deriveRiskClass } from './workflow-admission.js';
+import { computeUnderstood, type UnderstoodVerdict } from './understood.js';
+import { admissibleTemplatesFor, admitWorkflow, deriveRiskClass } from './workflow-admission.js';
 import { computeEntryStage, stagesRemaining, stageFromCursor } from './entry-stage.js';
-import { PredicateEvaluator, type PredicateInputs } from './predicates.js';
+import { PredicateEvaluator, type PredicateEvaluation, type PredicateInputs } from './predicates.js';
 import { decideAction, type KernelAction, type TransitionContext } from './state-machine.js';
 import { receiveEnvelope, withVerification } from './receipt.js';
+import { verifyEvidence, type VerificationReport } from './evidence-verification.js';
 import { computeDod, effectiveProfile } from './dod.js';
 import { compareSourceDrift, recordIntake } from './intake.js';
 import { project, recover, runRecord, type Projection } from './recovery.js';
-import { ZERO_BUDGET, addCost, checkDispatchBudget, dispatchBudget, incrementLoop, reresolutionAllowed } from './budgets.js';
-import { selectModel, selectSkills } from './selection.js';
+import {
+  ZERO_BUDGET,
+  addCost,
+  checkDispatchBudget,
+  discoveryLoopAllowed,
+  dispatchBudget,
+  incrementLoop,
+  reresolutionAllowed,
+} from './budgets.js';
+import { climbLadder, type LadderResult } from './ladder.js';
+import { classifyGates, previouslyDenied, recordRequest } from './authorization.js';
+import {
+  childWorkItem,
+  coordinateChildren,
+  externalChildren,
+  decomposeEnvelope,
+  triageEnvelope,
+  withChildLink,
+} from './orchestration.js';
+import { readReconciliation } from './work-item-reconciliation.js';
+import { classifyDispatch, selectModel, selectSkills } from './selection.js';
+import { rankModels, rankSkills } from '@agentos/registries';
 import { narrate, liveView, workItemView } from './narrative.js';
 
 /**
@@ -128,11 +154,96 @@ function normalizeCounters(
   return out;
 }
 
+/** Every `current_reality` element, for matching a recovery description onto a re-probe. */
+const REALITY_ELEMENT_NAMES: readonly RealityElement[] = [
+  'implementation_present', 'tests_present', 'pr', 'ci', 'reviews', 'merge_state',
+  'deployment', 'outcome_evidence', 'children', 'agentos_history',
+];
+
+/** Which reality element a predicate reads, for the targeted probe that would settle it. */
+const PREDICATE_ELEMENT: Readonly<Record<string, RealityElement>> = {
+  'reality.implementation_present': 'implementation_present',
+  'reality.tests_present': 'tests_present',
+  'reality.pr_open': 'pr',
+  'reality.pr_merged': 'pr',
+  'reality.pr_approved': 'reviews',
+  'reality.pr_reviewed': 'reviews',
+  'reality.pr_has_unresolved_comments': 'reviews',
+  'reality.ci_green': 'ci',
+  'reality.stage_completed_previously': 'agentos_history',
+  'reality.children_exist': 'children',
+  'reality.children_all_terminal': 'children',
+  'reality.outcome_already_satisfied': 'outcome_evidence',
+  'reality.deployed': 'deployment',
+};
+
+function realityElementForPredicate(predicate: string): RealityElement | null {
+  return PREDICATE_ELEMENT[predicate.replace(/^NOT /, '')] ?? null;
+}
+
+/**
+ * The reality element an `UNKNOWN`'s subject names, or `null`.
+ *
+ * `null` is not a failure. A gap naming something outside the reality set is still recorded as
+ * attempted; what the kernel does not do is claim to have settled something it could not
+ * even address.
+ */
+function realityElementFor(subject: string): RealityElement | null {
+  const text = subject.toLowerCase();
+  return REALITY_ELEMENT_NAMES.find((element) => text.includes(element)) ?? null;
+}
+
+/** What AgentOS decided the work was, and why, in one line for the log and the narrative. */
+function intentNote(
+  intent: Assertion,
+  workItem: WorkItem,
+  confidence: number,
+  alternatives: readonly ResolutionAlternative[],
+): string {
+  const value = intent.confidence === 'UNKNOWN' ? 'UNKNOWN' : String(intent.value);
+  const reasoning = intent.confidence === 'INFERENCE' ? ` ${intent.reasoning}` : '';
+  const rejected = alternatives.length === 0
+    ? ''
+    : ` Alternatives considered: ${alternatives.map(
+      (a) => `${a.type} (${a.reading}) rejected because ${a.why_rejected}`,
+    ).join('; ')}.`;
+  return `AgentOS decided this work is ${value} (${intent.confidence}, from ${intent.probe}), `
+    + `admitted as type ${workItem.type}`
+    + (workItem.claimed_type === null ? '' : ` after downgrading a claimed ${workItem.claimed_type}`)
+    + `, with the outcome "${workItem.desired_outcome}". The resolver's own confidence was `
+    + `${confidence}, which is recorded and is never the reason anything is believed.`
+    + `${reasoning}${rejected} The WorkItem contract carries no intent field, so this event is `
+    + 'the durable record the run narrative states it from.';
+}
+
 type PrologueLogger = <K extends Event['event']>(
   kind: K,
   data: Extract<Event, { event: K }>['data'],
   stage: Stage,
 ) => void;
+
+/**
+ * What a graph run produced, plus the one thing that cannot be settled inside it.
+ *
+ * A run that ended `RERESOLVED` has to hand the re-resolution *outward*, because step 3 starts
+ * a new run against the same Work Item and the lease that makes "one active run per Work Item"
+ * true is still held by this one. The caller releases it and then performs steps 2 and 3.
+ */
+interface GraphOutcome {
+  readonly result: RunResult;
+  readonly workItem: WorkItem;
+  readonly reresolve?: { readonly reason: string; readonly evidence: readonly string[] };
+}
+
+/**
+ * What `COMPLETION` produced: the run's end, or a route back into the graph.
+ *
+ * `INCOMPLETE` routes back to the stage that owes the missing verdicts. That is a transition
+ * the run takes, not a line in the log about a transition it would have taken.
+ */
+type CompletionOutcome =
+  | ({ readonly kind: 'END' } & GraphOutcome)
+  | { readonly kind: 'ROUTE_BACK'; readonly to: TemplateStage };
 
 interface DispatchOutcome {
   readonly envelope: HandoffEnvelope | null;
@@ -161,7 +272,7 @@ export class Kernel {
     /* ------------------------------------------------ INTAKE_RECEIVED ---- */
 
     const intakeId = sequentialId('in', this.nextIntakeNumber(), 4);
-    const { record, attempts } = recordIntake(
+    const { record, attempts, principalAsserted, trustReason } = recordIntake(
       {
         intakeId,
         source: input.source,
@@ -198,6 +309,28 @@ export class Kernel {
     };
 
     logPrologue('intake_recorded', record, 'INTAKE_RECEIVED');
+
+    if (!principalAsserted) {
+      /*
+       * A host that cannot assert a principal produces **absence**, and the intake classifies
+       * EXTERNAL. `IntakeRecord.principal` is a required object whose `id` is a non-empty
+       * string, so the absence cannot be expressed on the record and is recorded here instead
+       * of being flattened into an identity nobody authenticated. A contract gap, reported
+       * rather than papered over.
+       */
+      logPrologue(
+        'note',
+        {
+          topic: 'principal absent',
+          detail:
+            `${this.ports.host.host} asserted no principal, so the intake carries the absence `
+            + `marker rather than an identity, and classifies ${record.trust_class}. `
+            + trustReason,
+        },
+        'INTAKE_RECEIVED',
+      );
+    }
+
     for (const attempt of attempts) {
       logPrologue(
         'intake_instruction_attempt',
@@ -250,17 +383,48 @@ export class Kernel {
         : String(resolution.proposal.external_identity.value),
     );
 
-    const admission = admitWorkItem({
+    /*
+     * "Every FACT carries evidence; the evidence replays." The resolution envelope's evidence
+     * is replayed through the originating adapters before anything the proposal asserts is
+     * believed — the same disbelief step every other envelope gets, applied to the envelope
+     * that decides what the work *is*.
+     */
+    const verification = await this.verifyResolution(resolution.envelope, record, prologue);
+    if (verification !== null && resolution.envelope !== null) {
+      logPrologue('evidence_verification', {
+        envelope_id: resolution.envelope.envelope_id,
+        results: verification.outcomes.map((o) => ({
+          evidence_id: o.evidence_id,
+          status: o.status,
+          selected_because: o.selected_because,
+          detail: o.detail,
+        })),
+        mismatch_count: verification.mismatchCount,
+      }, 'RESOLUTION');
+    }
+
+    const registry = this.capabilityRegistry();
+    logPrologue('note', {
+      topic: 'capability registry',
+      detail: registry.detail,
+    }, 'RESOLUTION');
+
+    const admissionInput = {
       intake: record,
       proposal: resolution.proposal,
       policies,
       context: orientation,
-      capabilities: [],
+      capabilities: registry.records,
+      capabilityRegistryAvailable: registry.available,
+      evidence: resolution.envelope?.evidence ?? [],
+      verification,
       identity,
       existing: this.loadWorkItems(),
       access: this.ports.access,
       now: clock.now().toISOString(),
-    });
+    };
+
+    const admission = admitWorkItem(admissionInput);
     checks.push(...admission.checks);
 
     if (admission.outcome === 'BLOCKED') {
@@ -295,15 +459,15 @@ export class Kernel {
           checks,
         );
       }
+      const secondVerification = await this.verifyResolution(
+        second.envelope, record, prologue,
+      );
       const retry = admitWorkItem({
-        intake: record,
+        ...admissionInput,
         proposal: second.proposal,
-        policies,
-        context: orientation,
-        capabilities: [],
-        identity,
+        evidence: second.envelope?.evidence ?? [],
+        verification: secondVerification,
         existing: this.loadWorkItems(),
-        access: this.ports.access,
         now: clock.now().toISOString(),
       });
       checks.push(...retry.checks);
@@ -316,31 +480,142 @@ export class Kernel {
           checks,
         );
       }
-      return this.continueWithWorkItem(retry.workItem, record, orientation, prologue, input, checks, retry.typeDowngraded);
+      return this.continueWithWorkItem({
+        workItem: retry.workItem,
+        intake: record,
+        orientation,
+        prologue,
+        input,
+        checks,
+        typeDowngraded: retry.typeDowngraded,
+        intent: retry.intent,
+        resolutionConfidence: retry.resolutionConfidence,
+        alternatives: second.proposal.alternatives,
+      });
     }
 
-    return this.continueWithWorkItem(
-      admission.workItem,
-      record,
+    return this.continueWithWorkItem({
+      workItem: admission.workItem,
+      intake: record,
       orientation,
       prologue,
       input,
       checks,
-      admission.typeDowngraded,
-    );
+      typeDowngraded: admission.typeDowngraded,
+      intent: admission.intent,
+      resolutionConfidence: admission.resolutionConfidence,
+      alternatives: resolution.proposal.alternatives,
+    });
+  }
+
+  /* ------------------------------------------------- the resolution envelope ==== */
+
+  /**
+   * Replays the resolution envelope's evidence through the originating adapters.
+   *
+   * The same `verifyEvidence` every other envelope goes through, and deliberately the same:
+   * duplicating the selection policy, the two-strikes rule and the comparators for this one
+   * envelope would be two implementations of the check the whole design rests on.
+   */
+  private async verifyResolution(
+    envelope: HandoffEnvelope | null,
+    intake: IntakeRecord,
+    prologue: readonly Event[],
+  ): Promise<VerificationReport | null> {
+    if (envelope === null) return null;
+    const calls = prologue
+      .filter((e): e is Extract<Event, { event: 'adapter_call' }> => e.event === 'adapter_call')
+      .map((e) => e.data);
+    return verifyEvidence({
+      envelope,
+      policy: this.ports.policies.evidence,
+      adapters: this.ports.adapters,
+      callContext: {
+        workItemId: intake.intake_id,
+        runId: intake.intake_id,
+        dispatchId: 'd_res',
+        mandate: { in_scope: [], out_of_scope: [] },
+        grantsHeld: [],
+        stageMutating: false,
+      },
+      clock: this.ports.clock,
+      calls,
+      sampler: this.ports.random,
+    });
+  }
+
+  /**
+   * The capability records this admission can judge a type against.
+   *
+   * The capability registry is written by the Auditor into a run's `capabilities/`, so a work
+   * item being resolved for the first time has none — and `ContextPackage.capabilities` is a
+   * *reference* into a registry rather than the records, so tier-1 orientation cannot supply
+   * them either. Where none is found, `available` is false and the type check records
+   * `INDETERMINATE`: an empty registry and an unreadable one are the same array and opposite
+   * facts, and passing every `FEATURE` because nobody looked is exactly the silent pass the
+   * check exists to prevent.
+   */
+  private capabilityRegistry(): {
+    readonly records: readonly CapabilityRecord[];
+    readonly available: boolean;
+    readonly detail: string;
+  } {
+    const { store } = this.ports;
+    let newest: { readonly records: readonly CapabilityRecord[]; readonly at: string } | null = null;
+
+    for (const workItemId of store.listWorkItems()) {
+      for (const runId of store.listRuns(workItemId)) {
+        const version = store.latestVersion(workItemId, runId, 'capabilities');
+        if (version === null) continue;
+        const raw = store.getVersioned(workItemId, runId, 'capabilities', version);
+        const parsed = validators.capabilityRegistry.check(raw);
+        if (!parsed.valid) continue;
+        const registry = raw as CapabilityRegistry;
+        if (newest === null || registry.assembled_at > newest.at) {
+          newest = { records: registry.records, at: registry.assembled_at };
+        }
+      }
+    }
+
+    if (newest === null) {
+      return {
+        records: [],
+        available: false,
+        detail:
+          'no capability registry has been assembled for this repository, so the type check '
+          + 'cannot answer whether a capability record intersects the scope. That is '
+          + 'INDETERMINATE, not "no capabilities": an unreadable registry and an empty one are '
+          + 'the same array and opposite facts',
+      };
+    }
+
+    return {
+      records: newest.records,
+      available: true,
+      detail:
+        `${newest.records.length} capability record(s), from the registry assembled at `
+        + newest.at,
+    };
   }
 
   /* ---------------------------------------------------------- the work item ==== */
 
-  private async continueWithWorkItem(
-    workItem: WorkItem,
-    intake: IntakeRecord,
-    orientation: ContextPackage,
-    prologue: readonly Event[],
-    input: StartInput,
-    checks: CheckOutcome[],
-    typeDowngraded: boolean,
-  ): Promise<RunResult> {
+  private async continueWithWorkItem(args: {
+    readonly workItem: WorkItem;
+    readonly intake: IntakeRecord;
+    readonly orientation: ContextPackage;
+    readonly prologue: readonly Event[];
+    readonly input: StartInput;
+    readonly checks: CheckOutcome[];
+    readonly typeDowngraded: boolean;
+    /** What resolution decided the work *is*. No `WorkItem` field carries it. */
+    readonly intent: Assertion;
+    readonly resolutionConfidence: number;
+    readonly alternatives: readonly ResolutionAlternative[];
+  }): Promise<RunResult> {
+    const {
+      workItem, intake, orientation, prologue, input, checks, typeDowngraded,
+    } = args;
     const { store, policies, clock } = this.ports;
 
     const existing = store.getWorkItem(workItem.work_item_id);
@@ -436,6 +711,25 @@ export class Kernel {
       type_downgraded: typeDowngraded,
     }, { stage: 'RESOLUTION' });
 
+    /*
+     * What AgentOS decided the work *is*, written to the **work-item** log.
+     *
+     * The narrative's v0.3 obligation is to state what AgentOS decided the work was and why —
+     * "a run that did the wrong thing correctly is the new failure mode this layer
+     * introduces, and it is invisible unless resolution is narrated alongside execution". The
+     * `WorkItem` contract carries no `intent` field, so the durable record of it is this
+     * event; the work-item log is the right home because intent outlives the run, exactly as
+     * the work item does.
+     */
+    journal.workItem('note', {
+      topic: 'intent',
+      detail: intentNote(args.intent, durable, args.resolutionConfidence, args.alternatives),
+    }, { stage: 'RESOLUTION' });
+    journal.run('note', {
+      topic: 'intent',
+      detail: intentNote(args.intent, durable, args.resolutionConfidence, args.alternatives),
+    }, { stage: 'RESOLUTION' });
+
     if (durable.duplicate_candidates.length > 0) {
       journal.run('duplicate_candidates', {
         candidates: durable.duplicate_candidates,
@@ -452,18 +746,20 @@ export class Kernel {
     };
     store.putWorkItemProjection(workItemState);
 
+    let outcome: GraphOutcome;
     try {
-      const outcome = await this.runGraph(
-        workItemState,
+      outcome = await this.runGraph({
+        workItem: workItemState,
         intake,
         orientation,
         journal,
         runId,
         input,
         checks,
-      );
+        resolutionConfidence: args.resolutionConfidence,
+        alternatives: args.alternatives,
+      });
       workItemState = outcome.workItem;
-      return outcome.result;
     } finally {
       store.releaseLease(workItemState.work_item_id, runId);
       journal.workItem('lease', {
@@ -474,21 +770,52 @@ export class Kernel {
         holder,
       });
     }
+
+    if (outcome.reresolve === undefined) return outcome.result;
+
+    /*
+     * Steps 2 and 3, now that the lease is released. The run has ended honestly; a new one
+     * starts against the same Work Item, and only the graph is new.
+     */
+    return this.performReresolution({
+      workItem: workItemState,
+      intake,
+      orientation,
+      input,
+      checks,
+      priorRunId: runId,
+      reason: outcome.reresolve.reason,
+      evidence: outcome.reresolve.evidence,
+    });
   }
 
   /* ------------------------------------------------------------- the graph ==== */
 
-  private async runGraph(
-    workItem: WorkItem,
-    intake: IntakeRecord,
-    orientation: ContextPackage,
-    journal: Journal,
-    runId: string,
-    input: StartInput,
-    checks: CheckOutcome[],
-  ): Promise<{ readonly result: RunResult; readonly workItem: WorkItem }> {
+  private async runGraph(args: {
+    readonly workItem: WorkItem;
+    readonly intake: IntakeRecord;
+    readonly orientation: ContextPackage;
+    readonly journal: Journal;
+    readonly runId: string;
+    readonly input: StartInput;
+    readonly checks: CheckOutcome[];
+    readonly resolutionConfidence: number;
+    readonly alternatives: readonly ResolutionAlternative[];
+  }): Promise<GraphOutcome> {
+    const { workItem, intake, orientation, journal, runId, input, checks } = args;
     const { store, policies, clock } = this.ports;
     const evaluator = new PredicateEvaluator(policies, clock, this.ports.discovery);
+    /**
+     * Discovery loops spent by this run and this work item.
+     *
+     * One counter for the ladder's rung 2, the resume sweep's targeted probe and the
+     * re-resolution either can lead to — because they are one loop, and counting them
+     * separately would make three unbounded loops out of one bounded one.
+     */
+    const discoverySpent = {
+      run: 0,
+      workItem: workItem.consumed_budget.loops['discovery'] ?? 0,
+    };
 
     /* --------------------------------------------- CONTEXT_DISCOVERY ---- */
 
@@ -516,7 +843,8 @@ export class Kernel {
       requested_sections: [],
     }, { stage: 'CONTEXT_DISCOVERY' });
 
-    const capabilities: CapabilityRecord[] = [];
+    const registry = this.capabilityRegistry();
+    const capabilities: readonly CapabilityRecord[] = registry.records;
     const predicateInputs: PredicateInputs = {
       context: deepened,
       workItem,
@@ -525,17 +853,44 @@ export class Kernel {
       claim: null,
     };
 
+    /* ------------------------------------ the work-item reconciliation ---- */
+
+    /*
+     * Where this piece of work actually stands, read from what discovery wrote.
+     *
+     * `current_reality` is written only by probes, so the matrix is computed there and read
+     * here — and read carefully: an absent or unrecognised value is `INDETERMINATE` rather
+     * than a negative, because a discovery run that could not reach the project-management
+     * system has established nothing about whether anybody intends this work.
+     *
+     * Recorded before `UNDERSTOOD` because `CLAIMED_DONE_UNPROVEN` is a finding the run
+     * proceeds to establish or refute rather than a reason to stop, and it is the finding most
+     * easily lost by treating a ticket's status field as an observation about the system.
+     */
+    const reconciliation = readReconciliation(deepened.current_reality);
+    journal.run('note', {
+      topic: 'work item reconciliation',
+      detail: `${reconciliation.state}: ${reconciliation.detail}`,
+    }, { stage: 'CONTEXT_DISCOVERY' });
+    checks.push({
+      check: 'work_item_reconciliation',
+      result: !reconciliation.available || reconciliation.state === 'INDETERMINATE'
+        ? 'INDETERMINATE'
+        : reconciliation.state === 'ALIGNED' ? 'PASS' : 'FAIL',
+      detail: `${reconciliation.state}: ${reconciliation.detail}`,
+    });
+
     /* --------------------------------------------------- UNDERSTOOD ---- */
 
     evaluator.freshen();
-    const understood = await computeUnderstood({
+    let understood = await computeUnderstood({
       workItem,
       policies,
       context: deepened,
       evaluator,
       predicateInputs,
       access: this.ports.access,
-      resolutionConfidence: 1,
+      resolutionConfidence: args.resolutionConfidence,
       ladderApplied: false,
     });
     journal.run('understood_computed', {
@@ -545,12 +900,78 @@ export class Kernel {
     }, { stage: 'UNDERSTOOD' });
     checks.push(...understood.conditions);
 
+    /* ------------------------------------------- the uncertainty ladder ---- */
+
+    /*
+     * **The sufficiency verdict gates progression.** An `INSUFFICIENT` verdict enters the
+     * ladder; it does not get logged and stepped over. Which rung answers decides whether the
+     * run proceeds, and rung 5 ends it `BLOCKED` with `AMBIGUOUS_GOAL` — silence is never
+     * consent.
+     */
+    let safePrefix: readonly TemplateStage[] | null = null;
+    let ladder: LadderResult | null = null;
+
+    if (understood.verdict === 'INSUFFICIENT' || args.alternatives.length > 0) {
+      ladder = await this.climb({
+        workItem,
+        understood,
+        journal,
+        evaluator,
+        predicateInputs,
+        alternatives: args.alternatives,
+        resolutionConfidence: args.resolutionConfidence,
+        discoverySpent,
+        context: deepened,
+      });
+
+      if (ladder.rung === 'BLOCK') {
+        journal.run('transition', {
+          from: 'UNDERSTOOD',
+          to: 'BLOCKED',
+          trigger: ladder.blockerKind,
+          edge_kind: 'escalate',
+          proposed_by: null,
+          proposed_stage: null,
+          overridden: false,
+          evidence: [],
+        }, { stage: 'UNDERSTOOD' });
+        return this.end(
+          journal, workItem, runId, 'BLOCKED', ladder.detail, 'BLOCKED', checks,
+        );
+      }
+
+      if (ladder.rung === 'SAFE_PREFIX') safePrefix = ladder.prefix;
+
+      evaluator.freshen();
+      understood = await computeUnderstood({
+        workItem,
+        policies,
+        context: deepened,
+        evaluator,
+        predicateInputs,
+        access: this.ports.access,
+        resolutionConfidence: args.resolutionConfidence,
+        ladderApplied: true,
+        recordedHandlings: new Set(ladder.handled),
+      });
+      journal.run('understood_computed', {
+        verdict: understood.verdict,
+        conditions: understood.conditions,
+        undetermined_predicates: understood.undeterminedPredicates,
+      }, { stage: 'UNDERSTOOD' });
+      checks.push(...understood.conditions);
+    }
+
     let lifecycle = workItem.lifecycle;
-    if (understood.verdict === 'SUFFICIENT') {
+    if (understood.verdict === 'SUFFICIENT' || ladder !== null) {
       journal.both('work_item_lifecycle', {
         from: lifecycle,
         to: 'UNDERSTOOD',
-        reason: 'the workflow decision is determinate',
+        reason: understood.verdict === 'SUFFICIENT'
+          ? 'the workflow decision is determinate'
+          : 'the workflow decision is not determinate on the evidence, and the uncertainty '
+            + `ladder settled how to proceed at rung ${ladder?.rung ?? 'PROCEED'}: `
+            + (ladder?.detail ?? ''),
         evidence: [],
         decided_by: 'kernel',
       }, { stage: 'UNDERSTOOD' });
@@ -628,6 +1049,18 @@ export class Kernel {
       policies,
       evaluator,
       predicateInputs,
+      /*
+       * The DISCOVER arm of the resume rule, wired.
+       *
+       * A mutating stage whose `satisfied_by` is `INDETERMINATE` is the case where more
+       * verification and less irreversible mutation point in opposite directions, and the
+       * kernel does not choose: it probes. Without this the arm was dead and every
+       * indeterminate mutating stage went straight to `AMBIGUOUS_STATE` — safe, and wrong,
+       * because it blocked runs a single re-read would have resumed.
+       */
+      discover: async (stage, predicate) => this.targetedDiscovery({
+        stage, predicate, journal, evaluator, predicateInputs, discoverySpent,
+      }),
     });
 
     journal.run('entry_stage_computed', {
@@ -695,6 +1128,258 @@ export class Kernel {
       predicateInputs,
       input,
       checks,
+      /* Only armed where the run actually starts inside the prefix: a resumed run entering
+       * past it would re-resolve on its first transition, which is a lap nobody asked for. */
+      safePrefix: safePrefix !== null && safePrefix.includes(entry.entryStage)
+        ? safePrefix
+        : null,
+      resolutionConfidence: args.resolutionConfidence,
+      alternatives: args.alternatives,
+      discoverySpent,
+    });
+  }
+
+  /* ------------------------------------------------- the uncertainty ladder ==== */
+
+  /**
+   * Climbs the ladder, with its two side-effecting rungs bound to real ports.
+   *
+   * Rung 2 dispatches through `DiscoveryPort.reprobeReality` and is counted against
+   * `budgets.loops.discovery` — the counter nothing previously incremented, which made the
+   * bound on "the kernel discovers rather than choosing" a bound on nothing. Rung 4 asks
+   * through `HumanChannel.ask`, once, carrying both readings and what AgentOS would do under
+   * each.
+   */
+  private async climb(args: {
+    readonly workItem: WorkItem;
+    readonly understood: UnderstoodVerdict;
+    readonly journal: Journal;
+    readonly evaluator: PredicateEvaluator;
+    readonly predicateInputs: PredicateInputs;
+    readonly alternatives: readonly ResolutionAlternative[];
+    readonly resolutionConfidence: number;
+    readonly discoverySpent: { run: number; workItem: number };
+    readonly context: ContextPackage;
+  }): Promise<LadderResult> {
+    const { policies } = this.ports;
+    const { journal, workItem } = args;
+
+    /*
+     * Rung 3 intersects the templates admissible for the admitted type **and for every
+     * alternative reading's type**, because the ambiguity the ladder exists for is about which
+     * reading is right. Intersecting the admitted type's set alone would answer a question
+     * nobody asked.
+     */
+    const candidateTypes = new Set<WorkItem['type']>([
+      workItem.type,
+      ...args.alternatives.map((a) => a.type),
+    ]);
+    const byId = new Map<string, ReturnType<typeof admissibleTemplatesFor>[number]>();
+    for (const type of candidateTypes) {
+      for (const template of admissibleTemplatesFor(type, policies)) {
+        byId.set(template.template_id, template);
+      }
+    }
+
+    /* The gaps rung 2 can act on: those blocking something, that name a recovery. */
+    const gaps = args.context.gaps.filter(
+      (gap) => gap.blocks.length > 0 && gap.recoverable_by.trim().length > 0,
+    );
+
+    const result = await climbLadder({
+      workItem,
+      policies,
+      understood: args.understood,
+      gaps,
+      resolutionConfidence: args.resolutionConfidence,
+      alternatives: args.alternatives,
+      admissibleTemplates: [...byId.values()],
+      discoveryLoops: args.discoverySpent,
+      ports: {
+        discover: async (probe) => {
+          const allowed = discoveryLoopAllowed(args.discoverySpent, policies.budgets);
+          if (!allowed.allowed) {
+            journal.run('budget', {
+              kind: 'EXCEEDED',
+              counter: 'loops.discovery',
+              scope: allowed.scope ?? 'run',
+              value: allowed.value,
+              cap: allowed.cap,
+              tried: [allowed.reason],
+            }, { stage: 'UNDERSTOOD' });
+            return { ran: false, settled: false, detail: allowed.reason };
+          }
+          args.discoverySpent.run += 1;
+          args.discoverySpent.workItem += 1;
+          journal.run('budget', {
+            kind: 'CONSUMED',
+            counter: 'loops.discovery',
+            scope: 'run',
+            value: args.discoverySpent.run,
+            cap: policies.budgets.loops.discovery.per_run,
+            tried: [],
+          }, { stage: 'UNDERSTOOD' });
+          journal.run('discovery', {
+            kind: 'ON_DEMAND_REQUESTED',
+            tier: 3,
+            probes: [probe.subject],
+            reason:
+              `the UNKNOWN ${probe.gapId} blocks ${probe.blocks.join(', ')} and names what `
+              + `would settle it: ${probe.recoverableBy}`,
+            requested_sections: [],
+          }, { stage: 'UNDERSTOOD' });
+
+          const element = realityElementFor(probe.subject);
+          if (element === null) {
+            return {
+              ran: true,
+              settled: false,
+              detail:
+                `the recovery names no current_reality element the kernel can re-probe, so the `
+                + 'attempt is recorded and nothing is claimed to have been settled',
+            };
+          }
+          const fresh = await this.ports.discovery.reprobeReality(
+            element, workItem, workItem.scope,
+          );
+          return {
+            ran: true,
+            settled: fresh.confidence !== 'UNKNOWN',
+            detail: fresh.confidence === 'UNKNOWN'
+              ? `${element} came back UNKNOWN again, which settles nothing and is not a `
+                + 'negative answer either'
+              : `${element} came back ${fresh.confidence} from ${fresh.probe}`,
+          };
+        },
+        ask: async (question, readings) => {
+          journal.run('question', {
+            phase: 'ASKED',
+            question,
+            readings: readings.map((r) => ({
+              reading: r.reading,
+              evidence: [...r.evidence],
+              would_do: r.would_do,
+            })),
+            answer: null,
+            answered_by: null,
+          }, { stage: 'UNDERSTOOD' });
+          const answer = await this.ports.human.ask(
+            question,
+            readings.map((r) => ({ reading: r.reading, would_do: r.would_do })),
+          );
+          journal.run('question', {
+            phase: answer === null ? 'TIMED_OUT' : 'ANSWERED',
+            question,
+            readings: readings.map((r) => ({
+              reading: r.reading,
+              evidence: [...r.evidence],
+              would_do: r.would_do,
+            })),
+            answer,
+            answered_by: answer === null ? null : 'human',
+          }, { stage: 'UNDERSTOOD' });
+          return answer;
+        },
+        record: (step) => {
+          journal.run('note', {
+            topic: `uncertainty ladder rung ${step.rung}`,
+            detail: `${step.outcome}: ${step.detail}`,
+          }, { stage: 'UNDERSTOOD' });
+        },
+      },
+    });
+
+    journal.run('note', {
+      topic: 'uncertainty ladder',
+      detail:
+        `settled at rung ${result.rung} after ${result.probesDispatched} probe(s). `
+        + result.detail,
+    }, { stage: 'UNDERSTOOD' });
+
+    return result;
+  }
+
+  /**
+   * The targeted probe the resume sweep dispatches for an `INDETERMINATE` mutating stage.
+   *
+   * Counted against the same discovery loop budget as the ladder's rung 2, because they are
+   * the same loop: an on-demand probe requested mid-run.
+   */
+  private async targetedDiscovery(args: {
+    readonly stage: TemplateStage;
+    readonly predicate: string;
+    readonly journal: Journal;
+    readonly evaluator: PredicateEvaluator;
+    readonly predicateInputs: PredicateInputs;
+    readonly discoverySpent: { run: number; workItem: number };
+  }): Promise<PredicateEvaluation> {
+    const { policies } = this.ports;
+    const { journal } = args;
+
+    const allowed = discoveryLoopAllowed(args.discoverySpent, policies.budgets);
+    if (!allowed.allowed) {
+      journal.run('budget', {
+        kind: 'EXCEEDED',
+        counter: 'loops.discovery',
+        scope: allowed.scope ?? 'run',
+        value: allowed.value,
+        cap: allowed.cap,
+        tried: [allowed.reason],
+      }, { stage: 'WORKFLOW_SELECTED' });
+      return {
+        predicate: args.predicate,
+        value: 'INDETERMINATE',
+        claim: null,
+        inputs: [],
+        reprobed: false,
+        reason:
+          `${allowed.reason}, so no targeted probe was dispatched for ${args.stage} and it `
+          + 'stays INDETERMINATE. A budget that could be spent again to avoid a block is not a '
+          + 'budget',
+      };
+    }
+
+    args.discoverySpent.run += 1;
+    args.discoverySpent.workItem += 1;
+    journal.run('budget', {
+      kind: 'CONSUMED',
+      counter: 'loops.discovery',
+      scope: 'run',
+      value: args.discoverySpent.run,
+      cap: policies.budgets.loops.discovery.per_run,
+      tried: [],
+    }, { stage: 'WORKFLOW_SELECTED' });
+    journal.run('discovery', {
+      kind: 'TARGETED_PROBE',
+      tier: 3,
+      probes: [args.predicate],
+      reason:
+        `${args.stage} mutates and its satisfied_by predicate ${args.predicate} is `
+        + 'INDETERMINATE. More verification and less irreversible mutation point in opposite '
+        + 'directions, so the kernel probes rather than choosing',
+      requested_sections: [],
+    }, { stage: 'WORKFLOW_SELECTED' });
+
+    const element = realityElementForPredicate(args.predicate);
+    if (element !== null) {
+      const fresh = await this.ports.discovery.reprobeReality(
+        element,
+        args.predicateInputs.workItem,
+        args.predicateInputs.workItem?.scope ?? { paths: [], capabilities: [], repositories: [] },
+      );
+      const reality = { ...args.predicateInputs.context.current_reality, [element]: fresh };
+      args.evaluator.freshen();
+      return args.evaluator.evaluate(args.predicate, {
+        ...args.predicateInputs,
+        context: { ...args.predicateInputs.context, current_reality: reality },
+        stage: args.stage,
+      });
+    }
+
+    args.evaluator.freshen();
+    return args.evaluator.evaluate(args.predicate, {
+      ...args.predicateInputs,
+      stage: args.stage,
     });
   }
 
@@ -714,8 +1399,20 @@ export class Kernel {
     readonly predicateInputs: PredicateInputs;
     readonly input: StartInput;
     readonly checks: CheckOutcome[];
-  }): Promise<{ readonly result: RunResult; readonly workItem: WorkItem }> {
-    const { policies, clock, store } = this.ports;
+    /**
+     * Rung 3's admitted prefix, where the ladder took it.
+     *
+     * The run executes the prefix and **re-resolves at its exit** — the ambiguity did not
+     * matter for the prefix, and it does for whatever comes next. Where the prefix covers the
+     * whole graph there is no exit to re-resolve at, which is the read-only case.
+     */
+    readonly safePrefix: readonly TemplateStage[] | null;
+    readonly resolutionConfidence: number;
+    readonly alternatives: readonly ResolutionAlternative[];
+    /** Shared with the prologue's ladder and the resume sweep: it is one loop. */
+    readonly discoverySpent: { run: number; workItem: number };
+  }): Promise<GraphOutcome> {
+    const { policies, clock } = this.ports;
     const { journal, graph, runId } = state;
 
     const envelopes: HandoffEnvelope[] = [];
@@ -724,6 +1421,10 @@ export class Kernel {
     let dispatchNumber = 0;
     let attemptInStage = 0;
     let escalatedThisStage = false;
+    /** `AUTONOMOUS_INTAKE_EXECUTION` fires once per Work Item, at first entry to a mutation. */
+    let intakeGateFired = false;
+    /** Stages `COMPLETION` has already routed back to once in this run. */
+    const routedBack = new Set<TemplateStage>();
     const runStartedAt = clock.now().toISOString();
 
     /* A bound on iterations that is not a policy threshold: it is the dispatch cap, read from
@@ -747,7 +1448,18 @@ export class Kernel {
       }
 
       if (stage === 'COMPLETION') {
-        return this.complete(state, envelopes, budget);
+        const completion = await this.complete(state, envelopes, budget, routedBack);
+        if (completion.kind === 'END') return completion;
+        /*
+         * The route-back is bounded by the dispatch cap the loop already checks each
+         * iteration, and by one lap per owing stage: a second lap over a stage that supplied
+         * nothing the first time is a quiet retry, and exceeding a bound is never one.
+         */
+        routedBack.add(completion.to);
+        state.currentStage = completion.to;
+        attemptInStage = 0;
+        escalatedThisStage = false;
+        continue;
       }
 
       const descriptor = policies.stages.get(stage as TemplateStage);
@@ -812,7 +1524,35 @@ export class Kernel {
         };
       }
 
-      const action = outcome.action;
+      /*
+       * Gates, classified and recorded, gating nothing.
+       *
+       * Nothing in this build mutates, so no gate has anything to stop — and a gate that is
+       * inert is not a gate that is absent. Building mutation first and adding authorization
+       * afterwards is how the gate ends up bypassable, so the classifiers run, the firings are
+       * recorded, and a prior denial is surfaced, from now.
+       */
+      const gateOutcome = await this.classifyAndRecordGates({
+        stage: stage as TemplateStage,
+        descriptor,
+        state,
+        envelope: outcome.envelope,
+        dispatchNumber,
+        intakeGateFired,
+      });
+      if (gateOutcome.intakeGateFired) intakeGateFired = true;
+
+      /* The structural stages: what the kernel does when a run's *shape* changes. */
+      let action = outcome.action;
+      if (outcome.envelope !== null) {
+        const structural = await this.structural({
+          stage: stage as TemplateStage,
+          envelope: outcome.envelope,
+          state,
+        });
+        if (structural !== null) action = structural;
+      }
+
       if (action === null) {
         return this.end(
           journal, state.workItem, runId, 'FAILED', outcome.detail,
@@ -842,6 +1582,25 @@ export class Kernel {
               reason: evaluation.reason,
             }, { stage });
           }
+          /*
+           * A `PARTIAL` whose unfilled outputs the exit condition did not require proceeds —
+           * **recording the gap as an unknown**. Without this the log of a `PARTIAL` that
+           * advanced is indistinguishable from the log of a `COMPLETE`, which is precisely how
+           * `PARTIAL` becomes a soft `COMPLETE`.
+           */
+          if (action.unfilledOutputs !== undefined && action.unfilledOutputs.length > 0) {
+            journal.run('note', {
+              topic: 'partial gap',
+              detail:
+                `${outcome.envelope?.agent ?? 'the agent'} returned PARTIAL and left `
+                + `${action.unfilledOutputs.join(', ')} unfilled. The exit condition of ${stage} `
+                + `does not require them (it requires `
+                + `${descriptor.required_outputs.join(', ') || 'nothing'}), so the run proceeds `
+                + 'and the gap is recorded as an unknown rather than disappearing into a '
+                + 'transition that reads like a COMPLETE',
+            }, { stage });
+          }
+
           if (action.edge.kind === 'loop') {
             const counter = action.edge.counter;
             if (counter !== null && counter !== undefined) {
@@ -860,6 +1619,35 @@ export class Kernel {
               }, { stage });
             }
           }
+
+          /*
+           * Rung 3's exit. The run took the shared prefix because the ambiguity did not matter
+           * for it; leaving the prefix is exactly where it starts to. Far more is known now, so
+           * the honest move is the one section 4.5 already defines: end this run and re-resolve.
+           */
+          if (
+            state.safePrefix !== null
+            && state.safePrefix.includes(stage as TemplateStage)
+            && action.to !== 'COMPLETE'
+            && action.to !== 'CANCELLED'
+            && !state.safePrefix.includes(action.to as TemplateStage)
+          ) {
+            state.currentStage = action.to;
+            return this.reresolve({
+              state,
+              stage,
+              reason:
+                `the run executed the common safe prefix `
+                + `${state.safePrefix.join(' -> ')} admitted under ambiguity, and ${action.to} `
+                + 'is outside it. Far more is known at the prefix exit than was known at '
+                + 'resolution, so the work is re-resolved rather than continued on the reading '
+                + 'that was not determinate when the graph was frozen',
+              evidence: [],
+              budget,
+              envelopes,
+            });
+          }
+
           state.currentStage = action.to;
           attemptInStage = 0;
           escalatedThisStage = false;
@@ -892,36 +1680,15 @@ export class Kernel {
             'BLOCKED', state.checks,
           );
 
-        case 'RERESOLVE': {
-          const allowance = reresolutionAllowed(
-            state.workItem.reresolution_count, policies.budgets,
-          );
-          journal.both('reresolved', {
+        case 'RERESOLVE':
+          return this.reresolve({
+            state,
+            stage,
             reason: action.reason,
             evidence: action.evidence,
-            count: state.workItem.reresolution_count + 1,
-            cap: allowance.cap,
-            new_run_id: null,
-          }, { stage });
-          if (!allowance.allowed) {
-            return this.end(
-              journal, state.workItem, runId, 'BLOCKED', allowance.reason,
-              'BLOCKED', state.checks,
-            );
-          }
-          state.workItem = {
-            ...state.workItem,
-            reresolution_count: state.workItem.reresolution_count + 1,
-          };
-          store.putWorkItemProjection(state.workItem);
-          return this.end(
-            journal, state.workItem, runId, 'RERESOLVED',
-            `${action.reason}. The run ends honestly and a new one starts against the same `
-            + 'Work Item: identity, history and every prior envelope survive, and only the '
-            + 'graph is new',
-            state.workItem.lifecycle, state.checks,
-          );
-        }
+            budget,
+            envelopes,
+          });
 
         case 'CONTRACT_VIOLATION':
           journal.run('envelope_rejected', {
@@ -958,6 +1725,629 @@ export class Kernel {
     );
   }
 
+  /* ------------------------------------------------------ structural stages ==== */
+
+  /**
+   * `REVIEW_TRIAGE`, `DECOMPOSITION` and `CHILD_COORDINATION` — the three places a run's shape
+   * changes because an agent read something.
+   *
+   * Returns an action that **overrides** the state machine's where the kernel's own decision
+   * differs — a decomposition exceeding its bound is `BLOCKED` whatever the envelope's status
+   * said — and `null` where the ordinary transition stands.
+   */
+  private async structural(args: {
+    readonly stage: TemplateStage;
+    readonly envelope: HandoffEnvelope;
+    readonly state: {
+      workItem: WorkItem;
+      readonly context: ContextPackage;
+      readonly journal: Journal;
+      readonly runId: string;
+      readonly evaluator: PredicateEvaluator;
+      readonly predicateInputs: PredicateInputs;
+    };
+  }): Promise<KernelAction | null> {
+    const { policies, clock, store } = this.ports;
+    const { state, envelope } = args;
+    const journal = state.journal;
+
+    /* ------------------------------------------------------ REVIEW_TRIAGE ---- */
+
+    if (args.stage === 'REVIEW_TRIAGE') {
+      const triage = triageEnvelope(envelope, state.workItem);
+      if (triage.decisions.length === 0) return null;
+
+      for (const decision of triage.decisions) {
+        journal.run('note', {
+          topic: `triage ${decision.threadId}`,
+          detail:
+            `routed ${decision.route} by scope containment; the agent proposed `
+            + `${decision.proposedRoute}, which is recorded and ignored`
+            + (decision.overridden ? ' (the kernel disagreed)' : '')
+            + `. ${decision.reason}`,
+        }, { stage: args.stage });
+      }
+
+      for (const decision of triage.children) {
+        const child = childWorkItem({
+          parent: state.workItem,
+          title: decision.reading,
+          type: 'TASK',
+          scope: decision.remediationScope,
+          desiredOutcome: decision.reading,
+          externalIdentity: null,
+          dependsOn: [],
+          /* DISCOVERED_BY, not CHILD_OF: triage found it while doing something else, and the
+           * parent does not wait for it unless a dependency is declared. */
+          link: 'DISCOVERED_BY',
+          now: clock.now().toISOString(),
+          policies,
+        });
+        const existing = store.getWorkItem(child.work_item_id);
+        if (existing === null) store.putWorkItemProjection(child);
+        state.workItem = withChildLink(state.workItem, child.work_item_id);
+        store.putWorkItemProjection(state.workItem);
+        journal.both('child_work_item', {
+          action: existing === null ? 'CREATED' : 'LINKED',
+          child_id: child.work_item_id,
+          external_identity: null,
+          depends_on: [],
+          reason: decision.reason,
+        }, { stage: args.stage });
+      }
+
+      for (const decision of triage.scopeExpansions) {
+        /*
+         * `SCOPE_EXPANSION` is an existing gate: the human either widens the mandate or
+         * accepts the split. It fires here, is recorded here, and gates nothing in a build
+         * where nothing mutates.
+         */
+        journal.run('gate_fired', {
+          gate: 'SCOPE_EXPANSION',
+          target: decision.remediationScope.paths.join(', ') || decision.threadId,
+          trigger: 'kernel_policy',
+          classifier_id: 'triage_outside_scope_inseparable',
+          classification: null,
+          request_id: null,
+        }, { stage: args.stage });
+      }
+
+      return null;
+    }
+
+    /* ------------------------------------------------------ DECOMPOSITION ---- */
+
+    if (args.stage === 'DECOMPOSITION') {
+      if ((envelope.proposals.decomposition ?? []).length === 0) return null;
+
+      /*
+       * Discovery before creation. The children the project-management adapter already knows
+       * about are read **before any are proposed**, and an admitted child whose external
+       * identity already exists is linked rather than recreated — which is what stops a
+       * resumed Epic from duplicating its own backlog.
+       */
+      const existingExternal = externalChildren(state.context.current_reality.children);
+      journal.run('discovery', {
+        kind: 'TARGETED_PROBE',
+        tier: 3,
+        probes: ['pm.children'],
+        reason:
+          `${existingExternal.length} existing external child(ren) read before any `
+          + 'decomposition is admitted. An admitted child whose external identity already '
+          + 'exists is linked, never recreated',
+        requested_sections: [],
+      }, { stage: args.stage });
+
+      const outcome = decomposeEnvelope({
+        parent: state.workItem,
+        envelope,
+        policies,
+        existingExternalChildren: existingExternal,
+        now: clock.now().toISOString(),
+      });
+
+      if (outcome.result.outcome === 'BLOCKED') {
+        for (const retained of outcome.retained) {
+          journal.both('child_work_item', {
+            action: 'REFUSED',
+            child_id: null,
+            external_identity: retained.external_identity,
+            depends_on: [...retained.depends_on],
+            reason:
+              `retained as evidence for a human: ${retained.title} (${retained.type}). `
+              + outcome.result.reason,
+          }, { stage: args.stage });
+        }
+        return {
+          kind: 'BLOCK',
+          blockerKind: 'AUTHORIZATION_REQUIRED',
+          reason: outcome.result.reason,
+          preBlockStage: args.stage,
+          report: [
+            outcome.result.reason,
+            'exceeding a bound is not a silent truncation and not a refusal: the proposed '
+            + 'decomposition is attached, for a human to confirm or narrow',
+            ...outcome.retained.map((r) => `${r.type} ${r.title} over ${r.scope.paths.join(', ')}`),
+          ],
+        };
+      }
+
+      for (const [action, children] of [
+        ['CREATED', outcome.created], ['LINKED', outcome.linked],
+      ] as const) {
+        for (const child of children) {
+          const already = store.getWorkItem(child.work_item_id);
+          if (already === null) store.putWorkItemProjection(child);
+          state.workItem = withChildLink(state.workItem, child.work_item_id);
+          store.putWorkItemProjection(state.workItem);
+          journal.both('child_work_item', {
+            action: already === null ? action : 'LINKED',
+            child_id: child.work_item_id,
+            external_identity: child.external_identity,
+            depends_on: [...child.dependencies],
+            reason:
+              `${child.type} at decomposition depth ${child.decomposition_depth}, linked `
+              + `CHILD_OF ${state.workItem.work_item_id}. ${outcome.result.reason}`,
+          }, { stage: args.stage });
+        }
+      }
+
+      return null;
+    }
+
+    /* ------------------------------------------------- CHILD_COORDINATION ---- */
+
+    if (args.stage === 'CHILD_COORDINATION') {
+      state.evaluator.freshen();
+      const satisfied = await state.evaluator.evaluate(
+        'reality.outcome_already_satisfied', state.predicateInputs,
+      );
+      journal.run('predicate_evaluated', {
+        predicate: satisfied.predicate,
+        evaluated: satisfied.value,
+        claim: null,
+        inputs: satisfied.inputs,
+        reprobed: satisfied.reprobed,
+        reason: satisfied.reason,
+      }, { stage: args.stage });
+
+      const children = this.childrenOf(state.workItem, state.context.current_reality.children);
+      const outcome = coordinateChildren({
+        parent: state.workItem,
+        envelope,
+        children,
+        outcomeAlreadySatisfied: satisfied.value,
+      });
+
+      journal.run('note', {
+        topic: 'child coordination',
+        detail:
+          `${outcome.detail}. Startable: ${outcome.startable.join(', ') || 'none'}. Waiting: `
+          + (outcome.waiting
+            .map((w) => `${w.workItemId} on ${w.on.join(', ')}`).join('; ') || 'none'),
+      }, { stage: args.stage });
+
+      if (outcome.cancellation !== null) {
+        journal.both('note', {
+          topic: 'child cancellation',
+          detail: outcome.cancellation.outcome === 'ADMITTED'
+            ? `admitted to ${outcome.cancellation.to}: ${outcome.cancellation.reason}`
+            : `escalated to a human: ${outcome.cancellation.reason}`,
+        }, { stage: args.stage });
+        if (outcome.cancellation.outcome === 'ESCALATED') {
+          journal.run('gate_fired', {
+            gate: 'SCOPE_EXPANSION',
+            target: envelope.proposals.cancellation?.work_item_id ?? state.workItem.work_item_id,
+            trigger: 'kernel_policy',
+            classifier_id: 'cancellation_without_adapter_evidence',
+            classification: null,
+            request_id: null,
+          }, { stage: args.stage });
+        }
+      }
+
+      if (outcome.epicBlocks) {
+        return {
+          kind: 'BLOCK',
+          blockerKind: 'AUTHORIZATION_REQUIRED',
+          reason:
+            'no child can progress. A blocked child leaves its siblings running; the Epic '
+            + 'blocks only when nothing can move, which is this',
+          preBlockStage: args.stage,
+          report: [
+            outcome.detail,
+            ...outcome.waiting.map((w) => `${w.workItemId} waits on ${w.on.join(', ')}`),
+          ],
+        };
+      }
+
+      return null;
+    }
+
+    return null;
+  }
+
+  /** The children of a work item, from its links and from the reality set. */
+  private childrenOf(
+    parent: WorkItem,
+    children: Assertion,
+  ): readonly {
+      readonly workItemId: string;
+      readonly dependsOn: readonly string[];
+      readonly lifecycle: WorkItem['lifecycle'];
+    }[] {
+    const { store } = this.ports;
+    const ids = new Set<string>(
+      parent.links.filter((l) => l.kind === 'PARENT_OF').map((l) => l.target),
+    );
+    for (const entry of externalChildren(children)) {
+      ids.add(entry);
+    }
+    const out: {
+      workItemId: string;
+      dependsOn: readonly string[];
+      lifecycle: WorkItem['lifecycle'];
+    }[] = [];
+    for (const id of ids) {
+      const record = store.getWorkItem(id);
+      if (record === null) continue;
+      out.push({
+        workItemId: id,
+        dependsOn: record.dependencies,
+        lifecycle: record.lifecycle,
+      });
+    }
+    return out;
+  }
+
+  /* ------------------------------------------------------------------ gates ==== */
+
+  /**
+   * Classifies and records every gate that fires, and gates nothing.
+   *
+   * The MVP mutates nothing, so no gate has anything to stop — and "inert" is not "absent".
+   * A gate that fires only when an agent volunteers that it is crossing one is not a gate, so
+   * the classifiers run from what the adapter observed on every dispatch, and a gate this
+   * work item has already been denied is surfaced rather than quietly re-requested.
+   */
+  private async classifyAndRecordGates(args: {
+    readonly stage: TemplateStage;
+    readonly descriptor: StageDescriptor;
+    readonly state: {
+      workItem: WorkItem;
+      readonly intake: IntakeRecord;
+      readonly graph: FrozenGraph;
+      readonly journal: Journal;
+      readonly runId: string;
+    };
+    readonly envelope: HandoffEnvelope | null;
+    readonly dispatchNumber: number;
+    readonly intakeGateFired: boolean;
+  }): Promise<{ readonly intakeGateFired: boolean }> {
+    const { policies, clock, store } = this.ports;
+    const { state } = args;
+    const journal = state.journal;
+
+    const dispatchId = sequentialId('d', args.dispatchNumber);
+    const mutations = this.mutationsFor(
+      journal, state.runId, state.workItem.work_item_id, dispatchId,
+    );
+    const calls = this.callsFor(
+      journal, state.runId, state.workItem.work_item_id, dispatchId,
+    );
+
+    const paths = [...new Set(mutations.map((m) => m.target))];
+    const outOfScope = calls
+      .filter((c) => c.refusal === 'scope_violation')
+      .flatMap((c) => c.paths_touched);
+
+    /*
+     * Fail-closed classifications, from the adapter rather than from the agent. Asking for
+     * them even when nothing mutated is deliberate: a classifier that cannot evaluate fires
+     * the gate, and "we never asked" is not the same answer as "we asked and it said no".
+     */
+    const classifications: Classification[] = [];
+    if (args.descriptor.mutating) {
+      for (const kind of ['branch_protection', 'environment'] as const) {
+        classifications.push(await this.ports.adapters.classify(kind, this.ports.repositoryPath));
+      }
+    }
+
+    const firings = classifyGates(policies, {
+      descriptor: null,
+      paths,
+      content: null,
+      classifications,
+      outOfScopePaths: outOfScope,
+      trustClass: state.workItem.origin_trust_class,
+      stage: args.stage,
+      stageMutating: args.descriptor.mutating,
+      intakeGateAlreadyFired: args.intakeGateFired,
+      intakeSource: state.intake.source_locator.adapter,
+      selfDeclared: args.envelope?.proposals.authorization_request === undefined
+        ? []
+        : [args.envelope.proposals.authorization_request.gate],
+    });
+
+    let intakeFired = args.intakeGateFired;
+    for (const firing of firings) {
+      if (firing.gate === 'AUTONOMOUS_INTAKE_EXECUTION') intakeFired = true;
+
+      const denial = previouslyDenied(
+        state.workItem.denied_gates, firing.gate, firing.target,
+      );
+
+      const draft = args.envelope?.proposals.authorization_request;
+      const request = draft === undefined || draft.gate !== firing.gate
+        ? null
+        : recordRequest({
+          requestId: `${state.runId}_${firing.gate}_${args.dispatchNumber}`,
+          workItemId: state.workItem.work_item_id,
+          runId: state.runId,
+          stage: args.stage,
+          requestedBy: args.descriptor.default_agent,
+          requestedAt: clock.now().toISOString(),
+          draft,
+          firing,
+        });
+
+      journal.run('gate_fired', {
+        gate: firing.gate,
+        target: firing.target,
+        trigger: firing.trigger,
+        classifier_id: firing.classifierId,
+        classification: firing.classification,
+        request_id: request?.request_id ?? null,
+      }, { stage: args.stage, dispatchId, agent: args.descriptor.default_agent });
+
+      if (request !== null) {
+        store.putNamed(
+          state.workItem.work_item_id, state.runId, 'authorizations',
+          request.request_id, request,
+        );
+        journal.run('authorization_requested', request, {
+          stage: args.stage, dispatchId, agent: args.descriptor.default_agent,
+        });
+      }
+
+      if (denial !== null) {
+        journal.run('note', {
+          topic: `gate ${firing.gate} previously denied`,
+          detail:
+            `${denial.denied_by} denied ${firing.gate} on ${denial.target} at `
+            + `${denial.denied_at}: ${denial.reason}. Denials are recorded at the work item `
+            + 'level precisely so that starting a fresh Workflow Run is not a way to ask '
+            + 'again; a denial is cleared by new information or by a human revisiting it, '
+            + 'never by a retry',
+        }, { stage: args.stage, dispatchId });
+      }
+
+      journal.run('note', {
+        topic: `gate ${firing.gate} is inert`,
+        detail:
+          `${firing.reason}. Nothing in this build mutates, so the gate is classified and `
+          + 'recorded and stops nothing. The contract exists, the adapter checks it, and the '
+          + 'first mutating operation registered lands in a system that already cannot perform '
+          + 'an unlogged or ungated one',
+      }, { stage: args.stage, dispatchId });
+    }
+
+    return { intakeGateFired: intakeFired };
+  }
+
+  /* ---------------------------------------------------------- re-resolution ==== */
+
+  /**
+   * Step 1 of section 4.5: end the Workflow Run with outcome `RERESOLVED`.
+   *
+   * Steps 2 and 3 — re-running `RESOLUTION` with the new evidence and starting a **new** run
+   * against the **same** Work Item — happen in `performReresolution`, after this run's lease
+   * is released. They cannot happen here: the lease is one active run per Work Item, and a
+   * new run started while the old one still held it would be refused by the mechanism that
+   * exists to refuse exactly that.
+   */
+  private reresolve(args: {
+    readonly state: {
+      workItem: WorkItem;
+      readonly journal: Journal;
+      readonly runId: string;
+      readonly checks: CheckOutcome[];
+      currentStage: Stage;
+    };
+    readonly stage: Stage;
+    readonly reason: string;
+    readonly evidence: readonly string[];
+    readonly budget: { readonly workItem: WorkItem['consumed_budget'] };
+    readonly envelopes: readonly HandoffEnvelope[];
+  }): { readonly result: RunResult; readonly workItem: WorkItem; readonly reresolve?: { readonly reason: string; readonly evidence: readonly string[] } } {
+    const { policies, store } = this.ports;
+    const { state } = args;
+    const { journal, runId } = state;
+
+    const allowance = reresolutionAllowed(
+      state.workItem.reresolution_count, policies.budgets,
+    );
+    journal.both('reresolved', {
+      reason: args.reason,
+      evidence: [...args.evidence],
+      count: state.workItem.reresolution_count + 1,
+      cap: allowance.cap,
+      /* This run does not know it, and will not: the new run is allocated after the lease is
+       * released. The work-item log carries the second half once it exists. */
+      new_run_id: null,
+    }, { stage: args.stage });
+
+    if (!allowance.allowed) {
+      return this.end(
+        journal, state.workItem, runId, 'BLOCKED', allowance.reason,
+        'BLOCKED', state.checks,
+      );
+    }
+
+    state.workItem = {
+      ...state.workItem,
+      reresolution_count: state.workItem.reresolution_count + 1,
+      consumed_budget: args.budget.workItem,
+    };
+    store.putWorkItemProjection(state.workItem);
+
+    const ended = this.end(
+      journal, state.workItem, runId, 'RERESOLVED',
+      `${args.reason}. The run ends honestly and a new one starts against the same Work Item: `
+      + 'identity, history and every prior envelope survive, and only the graph is new',
+      state.workItem.lifecycle, state.checks,
+    );
+
+    return { ...ended, reresolve: { reason: args.reason, evidence: args.evidence } };
+  }
+
+  /**
+   * Steps 2 and 3 of section 4.5.
+   *
+   * Re-runs `RESOLUTION` with the new evidence supplied alongside the original intake and
+   * admits the result **through the ordinary checks** — the corrected type earns no exemption
+   * from its evidence minimum, which is the whole reason this is a re-resolution rather than a
+   * relabelling. Then starts a new Workflow Run against the same Work Item.
+   *
+   * Identity, history and every prior envelope survive because nothing here touches them: the
+   * work item record is loaded from the store, the previous run's directory is untouched, and
+   * only the graph is new.
+   */
+  private async performReresolution(args: {
+    readonly workItem: WorkItem;
+    readonly intake: IntakeRecord;
+    readonly orientation: ContextPackage;
+    readonly input: StartInput;
+    readonly checks: CheckOutcome[];
+    readonly priorRunId: string | null;
+    readonly reason: string;
+    readonly evidence: readonly string[];
+  }): Promise<RunResult> {
+    const { clock, policies, store } = this.ports;
+    const journal = Journal.open(store, clock, {
+      workItemId: args.workItem.work_item_id, runId: null,
+    });
+    const events: Event[] = [];
+    let seq = 0;
+    const log: PrologueLogger = (kind, data, stage) => {
+      seq += 1;
+      events.push({
+        seq,
+        at: clock.now().toISOString(),
+        work_item_id: args.workItem.work_item_id,
+        run_id: null,
+        stage,
+        dispatch_id: null,
+        agent: null,
+        event: kind,
+        data,
+      } as Event);
+    };
+
+    const violations: Violation[] = [{
+      code: 'SCHEMA_INVALID',
+      rule: 'WORKFLOW_STATE_MACHINE section 4.5',
+      message:
+        `the previous run ended RERESOLVED: ${args.reason}. Re-resolve with this evidence `
+        + `alongside the original intake: ${args.evidence.join(', ') || '(none cited)'}`,
+      path: null,
+      handled_as: 'REFUSED',
+      subject: args.workItem.work_item_id,
+    }];
+
+    const resolution = await this.dispatchResolution(
+      args.intake, args.orientation, log, violations,
+    );
+    for (const event of events) journal.workItem(event.event as never, event.data as never, {
+      stage: event.stage,
+    });
+
+    if (resolution.proposal === null) {
+      journal.workItem('note', {
+        topic: 're-resolution',
+        detail:
+          're-resolution produced no admissible proposal, so no new run starts. A second guess '
+          + 'is not better than a human',
+      });
+      return {
+        outcome: 'BLOCKED',
+        workItemId: args.workItem.work_item_id,
+        runId: args.priorRunId,
+        detail: `re-resolution produced no proposal: ${resolution.detail}`,
+        narrative: '',
+        checks: args.checks,
+      };
+    }
+
+    const identity = await args.input.resolveIdentity(
+      resolution.proposal.external_identity.confidence === 'UNKNOWN'
+        ? null
+        : String(resolution.proposal.external_identity.value),
+    );
+    const verification = await this.verifyResolution(
+      resolution.envelope, args.intake, events,
+    );
+    const registry = this.capabilityRegistry();
+
+    const admission = admitWorkItem({
+      intake: args.intake,
+      proposal: resolution.proposal,
+      policies,
+      context: args.orientation,
+      capabilities: registry.records,
+      capabilityRegistryAvailable: registry.available,
+      evidence: resolution.envelope?.evidence ?? [],
+      verification,
+      identity,
+      existing: this.loadWorkItems(),
+      access: this.ports.access,
+      now: clock.now().toISOString(),
+    });
+
+    if (admission.outcome !== 'ADMITTED') {
+      journal.workItem('work_item_rejected', {
+        checks: admission.checks,
+        attempt: 1,
+        next: 'BLOCKED',
+      }, { stage: 'RESOLUTION' });
+      return {
+        outcome: 'BLOCKED',
+        workItemId: args.workItem.work_item_id,
+        runId: args.priorRunId,
+        detail:
+          'the re-resolved proposal was not admitted. The corrected type earns no exemption '
+          + 'from its evidence minimum, which is what makes this a re-resolution rather than a '
+          + 'relabelling',
+        narrative: '',
+        checks: [...args.checks, ...admission.checks],
+      };
+    }
+
+    const result = await this.continueWithWorkItem({
+      workItem: admission.workItem,
+      intake: args.intake,
+      orientation: args.orientation,
+      prologue: events,
+      input: args.input,
+      checks: args.checks,
+      typeDowngraded: admission.typeDowngraded,
+      intent: admission.intent,
+      resolutionConfidence: admission.resolutionConfidence,
+      alternatives: resolution.proposal.alternatives,
+    });
+
+    /* The other half of step 1's record: which run the work item re-resolved into. */
+    journal.workItem('reresolved', {
+      reason: args.reason,
+      evidence: [...args.evidence],
+      count: args.workItem.reresolution_count,
+      cap: policies.budgets.reresolution,
+      new_run_id: result.runId,
+    }, { stage: 'RESOLUTION' });
+
+    return result;
+  }
+
   /* ------------------------------------------------------------ COMPLETION ==== */
 
   private async complete(
@@ -975,7 +2365,9 @@ export class Kernel {
     },
     envelopes: readonly HandoffEnvelope[],
     budget: { readonly run: WorkItem['consumed_budget']; readonly workItem: WorkItem['consumed_budget'] },
-  ): Promise<{ readonly result: RunResult; readonly workItem: WorkItem }> {
+    /** Stages this run has already been routed back to once. */
+    alreadyRoutedBack: ReadonlySet<TemplateStage>,
+  ): Promise<CompletionOutcome> {
     const { policies, clock, store } = this.ports;
     const { journal, runId } = state;
 
@@ -1013,22 +2405,47 @@ export class Kernel {
       : 'BLOCKED';
     const lifecycle = outcome === 'COMPLETE' ? 'ACHIEVED' : state.workItem.lifecycle;
 
-    if (verdict === 'INCOMPLETE' && dod.report.route_back_to !== null) {
+    const routeBackTo = dod.report.route_back_to;
+    if (verdict === 'INCOMPLETE' && routeBackTo !== null) {
       /*
        * The cursor has no authority over completion. A skipped stage supplied no verdicts, so
        * its criteria are NOT_VALIDATED, so COMPLETION computes INCOMPLETE and routes back to
-       * the stage that owes them. A wrong resume costs a lap; it cannot manufacture a
-       * COMPLETE.
+       * the stage that owes them — and **the route-back is executed**, not merely journalled.
+       * This is the mechanism that makes resumption safe: it is what stops a COMPLETED_PRIOR
+       * stage from producing a false COMPLETE, and a route-back the run does not take is a
+       * safety property nothing enforces.
        */
       journal.run('transition', {
         from: 'COMPLETION',
-        to: dod.report.route_back_to,
+        to: routeBackTo,
         trigger: `INCOMPLETE: criteria ${dod.report.unmet_critical.join(', ')} are not met`,
         edge_kind: 'loop',
         proposed_by: null,
         proposed_stage: null,
         overridden: false,
         evidence: [],
+      }, { stage: 'COMPLETION' });
+
+      if (state.graph.stages.includes(routeBackTo) && !alreadyRoutedBack.has(routeBackTo)) {
+        journal.run('note', {
+          topic: 'route back',
+          detail:
+            `${routeBackTo} owes criteria ${dod.report.unmet_critical.join(', ')} and supplied `
+            + 'no verdict for them. The run routes back into the graph there rather than '
+            + 'ending: resumption is an optimization over work and has no authority over '
+            + 'completion, so a wrong resume costs a lap and cannot manufacture a COMPLETE',
+        }, { stage: 'COMPLETION' });
+        return { kind: 'ROUTE_BACK', to: routeBackTo };
+      }
+
+      journal.run('note', {
+        topic: 'route back',
+        detail: state.graph.stages.includes(routeBackTo)
+          ? `${routeBackTo} was already routed back to once in this run and still owes `
+            + `criteria ${dod.report.unmet_critical.join(', ')}. A second lap would be a quiet `
+            + 'retry, so the run ends and a human sees what the stage could not establish'
+          : `${routeBackTo} owes criteria ${dod.report.unmet_critical.join(', ')} and is not in `
+            + 'this run\'s frozen graph, so there is nowhere in it to route back to',
       }, { stage: 'COMPLETION' });
     }
 
@@ -1049,7 +2466,7 @@ export class Kernel {
       }, { stage: 'COMPLETION' });
     }
 
-    return this.end(
+    return { kind: 'END', ...this.end(
       journal,
       workItem,
       runId,
@@ -1061,7 +2478,7 @@ export class Kernel {
         : `${verdict}: ${dod.rationale.join(' ')}`,
       lifecycle,
       state.checks,
-    );
+    ) };
   }
 
   /* --------------------------------------------------------- dispatching ==== */
@@ -1475,10 +2892,19 @@ export class Kernel {
     orientation: ContextPackage,
     log: PrologueLogger,
     priorViolations: readonly Violation[] = [],
-  ): Promise<{ readonly proposal: ProposedWorkItem | null; readonly detail: string }> {
+  ): Promise<{
+      readonly proposal: ProposedWorkItem | null;
+      /** The envelope the proposal arrived in, whose `evidence[]` is the pool it cites into. */
+      readonly envelope: HandoffEnvelope | null;
+      readonly detail: string;
+    }> {
     const spec = this.ports.agents.spec('context-discovery', 'resolution');
     if (spec === undefined) {
-      return { proposal: null, detail: 'no Context Discovery resolution mandate is registered' };
+      return {
+        proposal: null,
+        envelope: null,
+        detail: 'no Context Discovery resolution mandate is registered',
+      };
     }
 
     const model = await this.chooseModelWithoutJournal(spec);
@@ -1494,7 +2920,7 @@ export class Kernel {
         },
         'RESOLUTION',
       );
-      return { proposal: null, detail: 'no model available for resolution' };
+      return { proposal: null, envelope: null, detail: 'no model available for resolution' };
     }
 
     const dispatchId = 'd_res';
@@ -1584,7 +3010,7 @@ export class Kernel {
         },
         'RESOLUTION',
       );
-      return { proposal: null, detail: result.detail };
+      return { proposal: null, envelope: null, detail: result.detail };
     }
 
     const envelope = result.envelope as HandoffEnvelope | null;
@@ -1607,6 +3033,7 @@ export class Kernel {
 
     return {
       proposal,
+      envelope,
       detail: proposal === null ? 'the resolution envelope carried no work_item proposal' : '',
     };
   }
@@ -1741,12 +3168,15 @@ export class Kernel {
     previousModel: string | null,
   ): Promise<string | null> {
     const entries = await this.ports.registries.models();
-    const ranked = entries.map((entry) => ({
-      id: entry.id,
-      score: 0,
-      reasons: [`reasoning ${entry.reasoning}, precision ${entry.precision_class}`],
-      excluded_because: null,
-    }));
+    /*
+     * **The registries rank; the kernel selects.** The ordered candidate list with its scores
+     * and reasons comes from `@agentos/registries`, which is where the criteria live as
+     * data-driven scoring; the kernel applies its policy filters to that list, picks, and
+     * records the choice. Building the list here with `score: 0` made selection "the first
+     * candidate that passes the filters" and left every ranking criterion — capability match,
+     * specificity, cost, reliability, safety — with no effect at all.
+     */
+    const ranked = rankModels(entries, spec.model_requirement);
     const selection = selectModel({
       ranked,
       entries,
@@ -1769,12 +3199,7 @@ export class Kernel {
 
   private async chooseModelWithoutJournal(spec: AgentSpecView): Promise<string | null> {
     const entries = await this.ports.registries.models();
-    const ranked = entries.map((entry) => ({
-      id: entry.id,
-      score: 0,
-      reasons: [`reasoning ${entry.reasoning}`],
-      excluded_because: null,
-    }));
+    const ranked = rankModels(entries, spec.model_requirement);
     return selectModel({
       ranked,
       entries,
@@ -1793,12 +3218,12 @@ export class Kernel {
     stage: Stage,
   ): Promise<readonly SkillOffer[]> {
     const entries = await this.ports.registries.skills();
-    const ranked = entries.map((entry) => ({
-      id: entry.id,
-      score: 0,
-      reasons: [entry.description],
-      excluded_because: null,
-    }));
+    /*
+     * The ranking is the registry's and the classification is the kernel's: an agent that
+     * could widen its own operation set to `mutate` would be choosing its own risk class,
+     * which is the one dimension the document takes away from it explicitly.
+     */
+    const ranked = rankSkills(entries, classifyDispatch(spec, descriptor));
     const selection = selectSkills({
       ranked,
       entries,

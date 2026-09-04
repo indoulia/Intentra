@@ -797,6 +797,31 @@ export const UNAUTHENTICATED_HOST: HostIdentity = {
   trustClass: 'EXTERNAL',
 };
 
+/**
+ * A human who answers.
+ *
+ * The counterpart to `SilentHuman`, and needed for exactly one thing: the ladder's rung 4 is
+ * only distinguishable from rung 5 by whether an answer arrives, and a suite with no answering
+ * channel can only ever assert that AgentOS blocks.
+ */
+export class AnsweringHuman implements HumanChannel {
+  readonly questions: { question: string; readings: readonly { reading: string; would_do: string }[] }[] = [];
+
+  constructor(private readonly answer = 'the first reading') {}
+
+  async ask(
+    question: string,
+    readings: readonly { readonly reading: string; readonly would_do: string }[],
+  ): Promise<string | null> {
+    this.questions.push({ question, readings: [...readings] });
+    return this.answer;
+  }
+
+  async requestAuthorization(): Promise<'PENDING' | 'GRANTED' | 'DENIED'> {
+    return 'PENDING';
+  }
+}
+
 export class SilentHuman implements HumanChannel {
   async ask(): Promise<string | null> {
     /* No answer inside the policy window. Silence is never consent. */
@@ -836,6 +861,8 @@ export interface HarnessOptions {
    * be admissible. `policiesAllowingMutation()` builds it from the real data.
    */
   readonly policies?: PolicySet;
+  /** Where a human answers. `SilentHuman` by default: silence is never consent. */
+  readonly human?: HumanChannel;
 }
 
 export function harness(options: HarnessOptions = {}): Harness {
@@ -857,7 +884,7 @@ export function harness(options: HarnessOptions = {}): Harness {
     agents: new FixtureAgents(options.specs ?? defaultSpecs()),
     substrate,
     host: options.host ?? OPERATOR_HOST,
-    human: new SilentHuman(),
+    human: options.human ?? new SilentHuman(),
     random: seededRandom(),
     repositoryPath: root,
     access: options.access ?? new Set(['repository', 'git']),
@@ -880,6 +907,17 @@ export function harness(options: HarnessOptions = {}): Harness {
 
 /* ----------------------------------------------------- envelope fixtures ---- */
 
+/**
+ * The subject file's content, and the excerpt every fixture's evidence carries.
+ *
+ * They are one constant deliberately. Evidence is replayed through the adapter and compared
+ * against what comes back, so a fixture whose excerpt is a substring of the file it names is a
+ * fixture whose evidence does not verify — and a suite built on evidence that fails
+ * verification would be asserting on whatever the downgrade path happened to do rather than on
+ * the behaviour under test.
+ */
+export const README_CONTENT = 'AgentOs is an operating system for agents.';
+
 /** The resolution envelope: a proposed Work Item the kernel then disbelieves. */
 export function resolutionEnvelope(
   proposal: Partial<ProposedWorkItem> = {},
@@ -890,7 +928,7 @@ export function resolutionEnvelope(
     type: fx.inferenceAssertion('TASK'),
     external_identity: fx.unknownAssertion({ reason: 'NOT_APPLICABLE' }),
     title: fx.factAssertion('Fix typo in README', {
-      evidence: [fx.evidence({ id: 'E-01', locator: { adapter: 'repo', op: 'read_file', args: { path: 'README.md' } }, ref: 'README.md', excerpt: 'AgentOs' })],
+      evidence: [fx.evidence({ id: 'E-01', locator: { adapter: 'repo', op: 'read_file', args: { path: 'README.md' } }, ref: 'README.md', excerpt: README_CONTENT })],
     }),
     desired_outcome: fx.inferenceAssertion('the misspelling in README.md is corrected'),
     scope: {
@@ -918,7 +956,7 @@ export function resolutionEnvelope(
         id: 'E-01',
         locator: { adapter: 'repo', op: 'read_file', args: { path: 'README.md' } },
         ref: 'README.md',
-        excerpt: 'AgentOs',
+        excerpt: README_CONTENT,
       }),
     ],
   });
@@ -967,7 +1005,7 @@ export function auditEnvelope(overrides: Partial<HandoffEnvelope> = {}): Handoff
         id: 'E-01',
         locator: { adapter: 'repo', op: 'read_file', args: { path: 'README.md' } },
         ref: 'README.md',
-        excerpt: 'AgentOs',
+        excerpt: README_CONTENT,
       }),
     ],
     next_action: {
@@ -992,7 +1030,7 @@ export function rootCauseEnvelope(overrides: Partial<HandoffEnvelope> = {}): Han
         id: 'E-01',
         locator: { adapter: 'repo', op: 'read_file', args: { path: 'README.md' } },
         ref: 'README.md',
-        excerpt: 'AgentOs',
+        excerpt: README_CONTENT,
       }),
     ],
     next_action: {

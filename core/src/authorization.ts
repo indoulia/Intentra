@@ -233,17 +233,45 @@ function evaluateClassifier(
             + 'protected and unknown environment means production, so the gate fires',
         };
       }
+      /*
+       * A classification the probe could not establish fires the gate **whatever value it
+       * carries**.
+       *
+       * This is the hole the fail-closed rule was written to prevent and the one an absence
+       * check alone does not close: an adapter that failed to probe returns a *present*
+       * classification with `failed_closed: true` and whatever placeholder it chose, and a
+       * comparison against the policy's expected value then silently matches nothing and
+       * fires nothing. REPOSITORY_ADAPTER section 2.3 says branch protection UNKNOWN or
+       * UNAVAILABLE means the branch is protected and an unknown environment means production
+       * — which is a statement about the *confidence*, not about the string. So the confidence
+       * decides, and the value and the confidence are both recorded, because a run that was
+       * conservative because it was blind must stay distinguishable from one that was
+       * conservative because the target really was production.
+       */
+      if (classification.failed_closed || classification.confidence === 'UNKNOWN') {
+        /* `fires_when_unevaluable` is `true` in the schema — declared so the rule is visible
+         * in the data rather than only in the code that honours it. */
+        return {
+          gate,
+          trigger: 'classifier',
+          classifierId: classifier.id,
+          classification,
+          reason:
+            `${kind} could not be established (value ${classification.value}, confidence `
+            + `${classification.confidence}, failed_closed `
+            + `${String(classification.failed_closed)}), so the classifier could not evaluate `
+            + `and the gate fires. Unknown branch protection means protected and unknown `
+            + 'environment means production, and this records that the caution came from '
+            + 'blindness rather than from the target really being production',
+        };
+      }
       if (classification.value !== classifier.expected) return null;
       return {
         gate,
         trigger: 'classifier',
         classifierId: classifier.id,
         classification,
-        reason: classification.failed_closed
-          ? `${kind} is ${classification.value} because the probe could not establish it. A `
-            + 'run that was conservative because it was blind is distinguishable from one that '
-            + 'was conservative because the target really was production, and this records which'
-          : `${kind} is ${classification.value}`,
+        reason: `${kind} is ${classification.value}`,
       };
     }
 
@@ -434,6 +462,88 @@ export function checkGrant(
       subject: target,
     },
   };
+}
+
+/* ------------------------------------------------- the injected enforcement port ---- */
+
+/**
+ * The grant check, in the shape an adapter registry can hold.
+ *
+ * The check has to execute **inside the adapter, at the moment of execution** — the
+ * requesting agent is never the checking component, and a grant object that looks valid is
+ * still not permission until the adapter agrees. But `adapters -> core` is a boundary
+ * violation the dependency graph refuses, and rightly: enforcement lives in `adapters/` and
+ * the *rule* lives here.
+ *
+ * The resolution is an injected function port. `core/`'s composition root builds this closure
+ * and hands it to the adapter registry, so the check still runs at call time inside the
+ * adapter and no dependency edge is created. It also resolves the gap between what an adapter
+ * carries and what the rule needs: `AdapterCallContext.grantsHeld` is a list of grant **ids**,
+ * and `checkGrant` needs the records, so the closure is what turns one into the other. See
+ * decision I-22.
+ */
+export interface GrantEnforcementRequest {
+  readonly gate: Gate;
+  readonly target: string;
+  readonly runId: string;
+  readonly workItemId: string;
+  /** Grant **ids**, which is all `AdapterCallContext` carries. This port resolves them. */
+  readonly grantsHeld: readonly string[];
+  readonly now: Date;
+}
+
+/**
+ * The verdict shape, stated structurally rather than imported.
+ *
+ * It matches the adapter framework's grant-checker port exactly so that a composition root can
+ * hand this closure straight to it — and it is declared here rather than imported from
+ * `adapters/` because `core/src/authorization.ts` naming `adapters` would be the boundary
+ * violation `.dependency-cruiser.cjs` refuses everywhere outside `core/src/composition/`.
+ */
+export type GrantEnforcementVerdict =
+  | { readonly ok: true; readonly grant: AuthorizationGrant }
+  | { readonly ok: false; readonly code: string; readonly message: string };
+
+export type GrantEnforcer = (request: GrantEnforcementRequest) => GrantEnforcementVerdict;
+
+export function grantEnforcer(args: {
+  /** Reads the grants recorded for a run. Supplied by the composition root, over the store. */
+  readonly grantsFor: (workItemId: string, runId: string) => readonly AuthorizationGrant[];
+}): GrantEnforcer {
+  return (request) => {
+    const held = new Set(request.grantsHeld);
+    /*
+     * Only grants the dispatch actually carries are considered. A grant recorded for the run
+     * that this dispatch was not handed is not permission this dispatch holds — a grant is
+     * non-transferable, and "some dispatch in this run has one" is exactly the transfer the
+     * rule forbids.
+     */
+    const grants = args.grantsFor(request.workItemId, request.runId)
+      .filter((g) => held.has(g.grant_id));
+    const verdict = checkGrant(
+      grants, request.gate, request.target, request.runId, request.now,
+    );
+    if (verdict.ok) return verdict;
+    return {
+      ok: false,
+      code: verdict.violation.code,
+      message: verdict.violation.message,
+    };
+  };
+}
+
+/**
+ * Gate classification, in the shape an adapter registry can hold.
+ *
+ * Same reasoning as `grantEnforcer`, and the same direction of the dependency: the classifiers
+ * evaluate against **what the adapter observed**, so the adapter is where they have to run,
+ * and the policy set they read is the kernel's. A gate that fired only when an agent
+ * volunteered that it was crossing one would not be a gate.
+ */
+export type GateClassifierPort = (input: ClassifierInput) => readonly GateFiring[];
+
+export function gateClassifier(policies: PolicySet): GateClassifierPort {
+  return (input) => classifyGates(policies, input);
 }
 
 /**

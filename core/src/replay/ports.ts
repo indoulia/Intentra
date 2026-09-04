@@ -247,15 +247,33 @@ export class RecordedAdapterRegistry implements AdapterRegistry {
      * the conservative value with the confidence stated is what makes a run that was careful
      * because it was blind distinguishable from one that was careful because it had to be.
      */
+    /*
+     * The conservative value is the **dangerous** one, per kind. `unknown` is not a
+     * conservative value for branch protection or for an environment: it matches no policy
+     * expectation, so a classifier comparing it against `PROTECTED` or `PRODUCTION` would
+     * silently fire nothing — a replay in which every gate quietly fails to fire, which is
+     * the opposite of failing closed. REPOSITORY_ADAPTER section 2.3: branch protection
+     * UNKNOWN or UNAVAILABLE means the branch is protected, and an unknown environment means
+     * production.
+     */
+    const conservative: Readonly<Record<Classification['kind'], string>> = {
+      branch_protection: 'PROTECTED',
+      environment: 'PRODUCTION',
+      observation_safety: 'unsafe',
+      spawns_agents: 'true',
+    };
+
     return Promise.resolve({
       subject,
       kind,
-      value: kind === 'observation_safety' ? 'unsafe' : 'unknown',
+      value: conservative[kind],
       confidence: 'UNKNOWN',
       failed_closed: true,
       probe_detail:
         `the fixture records no ${kind} classification for ${subject}, and a replay probes `
-        + 'nothing. The conservative value is taken and the UNKNOWN confidence says why',
+        + `nothing. The dangerous value (${conservative[kind]}) is taken and the UNKNOWN `
+        + 'confidence says why, so a run that was conservative because it was blind stays '
+        + 'distinguishable from one that was conservative because the target really was that',
     });
   }
 }

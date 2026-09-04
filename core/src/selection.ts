@@ -1,12 +1,15 @@
 import type {
   AgentRole,
+  AgentSpecView,
   ModelEntry,
   ModelRequirement,
   RankedCandidate,
   SkillEntry,
   SkillOffer,
+  StageDescriptor,
   Violation,
 } from '@agentos/contracts';
+import type { SkillRequest } from '@agentos/registries';
 
 /**
  * Selection and recording.
@@ -34,6 +37,91 @@ export interface SelectionRecord<T> {
   readonly escalatedFrom: string | null;
   readonly escalationTrigger: string | null;
   readonly violations: readonly Violation[];
+}
+
+/* ------------------------------------------------- classifying the dispatch ---- */
+
+/** Which skill domains an adapter family covers. */
+const ADAPTER_DOMAINS: Readonly<Record<string, readonly SkillRequest['domains'][number][]>> = {
+  repo: ['repository_analysis', 'documentation'],
+  git: ['git'],
+  pm: ['project_management'],
+  runtime: ['deployment', 'api'],
+  host: [],
+};
+
+/** Which targets an adapter family reaches. */
+const ADAPTER_TARGETS: Readonly<Record<string, readonly SkillRequest['targets'][number][]>> = {
+  repo: ['filesystem'],
+  git: ['vcs'],
+  pm: ['network'],
+  runtime: ['runtime', 'network'],
+  host: [],
+};
+
+/** Domains a stage is about, over and above what its adapters reach. */
+const STAGE_DOMAINS: Readonly<Record<string, readonly SkillRequest['domains'][number][]>> = {
+  VALIDATION: ['testing'],
+  STRUCTURAL_REAUDIT: ['testing'],
+  UX_REVIEW: ['ui'],
+  DEPLOY: ['deployment'],
+  PRODUCTION_VALIDATION: ['deployment'],
+  COMPLETION: ['documentation'],
+  PR_PREPARATION: ['git'],
+  PR_REVIEW: ['git'],
+  REVIEW_TRIAGE: ['git'],
+  MERGE: ['git'],
+  DECOMPOSITION: ['project_management'],
+  CHILD_COORDINATION: ['project_management'],
+};
+
+/**
+ * Classifies a dispatch for the skill registry to rank against.
+ *
+ * The document puts task classification on the Orchestrator Agent — domain, operation, target
+ * and risk — and then removes the one dimension that matters: "**the risk dimension is not the
+ * agent's to guess.** The stage descriptor declares whether the stage mutates." Here the whole
+ * classification is derived rather than proposed, which is the same rule applied to the rest of
+ * it: an agent that could widen its own operation set to `mutate` would be choosing its own
+ * risk class, and the `DispatchProposal` contract carries no classification fields precisely
+ * because it is not the agent's to make.
+ *
+ * The derivation is mechanical: operations from whether the stage mutates, domains and targets
+ * from the adapters this role is permitted plus what the stage is about. It is an input to
+ * ranking, and ranking never admits a candidate the kernel's policy filters reject.
+ */
+export function classifyDispatch(
+  spec: AgentSpecView,
+  descriptor: StageDescriptor,
+  preference: readonly string[] = [],
+): SkillRequest {
+  const domains = new Set<SkillRequest['domains'][number]>();
+  const targets = new Set<SkillRequest['targets'][number]>();
+
+  for (const adapter of spec.permitted_adapters) {
+    const family = adapter.split('.')[0] ?? adapter;
+    for (const domain of ADAPTER_DOMAINS[family] ?? []) domains.add(domain);
+    for (const target of ADAPTER_TARGETS[family] ?? []) targets.add(target);
+  }
+  for (const domain of STAGE_DOMAINS[descriptor.stage] ?? []) domains.add(domain);
+
+  /*
+   * A non-mutating stage asks for nothing that generates or mutates. That is the safety
+   * criterion made arithmetic rather than remembered: a read-only option outranks a mutating
+   * one for a read task because the mutating one does not match the operations asked for, and
+   * the kernel's own filter refuses it even if it did.
+   */
+  const operations: SkillRequest['operations'][number][] = descriptor.mutating
+    ? ['read', 'analyse', 'generate', 'mutate', 'verify']
+    : ['read', 'analyse', 'verify'];
+
+  return {
+    domains: [...domains],
+    operations,
+    targets: [...targets],
+    stageMutating: descriptor.mutating,
+    preferred: [...preference],
+  };
 }
 
 /* --------------------------------------------------------------------- skills ---- */
