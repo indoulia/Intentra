@@ -35,13 +35,22 @@ decisions — the second is worth reporting to a human, the first is not.
 
 ### Task classification
 
-The Orchestrator classifies each dispatch along dimensions that actually change tool
+The Orchestrator Agent classifies each dispatch along dimensions that actually change tool
 choice: domain (repository analysis, git, database, API, UI, testing, deployment, project
 management, documentation), operation (read, analyse, generate, mutate, verify), target
 (filesystem, VCS, data store, network, runtime), and risk (read-only, reversible,
 irreversible).
 
-### Ranking
+### Ranking and selection are different jobs
+
+**The registries rank; the kernel selects.** Registries produce an ordered candidate list
+with scores and reasons — deterministic, testable, model-free. The kernel picks from that
+list, applies policy (a read-only task may not pick a mutating skill), and records the
+choice. The Orchestrator Agent may express a preference in its proposed dispatch; it is an
+input to ranking, not a bypass of it.
+
+This split is why skill and model selection is not a place business logic accumulates: the
+ranking rules live in `registries/` as data-driven scoring, not in kernel branches.
 
 Rank candidates by:
 
@@ -107,7 +116,8 @@ Typical assignments, indicative and not binding:
 - Validator — high; must resist the temptation to accept plausible-looking output
 - Product/UX — vision capability where screenshots exist; mid otherwise
 - Production — high precision; consequences are irreversible
-- Orchestrator — mid, except arbitration, which is high
+- Orchestrator Agent — mid, except arbitration, which is high (the kernel itself uses no
+  model)
 
 Escalation triggers, all evidence-based: the agent returned `PARTIAL` or `FAILED`; output
 failed schema validation twice; the agent's own stated confidence is low; arbitration is

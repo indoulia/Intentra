@@ -15,7 +15,7 @@ before anything high-impact happens.
 
 ## Status
 
-**Phase 0 — architecture and design only.**
+**Architecture v0.1 — internally consistent, implementation-ready, zero production code.**
 
 There is no application code in this repository yet, and that is deliberate. This phase
 produces the contracts and models that the implementation must satisfy. See
@@ -53,17 +53,18 @@ Read in this order.
 
 1. [AGENTOS_PRINCIPLES.md](AGENTOS_PRINCIPLES.md) — the non-negotiables, one page.
 2. [docs/AGENTOS_ARCHITECTURE.md](docs/AGENTOS_ARCHITECTURE.md) — system shape, components, repository layout.
-3. [docs/AGENT_ROLES.md](docs/AGENT_ROLES.md) — the eight roles, their mandates and limits.
-4. [docs/CONTEXT_MODEL.md](docs/CONTEXT_MODEL.md) — the Context Package and the discovery probes that fill it.
-5. [docs/DATA_SEMANTICS.md](docs/DATA_SEMANTICS.md) — universal meanings of ZERO, NULL, UNKNOWN and friends.
-6. [docs/CAPABILITY_MODEL.md](docs/CAPABILITY_MODEL.md) — capability registry and the capability graph the Auditor builds.
-7. [docs/WORKFLOW_STATE_MACHINE.md](docs/WORKFLOW_STATE_MACHINE.md) — durable run state, transitions, interruption recovery.
-8. [docs/AGENT_HANDOFF_CONTRACT.md](docs/AGENT_HANDOFF_CONTRACT.md) — the envelope every agent returns.
-9. [docs/DEFINITION_OF_DONE.md](docs/DEFINITION_OF_DONE.md) — capability-level completion, dynamically scoped.
-10. [docs/HUMAN_AUTHORIZATION.md](docs/HUMAN_AUTHORIZATION.md) — the gate model and security floor.
-11. [docs/SKILL_AND_MODEL_SELECTION.md](docs/SKILL_AND_MODEL_SELECTION.md) — dynamic skill and model routing.
-12. [docs/REPOSITORY_ADAPTER.md](docs/REPOSITORY_ADAPTER.md) — how AgentOS attaches to any repository.
-13. [docs/IMPLEMENTATION_ROADMAP.md](docs/IMPLEMENTATION_ROADMAP.md) — MVP, phases, and the Marksy proving ground.
+3. [docs/KERNEL_BOUNDARY.md](docs/KERNEL_BOUNDARY.md) — kernel vs agents, the dependency rule, component ownership, invariants.
+4. [docs/AGENT_ROLES.md](docs/AGENT_ROLES.md) — the eight roles, their mandates and limits.
+5. [docs/CONTEXT_MODEL.md](docs/CONTEXT_MODEL.md) — the Context Package and the discovery probes that fill it.
+6. [docs/DATA_SEMANTICS.md](docs/DATA_SEMANTICS.md) — universal meanings of ZERO, NULL, UNKNOWN and friends.
+7. [docs/CAPABILITY_MODEL.md](docs/CAPABILITY_MODEL.md) — capability registry and the capability graph the Auditor builds.
+8. [docs/WORKFLOW_STATE_MACHINE.md](docs/WORKFLOW_STATE_MACHINE.md) — durable run state, transitions, interruption recovery.
+9. [docs/AGENT_HANDOFF_CONTRACT.md](docs/AGENT_HANDOFF_CONTRACT.md) — the envelope every agent returns.
+10. [docs/DEFINITION_OF_DONE.md](docs/DEFINITION_OF_DONE.md) — capability-level completion, dynamically scoped.
+11. [docs/HUMAN_AUTHORIZATION.md](docs/HUMAN_AUTHORIZATION.md) — the gate model and security floor.
+12. [docs/SKILL_AND_MODEL_SELECTION.md](docs/SKILL_AND_MODEL_SELECTION.md) — dynamic skill and model routing.
+13. [docs/REPOSITORY_ADAPTER.md](docs/REPOSITORY_ADAPTER.md) — how AgentOS attaches to any repository.
+14. [docs/IMPLEMENTATION_ROADMAP.md](docs/IMPLEMENTATION_ROADMAP.md) — MVP, phases, and the Marksy proving ground.
 
 ## Repository layout
 
@@ -80,8 +81,12 @@ agent-os/
 └── docs/         this design
 ```
 
-Each directory currently holds only a README describing its purpose. Nothing is
-implemented yet.
+Each code directory currently holds only a README describing its purpose; `docs/` holds the
+design. Nothing is implemented yet. Every planned component is mapped to exactly one of
+these directories in [docs/KERNEL_BOUNDARY.md](docs/KERNEL_BOUNDARY.md).
+
+**Dependency rule:** `agents -> contracts / policies / registries / adapters`, never
+`agents -> core`. Delete `core/` and every agent should still compile.
 
 ## Non-goals
 

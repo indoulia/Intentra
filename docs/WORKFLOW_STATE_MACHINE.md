@@ -36,6 +36,12 @@ BLOCKED
 Terminal: `COMPLETE`. Semi-terminal: `BLOCKED` (resumable when the blocker clears).
 Everything else is transient and must have a defined next transition.
 
+**A state is a phase, not a single dispatch.** One state may involve several agent
+invocations before its exit condition is met — `VALIDATION`, for instance, dispatches the
+Validator and then the Auditor's structural second pass for Definition-of-Done criterion 17
+([AGENT_ROLES.md](AGENT_ROLES.md), role 3). Transitions are driven by exit conditions, not
+by envelope arrival.
+
 ## 2. Transitions
 
 ```
@@ -119,8 +125,8 @@ DEPLOYING
 
 PRODUCTION_VALIDATION
   -> COMPLETE                            production evidence satisfies the DoD
-  -> VALIDATION_FAILED                   production contradicts pre-deploy validation
-  -> BLOCKED                             cannot obtain production evidence
+  -> BLOCKED                             production contradicts pre-deploy validation,
+                                         OR production evidence cannot be obtained
 
 BLOCKED
   -> <state at time of block>            blocker resolved; resume
@@ -129,6 +135,55 @@ BLOCKED
 
 Every transition is an event carrying: from, to, trigger, deciding agent, evidence
 references, timestamp.
+
+**Production failure does not fall back into `REWORK`.** Code is already live, so the next
+decision is a rollback decision, and that is a human's. `PRODUCTION_VALIDATION` failure
+goes to `BLOCKED` with the Production agent's rollback recommendation attached. Resuming
+into `REWORK` requires either a completed rollback or an explicit human decision to fix
+forward — both recorded as authorization events.
+
+## 2.1 Envelope status to kernel action
+
+Every value of `HandoffEnvelope.status`
+([AGENT_HANDOFF_CONTRACT.md](AGENT_HANDOFF_CONTRACT.md)) maps to exactly one kernel
+action. Without this mapping the two documents do not compose.
+
+- `COMPLETE` — evaluate the agent's proposed `next_action` against the transition table;
+  transition if legal, else override and log.
+- `PARTIAL` — **never** treated as a soft `COMPLETE`. The kernel checks whether the
+  unfilled outputs are required by the current state's exit condition. Not required ->
+  proceed, recording the gap as an `unknown`. Required -> re-dispatch once with the gap
+  named, then `BLOCKED` if it recurs.
+- `BLOCKED` — transition to `BLOCKED`, carrying the blocker. The pre-block state is
+  recorded so the run can resume in place.
+- `BLOCKED_BY_ARCHITECTURE` — `IMPLEMENTATION -> ARCHITECTURE`, counted against the
+  architecture loop cap. Legal only from `IMPLEMENTATION`; from any other state it is a
+  contract violation and is treated as `BLOCKED`.
+- `FAILED` — an agent-level failure (tooling, model, timeout), not a finding about the
+  work. The kernel retries per policy, escalating the model once
+  ([SKILL_AND_MODEL_SELECTION.md](SKILL_AND_MODEL_SELECTION.md)). On repeated failure:
+  `BLOCKED`. The state does **not** advance, and a `FAILED` envelope never satisfies an
+  exit condition.
+- `REJECTED` — legal only from a reviewing agent. From the Validator -> `VALIDATION_FAILED`;
+  from Product/UX -> `UX_FAILED`. From any other agent it is a contract violation.
+
+An envelope whose status is illegal for the current state or agent is logged as a contract
+violation and handled as `BLOCKED`. The kernel never guesses what an agent meant.
+
+## 2.2 Authorization requested mid-run
+
+`READY_FOR_HUMAN_AUTHORIZATION` covers the end-of-run gate. But several gates in
+[HUMAN_AUTHORIZATION.md](HUMAN_AUTHORIZATION.md) — `SCOPE_EXPANSION`,
+`COST_CEILING_EXCEEDED`, `CREDENTIAL_OR_SECURITY_CHANGE`, `DESTRUCTIVE_MIGRATION` — can
+trigger at any point, typically during `IMPLEMENTATION`.
+
+These do **not** get their own state. Any state may transition to `BLOCKED` with a blocker
+of kind `AUTHORIZATION_REQUIRED`, carrying the request. A grant resumes the run at the
+pre-block state; a denial or timeout leaves it `BLOCKED`.
+
+One authorization mechanism, one blocking mechanism, and no state explosion. The
+distinction between "waiting on a human" and "waiting on anything else" lives in the
+blocker kind, which is where an operator already looks.
 
 ## 3. Loops and budgets
 

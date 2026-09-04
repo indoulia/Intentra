@@ -13,8 +13,14 @@ AgentOS believed and why.
 
 - `FACT` — directly observed through an adapter, with a citable artifact.
 - `INFERENCE` — derived from facts by reasoning. Must name the facts it derives from.
-- `UNKNOWN` — not determined. Must name why: not attempted, unreachable, denied,
-  ambiguous, or out of scope.
+- `UNKNOWN` — not determined. Must name why, using the vocabulary in
+  [DATA_SEMANTICS.md](DATA_SEMANTICS.md): `NOT_COMPUTED` (not attempted),
+  `UNAVAILABLE` (unreachable, denied, timed out), `NOT_APPLICABLE` (out of scope for this
+  subject), `INSUFFICIENT_EVIDENCE` (looked, found too little), or `CONFLICTING` (sources
+  disagree and no rule selects a winner).
+
+There is one absence vocabulary in AgentOS and this is it. A probe must not invent a
+reason string.
 
 **Rule 2 — `UNKNOWN` never silently becomes `FACT`.**
 
@@ -44,7 +50,13 @@ plus the reasoning in one sentence. For `UNKNOWN`, `reason` is mandatory and
 `recoverable_by` names what would resolve it.
 
 Evidence kinds: `file`, `git`, `command`, `query`, `http`, `log`, `ticket`, `document`,
-`screenshot`, `metric`.
+`screenshot`, `metric`. The same closed set is used by the
+[handoff envelope](AGENT_HANDOFF_CONTRACT.md); it is defined once in `contracts/`.
+
+**Freshness is a second, orthogonal axis.** `CURRENT | STALE | UNKNOWN` describes the age
+of an observation; the semantic vocabulary above describes the nature of a value. A value
+can be `FACT` and `STALE` at once, and conflating the two axes loses exactly the
+information that makes stale data safe to use.
 
 ## 3. Probes
 
@@ -181,6 +193,24 @@ tiers:
 Coverage is recorded explicitly. An agent must be able to distinguish "the Auditor found no
 orphan readers here" from "discovery never looked here" — conflating the two produces
 confident wrong answers, which is the worst output AgentOS can generate.
+
+### Bounding context growth
+
+The package grows across a run; an agent's input must not. Four rules keep them
+independent:
+
+1. **Envelopes carry references, never inlined context.** `context_package_ref` and
+   `prior_envelopes` are ids. Transcripts are never passed.
+2. **Each agent declares its required sections**, and the kernel materializes only those.
+   The Architect needs `domain_model`, `data_map` and `api_map`; it does not need
+   `git_state`.
+3. **Discovery is tiered** (above), so depth is bought only where the goal needs it.
+4. **The package is versioned, not appended.** On-demand discovery produces a new
+   version; agents read one version, and superseded detail is retrievable from the store
+   rather than resident in every dispatch.
+
+If an agent needs more than its declared sections, it requests them — a recorded event,
+which makes context appetite measurable instead of invisible.
 
 ## 7. Freshness
 

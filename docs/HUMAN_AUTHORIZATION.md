@@ -59,6 +59,31 @@ action would be autonomous. The gate is on the mandate, not the mechanics.
 
 **`COST_CEILING_EXCEEDED`** — continuing past the run's cost, time or loop budget.
 
+### When a gate can fire
+
+`MERGE_PROTECTED`, `DEPLOY_PRODUCTION` and `PRODUCTION_WRITE` fire at the end of a run and
+are what `READY_FOR_HUMAN_AUTHORIZATION` exists for.
+
+The rest can fire at any point, usually mid-`IMPLEMENTATION`. They get no state of their
+own: any state may transition to `BLOCKED` carrying a blocker of kind
+`AUTHORIZATION_REQUIRED`. A grant resumes the run at the pre-block state; a denial or
+timeout leaves it blocked. One authorization mechanism, one blocking mechanism, no state
+explosion — see [WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md) section 2.2.
+
+### Who may authorize
+
+A human. Specifically:
+
+- **No agent may grant, extend, reinterpret, or self-certify a grant**, including the
+  Orchestrator Agent. Agents draft requests; the kernel records them; a human decides.
+- **The requesting agent is never the checking component.** A grant is verified by the
+  adapter at the moment of execution, not by the agent that asked for it. An agent holding
+  a valid-looking grant object still cannot act without the adapter agreeing.
+- **AgentOS does not identify who is entitled to authorize.** Identity and entitlement are
+  the host environment's responsibility; AgentOS records the identifier it was given and
+  refuses to proceed without one. Inventing or assuming an authorizer is a security floor
+  violation.
+
 ## 3. Grant model
 
 ```json

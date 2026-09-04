@@ -66,6 +66,12 @@ Agents exchange typed envelopes containing status, findings, evidence, assumptio
 unknowns, artifacts changed, recommendations, blockers and next action. Never transcripts.
 An agent must be replaceable, resumable, and independently auditable.
 
+**The kernel is not an agent.** The component that enforces state, budgets, policy and
+persistence is deterministic code with no model in it. The Orchestrator *Agent* advises it
+and can be wrong without consequence. Agents depend on contracts, policies, registries and
+adapters — never on kernel internals. A run's safety must not depend on a model behaving
+well.
+
 ## 10. State is durable and survives interruption
 
 A run is a persisted state machine plus an append-only event log. Killing the process,
@@ -82,9 +88,10 @@ unnecessary gates, never by weakening necessary ones.
 
 ## 12. Disagreement is resolved by evidence, not seniority
 
-When two agents conflict, the Orchestrator does not average, vote, or defer to the more
-expensive model. It identifies the discriminating evidence, obtains it, and decides. If no
-evidence can settle it, the conflict escalates to a human with both positions stated
+When two agents conflict, the resolution does not average, vote, or defer to the more
+expensive model. The kernel settles what it can by rule — `FACT` beats `INFERENCE` beats
+`UNKNOWN` — and the Orchestrator Agent names the discriminating evidence for the rest. If
+no evidence can settle it, the conflict escalates to a human with both positions stated
 fairly.
 
 ## 13. The security floor is absolute

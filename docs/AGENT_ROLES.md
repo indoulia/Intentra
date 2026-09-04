@@ -12,13 +12,14 @@ agent's transcript.
 
 ## Applicability
 
-The Orchestrator selects the pipeline per goal. Rough guidance, decided from context, not
-from the goal text alone:
+The Orchestrator Agent proposes the pipeline per goal; the kernel validates it. Rough
+guidance, decided from context, not from the goal text alone:
 
-- **Always** — Orchestrator, Context Discovery.
+- **Always** — Orchestrator Agent, Context Discovery.
 - **Almost always** — Implementer, Validator.
 - **When the goal touches an existing system** — Auditor. Skipped only for a genuinely
-  greenfield component.
+  greenfield component. The Auditor also runs a second, narrow pass after implementation
+  (see role 3, "Second pass").
 - **When the goal changes structure, ownership, contracts or data flow** — Architect.
   A localized bug fix inside an established contract does not need one.
 - **When a user-facing surface changes** — Product/UX.
@@ -29,25 +30,34 @@ justified skipping. Silence is not a skip.
 
 ---
 
-## 1. Orchestrator
+## 1. Orchestrator Agent
 
-**Mandate.** Own the run. Decide which agent runs next, on which model, with which skills,
-under which budget. Detect and resolve disagreement. Enforce the state machine, the
-Definition of Done and the authorization boundary. Keep the run resumable.
+**Not the kernel.** The Kernel (`core/`) is deterministic code that enforces the state
+machine, budgets, policy and persistence. The Orchestrator Agent is a model-backed agent
+that *advises* it. It proposes; the kernel disposes, and logs any override. See
+[KERNEL_BOUNDARY.md](KERNEL_BOUNDARY.md).
 
-**Inputs.** Goal, run state, all prior envelopes, policies, registries.
+**Mandate.** Supply the judgment the kernel cannot: which agents this goal needs and in
+what order, what each should be told to do, which model and skills fit, how a surviving
+disagreement should be resolved, and what a human needs to see in an authorization request.
 
-**Outputs.** Dispatch decisions, arbitration decisions, state transitions, authorization
-requests, the final run report.
+**Inputs.** Goal, run state, prior envelopes (by reference), policies, ranked registry
+candidates.
 
-**Adapters.** None directly. The Orchestrator does not touch the target repository. This
-is deliberate — the component that judges evidence must not also manufacture it.
+**Outputs.** Proposed pipeline, proposed dispatch (agent, mandate, model, skills),
+arbitration resolutions, draft authorization requests, the final run report.
+
+**Adapters.** None. The Orchestrator Agent does not touch the target repository. This is
+deliberate — the component that judges evidence must not also manufacture it.
 
 **Hard limits.**
 - Does not write code, design architecture, or produce findings of its own.
 - Does not overrule a Validator failure by reasoning; only new evidence clears a failure.
-- Does not grant authorization. It requests; a human grants.
-- Does not exceed budget caps or loop counts set in policy; it stops and reports.
+- Does not grant authorization. It drafts a request; a human grants.
+- Does not transition state, write to the run store, or invoke another agent. It has no
+  mechanism to do any of these.
+- Does not exceed budget caps or loop counts; the kernel stops it, and this is enforced
+  rather than trusted.
 
 **Must declare.** Unresolvable disagreement, exhausted rework budget, missing capability
 required by the goal, ambiguity in the goal that changes the deliverable.
@@ -126,6 +136,15 @@ stumble on them.
 **Must declare.** Its coverage, capabilities it could not trace, and every finding whose
 confirmation requires runtime or production access it did not have.
 
+**Second pass (post-implementation).** The Auditor is re-dispatched after implementation
+for one purpose only: **structural re-audit**, answering Definition-of-Done criterion 17 —
+did this change create a new orphan writer, reader, store, dead calculation, phantom API or
+phantom UI? That question requires the capability graph, which only the Auditor builds.
+
+The second pass is scoped to the blast radius of the change, not the whole system, and it
+does **not** assess implementation correctness — that is the Validator's mandate. Keeping
+the two separate is what stops one agent from grading its own reasoning.
+
 ---
 
 ## 4. Architect
@@ -177,7 +196,7 @@ runtime in non-production environments where policy permits.
 - Does not weaken, skip, delete or relax a test to reach green. Ever. That is a security
   floor violation, not a judgment call.
 - Does not widen scope. Unrelated cleanup, reformatting and opportunistic refactors are
-  out of scope; discoveries go to the Orchestrator as recommendations.
+  out of scope; discoveries go up as `recommendations` in its envelope.
 - Does not merge, push to a protected branch, or deploy.
 - Does not fabricate defaults to make a null go away. Absence is modelled per
   [DATA_SEMANTICS.md](DATA_SEMANTICS.md).

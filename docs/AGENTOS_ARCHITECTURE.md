@@ -52,21 +52,43 @@ interlock live.
 
 ### 3.1 Core (kernel)
 
-Four responsibilities, nothing else.
+**The Kernel and the Orchestrator Agent are two different things.** This is the single
+most important boundary in AgentOS and it has its own document:
+[KERNEL_BOUNDARY.md](KERNEL_BOUNDARY.md).
+
+- **Kernel** (`core/`) — deterministic code. No model, no prompt, no judgment.
+- **Orchestrator Agent** (`agents/`) — model-backed, like any other agent. It *advises*.
+
+The Orchestrator Agent proposes; the Kernel disposes. The consequence is the property that
+makes the system trustworthy: **a run's safety and durability do not depend on a model
+behaving well.**
+
+Kernel responsibilities:
 
 - **Run loop** — `select next agent -> build input -> invoke -> validate envelope ->
-  persist -> transition state`. The loop is pure with respect to the run store: given the
-  same store it makes the same decision, which is what makes a run resumable.
+  persist -> transition state`. The loop is deterministic with respect to the run store:
+  given the same store and the same envelopes it makes the same decision, which is what
+  makes a run resumable.
 - **State machine** — the phases and legal transitions in
   [WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md). The kernel refuses illegal
   transitions rather than trusting an agent's claimed `next_action`.
 - **Run ledger and event log** — append-only. Every dispatch, envelope, decision,
   evidence reference, file change, failure, rework loop and authorization event is a
   record. The log is the source of truth for "what happened"; the cursor is a derived
-  projection.
-- **Arbitration** — conflict resolution between agents (section 6).
+  projection. The kernel is the only writer to `state/`.
+- **Policy and budget enforcement** — gates, the security floor, DoD applicability, rework
+  and cost caps. Policy is data the kernel checks, never behaviour an agent is asked to
+  remember.
+- **Conflict detection and arbitration mechanics** — detection and rule-based resolution
+  are mechanical; resolution on the merits is delegated to the Orchestrator Agent
+  (section 6).
+- **Operator interface** — CLI and the observability projections over the run store.
 
-The kernel contains no domain knowledge and no prompts.
+The kernel contains no domain knowledge and no prompts. The leak tests are in
+[KERNEL_BOUNDARY.md](KERNEL_BOUNDARY.md).
+
+**Dependency rule.** `agents -> contracts / policies / registries / adapters`, never
+`agents -> core`. The practical test: delete `core/` and every agent should still compile.
 
 ### 3.2 Agents
 
@@ -186,16 +208,20 @@ The single most important thing Context Discovery does.
               +----------> RECONCILIATION MATRIX <---------+
 ```
 
-Each capability lands in one of these states, and each is actionable:
+Each capability lands in exactly one reconciliation state. The canonical enum is defined
+once, in [CONTEXT_MODEL.md](CONTEXT_MODEL.md); it is repeated here only in summary:
 
-- **Aligned** — intent, code and runtime agree. Confirm and move on.
-- **Intent without code** — planned, not built. Ordinary backlog.
-- **Code without intent** — built, undocumented. Dead code, or missing documentation.
-- **Code without runtime** — the dangerous one. It exists, tests may pass, and it never
-  actually runs or produces data in the real system.
-- **Runtime without code** — manual process, external system, or shadow implementation.
-- **Intent claims done, runtime disagrees** — the "complete" feature with no production
-  evidence. Highest-value finding AgentOS produces.
+- `ALIGNED` — intent, code and runtime agree. Confirm and move on.
+- `INTENT_ONLY` — planned, not built. Ordinary backlog.
+- `CODE_ONLY` — built, undocumented. Dead code, or missing documentation.
+- `CODE_NO_RUNTIME` — the dangerous one. It exists, tests may pass, and it never actually
+  runs or produces data in the real system.
+- `RUNTIME_NO_CODE` — manual process, external system, or shadow implementation.
+- `CLAIMED_DONE_UNPROVEN` — intent says complete, runtime provides no evidence. The
+  highest-value finding AgentOS produces.
+- `CONFLICTING` — sources actively contradict each other.
+- `INDETERMINATE` — a source was unavailable; reconciliation is not yet possible. Not a
+  failure, and not to be read as the optimistic case.
 
 Reconciliation output is an input to the Auditor, not a conclusion by itself.
 
@@ -207,15 +233,21 @@ Disagreement is expected and is treated as information.
    Validator finding contradicts an Architect assumption.
 2. **Classify.** Factual (settleable by evidence), interpretive (differing judgment on
    shared facts), or scope (different problem being solved).
-3. **Resolve.**
-   - *Factual* -> identify the discriminating observation, dispatch a narrow probe or
-     targeted validation, decide by result. Cheapest and most common path.
-   - *Interpretive* -> the Orchestrator applies policy and DoD; if still tied, it requests
-     one additional independent review with both positions supplied, unattributed.
+3. **Resolve by rule first.** Where the two assertions differ in confidence class, `FACT`
+   beats `INFERENCE` beats `UNKNOWN`, decided by the kernel with no model involved. Most
+   conflicts die here.
+4. **Resolve on the merits.** What survives goes to the Orchestrator Agent.
+   - *Factual* -> it names the discriminating observation; the kernel dispatches a narrow
+     probe or targeted validation and decides by result. Cheapest and most common path.
+   - *Interpretive* -> it applies policy and DoD; if still tied, one additional independent
+     review is requested with both positions supplied, unattributed.
    - *Scope* -> re-read the goal; if the goal is genuinely ambiguous between the two, this
      is one of the rare legitimate reasons to ask the human.
-4. **Record.** The decision, the losing position, and the evidence go in the event log.
+5. **Record.** The decision, the losing position, and the evidence go in the event log.
    A reversed decision must be traceable later.
+
+The kernel never decides who is right on the merits; the agent never decides what happens
+next. See [KERNEL_BOUNDARY.md](KERNEL_BOUNDARY.md).
 
 Explicit anti-rules: never resolve by model tier, never average two designs into a third
 nobody proposed, never let the most recent envelope win by recency.
@@ -264,8 +296,11 @@ Deviations from the structure suggested in the brief, with reasons:
   restorable independently of the code that writes it. That separation is what makes
   interruption recovery credible.
 
-Nine directories, each with one reason to change. Every directory currently contains only
-a README stating its purpose; there is no implementation in Phase 0.
+Nine directories, each with one reason to change — justified component by component in
+[KERNEL_BOUNDARY.md](KERNEL_BOUNDARY.md), which maps every planned component to exactly
+one primary directory and states the split for the seven that span two. Every code
+directory currently contains only a README stating its purpose; there is no implementation
+in Phase 0.
 
 ## 9. Deliberate non-decisions
 

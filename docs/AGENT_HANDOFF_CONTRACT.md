@@ -68,6 +68,12 @@ Three properties follow from that, and they are the point of the contract:
 `PARTIAL` is not a soft `COMPLETE`. An agent that produced 80% and calls itself `COMPLETE`
 has corrupted every downstream decision.
 
+Each status maps to exactly one kernel action, including which statuses are legal from
+which state and agent. That mapping is defined once, in
+[WORKFLOW_STATE_MACHINE.md](WORKFLOW_STATE_MACHINE.md) section 2.1. An envelope carrying a
+status that is illegal for its state or role is a contract violation, logged as such and
+handled as `BLOCKED` — the kernel never guesses what an agent meant.
+
 ## Sections
 
 ### findings
@@ -211,6 +217,7 @@ Symmetrically, an agent receives a typed input, never a conversation:
   "capability_registry_ref": "capabilities/v2.json",
   "prior_envelopes": ["env_002", "env_007"],
   "mandate": "...",
+  "required_inputs": ["goal", "domain_model", "data_map", "api_map"],
   "required_outputs": ["target_architecture", "plan", "decisions"],
   "dod_profile_ref": "policies/dod/service-capability.json",
   "constraints": { },
@@ -220,5 +227,11 @@ Symmetrically, an agent receives a typed input, never a conversation:
 }
 ```
 
-`prior_envelopes` are references to structured envelopes, not transcript text. An agent
-reads what it needs.
+`prior_envelopes` are references to structured envelopes, not transcript text.
+
+**`required_inputs` bounds what is materialized.** An agent declares which Context Package
+sections it needs and the kernel builds only those into the dispatch. This is what keeps
+input size independent of run length: the package grows, the dispatch does not. An agent
+needing more requests it, which is a recorded event and therefore a measurable appetite
+rather than an invisible one. See [CONTEXT_MODEL.md](CONTEXT_MODEL.md), "Bounding context
+growth".

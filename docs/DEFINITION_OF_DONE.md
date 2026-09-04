@@ -89,27 +89,60 @@ a selection of the criteria above plus their evidence requirements.
 - **`documentation`** — done means accurate against the code as verified, not merely
   written.
 
-The Architect assigns a profile per work unit; the Orchestrator validates the assignment
-against the capability record. A profile that marks an inconvenient criterion
+The Architect assigns a profile per work unit; the kernel validates the assignment against
+the capability record and the profile's applicability rules in `policies/`. A profile that marks an inconvenient criterion
 `NOT_APPLICABLE` without a reason is rejected.
 
-## 3. Evidence requirements
+## 3. Ownership
+
+Every criterion has exactly one agent that supplies its verdict. Without this, criteria
+with no owner are quietly skipped and criteria with two owners are decided by whichever
+ran last.
+
+- **Context Discovery** — 1 (context understood)
+- **Auditor**, first pass — 3 (canonical ownership), 4 (source/data contracts)
+- **Auditor**, second pass — 6 (writers/readers connected), 16 (documentation not
+  contradicted by code), 17 (no new orphan). All three need the capability graph or the
+  stale-documentation check, both of which are Auditor mandate.
+- **Architect** — 2 (architecture coherent), 18 (outcome and learning path)
+- **Validator** — 5 (implementation complete), 7 (API), 9 (failure states),
+  10 (provenance), 11 (observability), 12 (tests), 13 (capability validation),
+  15 (production validation)
+- **Product/UX** — 8 (UI), 14 (UX validation)
+
+**The Implementer owns no criterion.** That is deliberate, and it is the point of the whole
+table: the agent that did the work never grades it.
+
+Two rules follow:
+
+- **No agent supplies the verdict on its own work.** The Implementer does not judge whether
+  its writers are connected or its documentation is accurate; the Architect does not judge
+  whether it designed the right thing, only whether the implementation matches what was
+  approved.
+- **The kernel does the arithmetic, not the judging.** It collects per-criterion verdicts,
+  checks applicability against the profile, and computes the completion verdict — applying
+  mechanically the rule that `NOT_VALIDATED` is never `MET`. It never decides a criterion
+  itself. See [KERNEL_BOUNDARY.md](KERNEL_BOUNDARY.md).
+
+## 4. Evidence requirements
 
 A criterion is `MET` only with evidence of the required strength:
 
 - Structural criteria (3, 4, 6, 17) — static analysis plus the capability graph
-- Implementation criteria (2, 5) — diff review against the architecture
+- Implementation criteria (2, 5) — diff review against the architecture and the plan's
+  work-unit list
 - Behavioural criteria (9, 12) — test execution output
 - Capability criteria (13) — a traced real record, with the trace recorded
 - Runtime criteria (11) — observed logs, metrics or traces from a running system
 - Production criteria (15) — production observations, under authorization
 - UX criteria (8, 14) — the Product/UX verdict with the states actually exercised
-- Knowledge criteria (1, 10, 16, 18) — package contents and documentation diffs
+- Knowledge criteria (1, 10, 18) — package contents; 16 — documentation compared against
+  the code it describes, not merely against the diff
 
 Self-assertion is never evidence. An Implementer saying "connected" does not satisfy
 criterion 6; the graph does.
 
-## 4. Completion verdicts
+## 5. Completion verdicts
 
 - **`COMPLETE`** — every applicable criterion `MET`.
 - **`COMPLETE_WITH_GAPS`** — all critical criteria met, non-critical ones explicitly
@@ -122,7 +155,7 @@ criterion 6; the graph does.
 "we checked and accepted a gap" are different facts about the world, and only one of them
 is a decision someone made.
 
-## 5. Reporting
+## 6. Reporting
 
 The completion report states, per criterion, the verdict and its evidence; then the
 capability status (`PROVEN` / `WORKING` / `PARTIAL` / ...), what was validated, what was
