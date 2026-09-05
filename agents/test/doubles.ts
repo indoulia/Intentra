@@ -64,18 +64,35 @@ export interface RecordedToolCall {
 export class FakeSession implements TransportSession {
   readonly calls: RecordedToolCall[] = [];
   closed = false;
+  /** How many times the substrate asked this session to close. */
+  closeAttempts = 0;
   #wake: (() => void) | null = null;
 
   constructor(
     readonly request: TransportRequest,
     private readonly script: readonly ScriptStep[],
     private readonly qualify: (name: string) => string,
+    /**
+     * A teardown that fails, which is not a hypothetical failure mode.
+     *
+     * The real session removes a temporary directory, and on Windows that directory is the
+     * harness subprocess's working directory and cannot be removed while the subprocess is
+     * alive — so `close()` rejects with `EBUSY`. A double whose `close()` could only ever
+     * resolve is a double that cannot express the defect this scripts.
+     */
+    private readonly closeRejectsWith: string | null = null,
   ) {}
 
   close(): Promise<void> {
+    this.closeAttempts += 1;
+    /* The session really does end before it reports that its cleanup failed: a scripted
+     * `hang` is woken here, so a timeout test over a rejecting close is still a timeout. */
     this.closed = true;
     this.#wake?.();
     this.#wake = null;
+    if (this.closeRejectsWith !== null) {
+      return Promise.reject(new Error(this.closeRejectsWith));
+    }
     return Promise.resolve();
   }
 
@@ -131,6 +148,8 @@ export interface FakeTransportOptions {
   /** How the substrate names a granted operation. Identity keeps most tests readable. */
   readonly qualify?: (name: string) => string;
   readonly name?: string;
+  /** Every session this transport opens rejects its `close()` with this message. */
+  readonly closeRejectsWith?: string;
 }
 
 export class FakeTransport implements DispatchTransport {
@@ -139,11 +158,13 @@ export class FakeTransport implements DispatchTransport {
   readonly sessions: FakeSession[] = [];
   readonly #scripts: ScriptStep[][];
   readonly #qualify: (name: string) => string;
+  readonly #closeRejectsWith: string | null;
 
   constructor(scripts: readonly (readonly ScriptStep[])[], options: FakeTransportOptions = {}) {
     this.#scripts = scripts.map((script) => [...script]);
     this.#qualify = options.qualify ?? ((name) => name);
     this.name = options.name ?? 'fake';
+    this.#closeRejectsWith = options.closeRejectsWith ?? null;
   }
 
   qualify(toolName: string): string {
@@ -153,7 +174,7 @@ export class FakeTransport implements DispatchTransport {
   open(request: TransportRequest): TransportSession {
     this.opened.push(request);
     const script = this.#scripts.shift() ?? [];
-    const session = new FakeSession(request, script, this.#qualify);
+    const session = new FakeSession(request, script, this.#qualify, this.#closeRejectsWith);
     this.sessions.push(session);
     return session;
   }

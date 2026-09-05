@@ -122,7 +122,7 @@ export class ClaudeAgentSdkSubstrate implements AgentSubstrate {
     let session: TransportSession | null = null;
     const timer = setTimeout(() => {
       detail = `the probe did not report a surface within ${CONFORMANCE_PROBE_MS}ms`;
-      void session?.close();
+      void closeQuietly(session);
     }, CONFORMANCE_PROBE_MS);
 
     try {
@@ -147,7 +147,7 @@ export class ClaudeAgentSdkSubstrate implements AgentSubstrate {
       detail = messageOf(error);
     } finally {
       clearTimeout(timer);
-      await session?.close();
+      await closeQuietly(session);
     }
 
     const report = evaluateSurface({
@@ -238,7 +238,7 @@ export class ClaudeAgentSdkSubstrate implements AgentSubstrate {
         case 'REFUSED':
           if (result.abortDispatch) {
             guard.securityViolation = `${toolName}: ${result.message}`;
-            void session.close();
+            void closeQuietly(session);
           }
           return { ok: false, message: `refused (${result.refusal}): ${result.message}` };
         case 'ERROR':
@@ -261,7 +261,7 @@ export class ClaudeAgentSdkSubstrate implements AgentSubstrate {
 
     const timer = setTimeout(() => {
       guard.timedOut = true;
-      void session.close();
+      void closeQuietly(session);
     }, input.budget.max_wall_clock_ms);
 
     let surface: ToolSurfaceReport | null = null;
@@ -288,7 +288,12 @@ export class ClaudeAgentSdkSubstrate implements AgentSubstrate {
       thrown = messageOf(error);
     } finally {
       clearTimeout(timer);
-      await session.close();
+      /*
+       * The one line the WP-8 pilot turned on. A throw from a `finally` supersedes whatever
+       * the `try` computed, so an unguarded close here does not merely fail — it deletes the
+       * result, the surface report and the failure classification on its way out.
+       */
+      await closeQuietly(session);
     }
 
     const cost = result?.cost ?? ZERO_COST;
@@ -443,6 +448,29 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * Close a session without letting the close decide the dispatch.
+ *
+ * `ClaudeCodeSession.close()` already absorbs its own cleanup failure, so over the real
+ * transport this catch never fires. It is here for every *other* implementation of the port.
+ * `DispatchTransport` is the seam D-2 keeps swappable, `close()` returns a promise, and a
+ * `dispatch()` whose totality depended on each future transport's teardown being well-behaved
+ * would be total by agreement rather than by construction. `dispatch()` and `conformance()`
+ * both promise a value on every path; this is what makes that structural.
+ *
+ * The `void` callers need it for a second reason. An unhandled rejection ends the process
+ * under Node's default policy, which loses the outcome exactly as throwing would — and those
+ * two call sites fire on the timeout and security-violation paths, where there is a failure
+ * to report and reporting it is the whole point.
+ */
+async function closeQuietly(session: TransportSession | null): Promise<void> {
+  try {
+    await session?.close();
+  } catch {
+    /* Teardown cannot change what a dispatch found. */
+  }
+}
+
 const CONFORMANCE_SYSTEM_PROMPT =
   'This session exists to report its own tool surface and is closed before any turn runs. '
   + 'There is nothing to do.';
@@ -498,6 +526,63 @@ export function permitTool(
   };
 }
 
+/**
+ * How long the sandbox removal keeps trying before it accepts that it lost the race.
+ *
+ * `abortController.abort()` returns before the harness subprocess does, and on Windows a
+ * directory that is any live process's current working directory cannot be removed — so the
+ * removal races the child's exit and loses it with `EBUSY`. Retrying is what turns the
+ * ordinary case of that race into a slow win, because the lock lifts the moment the child
+ * exits.
+ *
+ * The bound is a wall clock rather than `fs.rm`'s own `maxRetries`, and that is a correction
+ * made by measurement: `{ maxRetries: 10, retryDelay: 50 }` against a permanently locked
+ * directory took **34 seconds**, because the retry budget is spent per path and the recursive
+ * walk compounds it at every level. Thirty-four seconds added to a teardown is a second way
+ * to lose a dispatch. A deadline is a bound that can be stated, and it holds whatever `fs.rm`
+ * does internally.
+ *
+ * Two seconds is the compromise: long enough for a subprocess that is already being killed,
+ * short enough that a genuinely stuck handle costs the run almost nothing. Past it the
+ * directory is left behind and said out loud.
+ */
+const SANDBOX_REMOVAL_DEADLINE_MS = 2_000;
+const SANDBOX_REMOVAL_RETRY_MS = 100;
+
+/**
+ * Remove one dispatch sandbox, and never fail the dispatch over it.
+ *
+ * This returns a description of the leak rather than throwing one, because throwing is what
+ * it did in the WP-8 pilot: an `EBUSY` on the locked `cwd` propagated out of `close()`, out
+ * of the `finally` in `dispatch()` — where a throw supersedes the result the `try` had
+ * already computed — and out of the process, leaving a `dispatch_intent` in the log with no
+ * `dispatch_result` after it and no work item to recover from. What a dispatch found is
+ * decided by the model and the kernel. The state of a temporary directory is not part of
+ * that finding and may not overwrite it.
+ *
+ * The leak is still said out loud. A warning reaches stderr, changes no exit code and ends
+ * no process, and the alternative is what made the pilot's leftover sandbox discoverable
+ * only by going and looking in `%TEMP%`.
+ */
+export async function discardSandbox(sandbox: string): Promise<string | null> {
+  const deadline = Date.now() + SANDBOX_REMOVAL_DEADLINE_MS;
+  for (;;) {
+    try {
+      /* `maxRetries` deliberately left at its default. The loop below owns the timing, and
+       * two retry mechanisms would multiply rather than agree. */
+      await rm(sandbox, { recursive: true, force: true });
+      return null;
+    } catch (error) {
+      if (Date.now() >= deadline) {
+        const detail = `${sandbox} could not be removed: ${messageOf(error)}`;
+        process.emitWarning(detail, 'IntentraSandboxLeak');
+        return detail;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, SANDBOX_REMOVAL_RETRY_MS));
+    }
+  }
+}
+
 export class ClaudeCodeTransport implements DispatchTransport {
   readonly name = 'claude-agent-sdk';
   readonly #serverName: string;
@@ -524,6 +609,16 @@ class ClaudeCodeSession implements TransportSession {
   #model: string | null = null;
   #closed = false;
 
+  /**
+   * What this session could not clean up, where it could not.
+   *
+   * Nothing in the dispatch path reads it, and that is deliberate: a cleanup failure is not
+   * an input to any decision the substrate makes. It is recorded because the alternative is
+   * the one this file already took once — the sandbox stays, nothing says so, and the next
+   * person to know is whoever finds it in `%TEMP%` afterwards.
+   */
+  cleanupFailure: string | null = null;
+
   constructor(request: TransportRequest, serverName: string) {
     this.#request = request;
     this.#serverName = serverName;
@@ -546,7 +641,7 @@ class ClaudeCodeSession implements TransportSession {
     this.#stream = null;
     const sandbox = this.#sandbox;
     this.#sandbox = null;
-    if (sandbox !== null) await rm(sandbox, { recursive: true, force: true });
+    if (sandbox !== null) this.cleanupFailure = await discardSandbox(sandbox);
   }
 
   async *#run(): AsyncGenerator<TransportEvent, void> {
@@ -573,8 +668,10 @@ class ClaudeCodeSession implements TransportSession {
     await mkdir(configHome, { recursive: true });
 
     if (this.#closed) {
-      await rm(sandbox, { recursive: true, force: true });
+      /* Nulled before the removal rather than after it, so that a `close()` arriving during
+       * the retries cannot start a second removal of the same directory. */
       this.#sandbox = null;
+      this.cleanupFailure = await discardSandbox(sandbox);
       return;
     }
 

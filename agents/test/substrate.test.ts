@@ -1,9 +1,15 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fixtures as fx, type SubstrateResult } from '@intentra/contracts';
 import {
   ClaudeAgentSdkSubstrate,
   ClaudeCodeTransport,
+  discardSandbox,
   permitTool,
 } from '../src/substrate/claude-agent-sdk.js';
 import { FakeTransport, GRANTS, RecordingInvoker, grant, type ScriptStep } from './doubles.js';
@@ -584,4 +590,230 @@ describe('session isolation', () => {
     assert.deepEqual(transport.opened[0]?.tools, []);
     assert.deepEqual([...(result.toolSurface?.expected ?? ['not empty'])], []);
   });
+});
+
+/* --------------------------------------------------------------------- teardown -- */
+
+/**
+ * The message Windows produced in the WP-8 pilot, kept verbatim.
+ *
+ * A dispatch sandbox's `cwd` is the harness subprocess's working directory, and Windows will
+ * not remove a directory that any live process has open as its own. `abortController.abort()`
+ * returns before the child does, so the removal races the exit and loses.
+ */
+const EBUSY = "EBUSY: resource busy or locked, rmdir 'C:\\Temp\\intentra-dispatch-lP8q8Q\\cwd'";
+
+function substrateWhoseCloseFails(scripts: readonly (readonly ScriptStep[])[]) {
+  const transport = new FakeTransport(scripts, { closeRejectsWith: EBUSY });
+  return { transport, substrate: new ClaudeAgentSdkSubstrate({ transport }) };
+}
+
+/** What `run` produced, and every rejection nobody handled while it was in flight. */
+async function unhandledDuring<T>(run: () => Promise<T>): Promise<{
+  readonly value: T;
+  readonly escaped: readonly unknown[];
+}> {
+  const escaped: unknown[] = [];
+  const listener = (reason: unknown): void => { escaped.push(reason); };
+  process.on('unhandledRejection', listener);
+  try {
+    const value = await run();
+    /* An unhandled rejection is reported a turn after the promise is abandoned, so the check
+     * has to outlive the call that abandoned it. */
+    for (let turn = 0; turn < 3; turn += 1) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    return { value, escaped };
+  } finally {
+    process.off('unhandledRejection', listener);
+  }
+}
+
+/**
+ * A dispatch is what the model and the kernel decided. Cleanup is not part of that.
+ *
+ * The WP-8 pilot is the whole reason this block exists: an `EBUSY` from the sandbox removal
+ * propagated out of the `finally` in `dispatch()` — where a throw supersedes whatever the
+ * `try` computed — and out of the process, leaving `dispatch_intent` in the run log with no
+ * `dispatch_result` after it and no work item anybody could recover from. The result had
+ * already been computed. The teardown deleted it on the way out.
+ *
+ * So every case below scripts a session whose `close()` really rejects, and asserts that the
+ * outcome is the one the session produced rather than the one the cleanup would have imposed.
+ */
+describe('teardown cannot decide the dispatch', () => {
+  test('a successful dispatch survives a close that rejects', async () => {
+    const cost = { input_tokens: 90, output_tokens: 7, usd: 0.1 };
+    const { substrate, transport } = substrateWhoseCloseFails([[
+      { kind: 'surface' },
+      { kind: 'result', text: ENVELOPE_TEXT, cost },
+    ]]);
+    const result = await substrate.dispatch(input(), new RecordingInvoker());
+
+    assert.equal(result.outcome, 'ENVELOPE', 'the envelope the session produced is returned');
+    assert.deepEqual(
+      result.outcome === 'ENVELOPE' ? result.cost : null,
+      cost,
+      'and so is everything measured alongside it',
+    );
+    assert.equal(transport.sessions[0]?.closeAttempts, 1, 'cleanup was still attempted');
+  });
+
+  test('a failed dispatch keeps its own classification, not the teardown\'s', async () => {
+    const { substrate } = substrateWhoseCloseFails([[
+      { kind: 'surface' },
+      { kind: 'result', failure: 'ERROR', detail: 'the process exited with code 1' },
+    ]]);
+    const result = await substrate.dispatch(input(), new RecordingInvoker());
+    const detail = result.outcome === 'FAILED' ? result.detail : '';
+
+    assert.equal(failureOf(result), 'SUBSTRATE_ERROR');
+    assert.match(
+      detail,
+      /exited with code 1/,
+      'the primary failure is reported, not swallowed and not replaced by the EBUSY',
+    );
+    assert.doesNotMatch(detail, /EBUSY/);
+  });
+
+  test('a session that throws mid-turn is SUBSTRATE_ERROR when its close also rejects', async () => {
+    const { substrate } = substrateWhoseCloseFails([[
+      { kind: 'surface' },
+      { kind: 'throw', message: 'socket hang up' },
+    ]]);
+    const result = await substrate.dispatch(input(), new RecordingInvoker());
+
+    assert.equal(failureOf(result), 'SUBSTRATE_ERROR');
+    assert.match(result.outcome === 'FAILED' ? result.detail : '', /socket hang up/);
+  });
+
+  test('the timeout path closes a rejecting session without an unhandled rejection', async () => {
+    const { substrate } = substrateWhoseCloseFails([[{ kind: 'surface' }, { kind: 'hang' }]]);
+
+    const { value: result, escaped } = await unhandledDuring(() => substrate.dispatch(
+      input({ budget: { max_usd: 5, max_turns: 40, max_wall_clock_ms: 25 } }),
+      new RecordingInvoker(),
+    ));
+
+    assert.deepEqual(escaped, [], 'the timer abandons no rejected promise');
+    assert.equal(failureOf(result), 'TIMEOUT');
+  });
+
+  test('the security-violation path closes a rejecting session without an unhandled rejection', async () => {
+    const invoker = new RecordingInvoker(() => ({
+      outcome: 'REFUSED',
+      refusal: 'security_violation',
+      message: 'the resolved path leaves the worktree',
+      abortDispatch: true,
+    }));
+    const { substrate } = substrateWhoseCloseFails([[
+      { kind: 'surface' },
+      { kind: 'call', tool: 'repo__read_file', args: { path: '../../etc/passwd' } },
+      { kind: 'result', text: ENVELOPE_TEXT },
+    ]]);
+    const { value: result, escaped } = await unhandledDuring(
+      () => substrate.dispatch(input(), invoker),
+    );
+
+    assert.deepEqual(escaped, [], 'the abort abandons no rejected promise');
+    assert.equal(failureOf(result), 'SECURITY_VIOLATION');
+    assert.match(
+      result.outcome === 'FAILED' ? result.detail : '',
+      /leaves the worktree/,
+      'a security violation is reported regardless of what the teardown did',
+    );
+  });
+
+  test('dispatch resolves rather than rejecting, whatever the close does', async () => {
+    const { substrate } = substrateWhoseCloseFails([[
+      { kind: 'surface' },
+      { kind: 'result', text: ENVELOPE_TEXT },
+    ]]);
+    /* The pilot's shape, stated as the property it violated: `dispatch` returns a
+     * `SubstrateResult` on every path. It is not permitted to reject. */
+    await assert.doesNotReject(() => substrate.dispatch(input(), new RecordingInvoker()));
+  });
+
+  test('the conformance probe reports a surface even when its close rejects', async () => {
+    const { substrate } = substrateWhoseCloseFails([[{ kind: 'surface' }]]);
+    const report = await substrate.conformance(GRANTS);
+
+    assert.equal(report.verdict, 'CONFORMS');
+    assert.doesNotMatch(report.detail, /EBUSY/, 'the probe reports the surface, not the cleanup');
+  });
+});
+
+/**
+ * The removal itself, against a real filesystem.
+ *
+ * Everything above proves the substrate tolerates a teardown that fails. This proves that the
+ * one teardown which actually ships fails that way — reported and bounded — rather than
+ * throwing. The defect was in the interaction with the operating system, and no double can
+ * hold that.
+ */
+describe('sandbox removal is bounded, reported, and never fatal', () => {
+  test('an ordinary sandbox is removed and nothing is reported', async () => {
+    const sandbox = await mkdtemp(join(tmpdir(), 'intentra-teardown-'));
+    await mkdir(join(sandbox, 'cwd'), { recursive: true });
+    await mkdir(join(sandbox, 'config'), { recursive: true });
+
+    assert.equal(await discardSandbox(sandbox), null, 'a clean removal reports no leak');
+    assert.equal(existsSync(sandbox), false);
+  });
+
+  test('removing a sandbox that was never created is not a failure', async () => {
+    assert.equal(await discardSandbox(join(tmpdir(), 'intentra-teardown-absent')), null);
+  });
+
+  test(
+    'a locked sandbox is reported and given up on, not thrown',
+    {
+      /* POSIX removes a directory that is a live process's working directory quite happily,
+       * so the lock this reproduces is a Windows one. Asserting it elsewhere would assert
+       * something about the platform rather than about the code. */
+      skip: process.platform === 'win32'
+        ? false
+        : 'the working-directory lock being reproduced is Windows behaviour',
+    },
+    async () => {
+      const sandbox = await mkdtemp(join(tmpdir(), 'intentra-teardown-'));
+      const cwd = join(sandbox, 'cwd');
+      await mkdir(cwd, { recursive: true });
+      await mkdir(join(sandbox, 'config'), { recursive: true });
+      /* Exactly what `Options.cwd` does to the harness subprocess. */
+      const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], {
+        cwd,
+        stdio: 'ignore',
+      });
+
+      try {
+        const started = Date.now();
+        const detail = await discardSandbox(sandbox);
+        const elapsed = Date.now() - started;
+
+        assert.notEqual(detail, null, 'the leak is reported rather than passing silently');
+        assert.match(detail ?? '', /could not be removed/);
+        assert.match(detail ?? '', /EBUSY|EPERM|ENOTEMPTY/);
+        /*
+         * The bound is the assertion, not a formality. `fs.rm`'s own `{ maxRetries: 10,
+         * retryDelay: 50 }` measured 34 seconds here, because its budget is spent per path
+         * and the recursive walk compounds it — which is why the removal owns its own
+         * deadline. Ten seconds is loose enough not to flake on a loaded machine and tight
+         * enough that a regression to a compounding retry fails this test rather than
+         * quietly costing every Windows teardown half a minute.
+         */
+        assert.ok(
+          elapsed < 10_000,
+          `the retries are bounded and gave up after ${elapsed}ms rather than waiting out a `
+          + 'handle this process does not own',
+        );
+        assert.equal(existsSync(cwd), true, 'the locked directory is what survived');
+      } finally {
+        child.kill();
+        await new Promise<void>((resolve) => { child.once('exit', () => { resolve(); }); });
+        await rm(sandbox, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })
+          .catch(() => undefined);
+      }
+    },
+  );
 });
