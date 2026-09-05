@@ -28,12 +28,32 @@ delete-core → conformance, and the first failure stops it. A pilot run mounted
 measures nothing.
 
 One known flake, on Windows only: `core/test/composition.test.ts` builds real git repositories
-under the system temp directory, and `node --test` runs test files in parallel, so its `after()`
-teardown can hit `EBUSY: rmdir` while Windows still holds a handle on `<temp>/repo`. Every
-assertion in the file passes; the failure is in cleanup. Observed once in three consecutive gate
-runs (the other two, and the file run in isolation, are clean). If the gate fails this way,
-re-run it and record that you did — do not treat a teardown `EBUSY` as a green gate without a
-clean run to point at.
+under the system temp directory, and `node --test` runs test files in parallel, so its file-level
+`after()` teardown can hit `EBUSY: rmdir` while Windows still holds a handle on `<temp>/repo`.
+Every assertion in the file passes; the failure is in cleanup. Observed once in three consecutive
+gate runs (the other two, and the file run in isolation, are clean).
+
+`npm run verify` does not classify it, and is not being taught to: it reports `tests FAIL` and
+stops at the first failing stage. A gate that decided for itself which failures did not count
+would be the wrong thing to mount a pilot on. **The discrimination is the human's**, made from the
+spec output, and it is the known teardown flake only when *all four* of these hold:
+
+- the only failing item is the file-level `after()` hook of
+  `core/dist/test/composition.test.js`;
+- its error is `EBUSY` (or `ENOTEMPTY`) from `rmdir`/`unlink` on a path under the system
+  temp directory — not an assertion failure, not a timeout, not any other error;
+- every named test in that file, and every test in every other file, reports `ok`;
+- the host is Windows.
+
+Anything else is a **genuine failure and the gate is red**: a failing assertion anywhere, a
+different file, a different error, or this same symptom on a non-Windows host. Do not record it as
+the known flake.
+
+When all four hold, re-run the gate **once** and record in the pilot log that you did, keeping
+both outputs. A clean second run is the green gate. If the teardown fails again, stop: a
+reproducible teardown failure is a defect to be fixed before the pilot, not a flake to be re-run
+past. Nothing in the test is weakened, skipped, retried or asserted differently to obtain a green
+gate.
 
 **A model must be declared or the run cannot dispatch.** With none, every dispatch reports
 `NO_MODEL` and the run blocks with `EXTERNAL_DEPENDENCY` having advanced nothing — invariant 16
@@ -340,9 +360,41 @@ Whatever the outcome:
 
 ## Note on the command name
 
-[IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md) section 12 step 2 named the run
-`intentra audit --repo <repo> --goal "<goal>"`. The implemented command is
-`intentra work --repo <repo> "<request>"`: the read-only audit is what a `work` run *is* under
-`mutation_enabled: false`, and the goal is the request rather than a flag. No `audit` command and
-no `--goal` flag exist, and none is being added for the pilot — the protocol is unchanged, and
-only its command string was stale.
+[IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md) section 12, step 2 ("Run blind") names the
+run:
+
+> `intentra audit --repo <marksy> --goal "Make Marksy IPO intelligence production-complete."`
+
+The command the pilot actually runs is the one in step D:
+
+```
+node core/dist/src/cli/main.js work --repo <repo> "<goal>"
+```
+
+**This is a stale command string in a non-frozen document, not a missing capability.** The
+determination was made against the implementation rather than assumed:
+
+- **Nothing frozen names a command.** [ARCHITECTURE_FREEZE.md](ARCHITECTURE_FREEZE.md) section 1
+  lists the fourteen frozen documents and none of them is a CLI document; section 2 lists
+  `IMPLEMENTATION_ROADMAP.md` as *not* frozen while keeping its section 12 protocol
+  authoritative. The protocol binds; its command string does not.
+- **The read-only audit is what a `work` run is.** `policies/data/execution.json` sets
+  `mutation_enabled: false` and admits only `READ_ONLY`, no mutating adapter operation is
+  registered, and `policies/data/workflows/investigation.readonly.json` enters at `AUDIT` with
+  `dod_profile_default: audit`. There is no second, weaker mode that an `audit` command would
+  have selected instead.
+- **The goal is the request, not a flag.** `--repo` is spelled identically; `--goal` does not
+  exist because `work`'s positional argument carries the same string, and `parseWorkArguments`
+  refuses an invocation that omits it rather than resolving nothing.
+- **Every surface section 12 scores is produced.** Findings carry `severity`, `category`,
+  `confidence`, `impact` and `evidence[]`; `coverage` is mandatory on every envelope, which is
+  what makes the accurate-coverage pass criterion checkable; `cost` carries `input_tokens` and
+  `output_tokens`; and the capability graph's edges carry `kind`, `confidence` and `evidence[]`
+  for D-6. These are the surfaces step E snapshots, and they are the inputs to recall,
+  precision, evidence quality, honesty and cost.
+
+No `audit` command and no `--goal` flag exist, and **none is being added for the pilot**: an
+alias invented to make a stale string true would be new product surface introduced at the
+validation boundary, which is exactly what the boundary exists to prevent. The protocol is
+unchanged; only its command string is stale, and section 12 remains the authority over this
+file.
