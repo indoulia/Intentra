@@ -200,23 +200,25 @@ answer from what was loaded.
 The alternative was a separate package for the replay tool, which would have moved the same
 I/O somewhere else and made `intentra replay` depend on a package that exists for one file.
 
-### I-19 · `intentra work` is absent from this build rather than stubbed
+### I-19 · `intentra work` was deferred out of WP-3, not designed away
 
-The plan lists the CLI under WP-3, and three of its four commands are complete there:
+The plan lists the CLI under WP-3, and three of its four commands were complete there:
 `status` and `narrate` read the store, and `replay` drives the entire kernel from recorded
-envelopes. `work` cannot be: starting a real run needs a live adapter registry (WP-4), an
+envelopes. `work` could not be: starting a real run needs a live adapter registry (WP-4), an
 agent substrate (WP-5) and a discovery implementation (WP-6), and the plan's own sequencing
 puts all three after WP-3.
 
-So the command is **not present**. Invoking it prints what is missing and exits non-zero. A
-command that accepted the invocation and then did nothing useful would be a stub in
-production, which is exactly what the conformance check exists to catch — and it would hide
-the dependency rather than state it.
+So through WP-3 to WP-7 the command was **not present**. Invoking it printed what was missing
+and exited non-zero. A command that accepted the invocation and then did nothing useful would
+have been a stub in production, which is exactly what the conformance check exists to catch —
+and it would have hidden the dependency rather than stating it.
 
-This is a dependency error in the plan rather than a decision about the design: "CLI and
+This was a dependency error in the plan rather than a decision about the design: "CLI and
 projections" is listed as a WP-3 deliverable, and one quarter of it depends on WP-4 through
-WP-6. The smallest correction is to build the three commands that only need the kernel and
-the store, and to add `work` when the last port it needs exists.
+WP-6. The correction was to build the three commands that only need the kernel and the store,
+and to add `work` when the last port it needed existed. **WP-8 added it**, against the
+composition root; `core/test/cli.test.ts` and the end-to-end scenarios drive it. The record is
+kept because the sequencing lesson outlives the gap.
 
 ---
 
@@ -1037,12 +1039,20 @@ defect — `doesNotMatch(/The key is wrong/)` — so the inversion is the regres
 Recorded together because they have K-1's shape and none of them is K-1: a symbol existing is
 not a defect, and the sweep that followed K-1 found only these.
 
-- **`orchestratorChoices` (`agents/src/roles/catalog.ts`)** derives, from the policy set,
-  which proposals the Orchestrator may make in this milestone, so that "three" becomes "four"
-  on the day a mutating stage is registered without anybody remembering the function exists.
-  Nothing reads it. What it derives is stated instead in the `orchestration` specification's
-  objective and hard limits, which *are* rendered into the brief — so the agent is told, and
-  the derivation meant to keep the telling honest is not what tells it.
+- **`orchestratorChoices` (`agents/src/roles/catalog.ts`)** — **closed.** It derives, from the
+  policy set, which proposals the Orchestrator may make in this milestone, so that "three"
+  becomes "four" on the day a mutating stage is registered without anybody remembering the
+  function exists. Nothing on the live path read it, and what it derives is stated instead in
+  the `orchestration` specification's objective, which *is* rendered into every brief — so the
+  agent was told, and the derivation meant to keep the telling honest was not what told it.
+  The prose is now held against the derivation in `agents/test/roles.test.ts`: the objective's
+  count word must be the numeral for `orchestratorChoices(policies).length`, and every choice
+  policy admits must be named by a phrase in the objective, so a proposal the agent is
+  permitted and never told about fails the build. A third test asserts that a mutating
+  installation makes the same prose wrong, which is what keeps the first two able to detect
+  drift rather than passing vacuously. Wiring the derivation into the brief itself would mean
+  generating the objective, and a specification is a written thing on purpose — holding the
+  writing to the derivation is the repair that does not turn a spec into a template.
 - **`proposals.dispatch` and `proposals.arbitration`** are legal for the Orchestrator at every
   stage (`policies/data/agents.json`) and the kernel reads neither. Arbitration's earlier steps
   do run — conflicts are detected and rule-resolved inside envelope receipt, and journalled —

@@ -158,6 +158,63 @@ describe('the Orchestrator\'s choices, derived from policy', () => {
     assert.ok(choices.includes('authorization_request'));
     assert.ok(choices.length > 3, 'a gate that can fire is a draft request that can be made');
   });
+
+  /*
+   * K-3, closed for this item. The derivation existed to keep the telling honest and was not
+   * what told: the number and the subjects reach the agent from the `orchestration`
+   * specification's prose, which is hand-written and rendered into every brief. So the prose
+   * is held against the derivation. On the day milestone 2 registers a mutating stage the
+   * count becomes four, and an objective still saying "three" fails here rather than
+   * misinforming a live agent.
+   */
+  const NUMERALS: Readonly<Record<number, string>> = {
+    1: 'one', 2: 'two', 3: 'three', 4: 'four', 5: 'five', 6: 'six',
+  };
+
+  const orchestration = MVP_ROLE_SPECS.find((spec) => spec.mandate_name === 'orchestration');
+
+  test('are counted correctly by the objective the agent is actually told', () => {
+    assert.ok(orchestration !== undefined, 'the Orchestrator has a specification');
+    const count = orchestratorChoices(policies).length;
+    const numeral = NUMERALS[count];
+    assert.ok(numeral !== undefined, `no numeral for ${count} choices; extend the table`);
+    assert.match(
+      orchestration.objective,
+      new RegExp(`exactly ${numeral} choices`),
+      'the brief states the count in prose, so the prose is what has to agree with policy',
+    );
+  });
+
+  test('are each named by the objective, so none is derived and then left unsaid', () => {
+    assert.ok(orchestration !== undefined);
+    /* What each proposal key is called in the sentence an agent reads. */
+    const said: Readonly<Record<string, RegExp>> = {
+      workflow: /admissible workflow template/,
+      dispatch: /next dispatch/,
+      arbitration: /surviving disagreement/,
+    };
+    for (const choice of orchestratorChoices(policies)) {
+      const phrase = said[choice];
+      assert.ok(
+        phrase !== undefined,
+        `policy admits the proposal "${choice}" and the objective has no phrase for it: the `
+        + 'agent would be permitted something it was never told it may do',
+      );
+      assert.match(orchestration.objective, phrase, `the objective names ${choice}`);
+    }
+  });
+
+  test('and the guard bites: a mutating installation makes the prose wrong', () => {
+    assert.ok(orchestration !== undefined);
+    const mutating = { ...policies, execution: { ...policies.execution, mutation_enabled: true } };
+    const numeral = NUMERALS[orchestratorChoices(mutating).length];
+    assert.ok(numeral !== undefined);
+    assert.doesNotMatch(
+      orchestration.objective,
+      new RegExp(`exactly ${numeral} choices`),
+      'if this ever matches, the two tests above have stopped being able to detect drift',
+    );
+  });
 });
 
 /* ------------------------------------------------------------------- the tool surface ---- */
