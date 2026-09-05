@@ -55,16 +55,22 @@ export function listPaths(args: Readonly<Record<string, unknown>>): readonly str
 export function healthyWorld(overrides: Partial<FakeWorld> = {}): FakeWorld {
   return {
     responses: {
+      /*
+       * The attachment sequence's own vocabulary, because that is what the repository adapter
+       * answers in: step 1 identifies a `path`, and the Context Model's `root` is the probe's
+       * translation of it. A fixture that answered `root` here would be answering in the
+       * probe's words and would keep the translation permanently untested.
+       */
       'repo.identify': {
-        root: '/work/repo',
+        path: '/work/repo',
         vcs: 'git',
-        default_branch: 'main',
         current_branch: `feature/${TICKET}-rate-rounding`,
-        remotes: ['origin'],
+        agent_directory: false,
       },
       'repo.list_paths': listPaths,
       'repo.read_file': (args: Readonly<Record<string, unknown>>) => `contents of ${String(args['path'])}`,
       'repo.detect_stack': {
+        ecosystems: ['node'],
         languages: ['TypeScript'],
         frameworks: ['node'],
         build_system: 'npm',
@@ -73,16 +79,52 @@ export function healthyWorld(overrides: Partial<FakeWorld> = {}): FakeWorld {
         linters: ['eslint'],
         containers: ['docker'],
       },
+      /*
+       * Nested under `commands`, because `repo.commands` is attachment step 7 projected out of
+       * the whole sequence and answers the map the sequence answers with. A flat fixture would
+       * be a shape no adapter produces, and the probe that read it would be green against an
+       * answer it could never receive.
+       */
       'repo.commands': {
-        build: { command: 'npm run build', verified: true },
-        test: { command: 'npm test', verified: false },
-        lint: { command: 'npm run lint', verified: false },
-        run: { command: 'npm start', verified: false },
+        commands: {
+          build: { command: 'npm run build', verified: true },
+          test: { command: 'npm test', verified: false },
+          lint: { command: 'npm run lint', verified: false },
+          start: { command: 'npm start', verified: false },
+        },
       },
 
       'git.list_branches': [
-        { name: 'main', default: true, protected: true },
-        { name: `feature/${TICKET}-rate-rounding`, default: false, protected: false },
+        {
+          name: 'main',
+          default: true,
+          protected: true,
+          protection: {
+            subject: 'main',
+            kind: 'branch_protection',
+            value: 'PROTECTED',
+            confidence: 'FACT',
+            failed_closed: false,
+            probe_detail: 'the VCS host reports main protected=true',
+          },
+        },
+        {
+          name: `feature/${TICKET}-rate-rounding`,
+          default: false,
+          protected: false,
+          protection: {
+            subject: `feature/${TICKET}-rate-rounding`,
+            kind: 'branch_protection',
+            value: 'UNPROTECTED',
+            confidence: 'FACT',
+            failed_closed: false,
+            probe_detail: `the VCS host reports feature/${TICKET}-rate-rounding protected=false`,
+          },
+        },
+      ],
+      'git.default_branch': 'main',
+      'git.remotes': [
+        { name: 'origin', url: 'https://example.invalid/repo.git', direction: 'fetch' },
       ],
       'git.log': [
         { sha: HEAD_SHA, author: 'dev@example.com', message: `${TICKET} round rates half-up` },

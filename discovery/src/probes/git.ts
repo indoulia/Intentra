@@ -2,6 +2,7 @@ import type { Assertion } from '@agentos/contracts';
 import { ADAPTERS, OPS } from '../ops.js';
 import type { SectionProbe } from '../probe.js';
 import { asNumber, asString, records } from '../probe.js';
+import { namedRecords, observe } from './observation.js';
 
 /**
  * The git probe set.
@@ -39,7 +40,7 @@ export const branchesProbe: SectionProbe = {
       session.nowIso(),
     );
 
-    const observation = await session.observe({
+    const observation = await observe(session, {
       probe: 'git.branches',
       adapter: GIT,
       op: OPS.git.listBranches,
@@ -61,6 +62,56 @@ export const branchesProbe: SectionProbe = {
 
     const branches = records(observation.value);
     const evidence = [observation.evidence];
+    /*
+     * A listing that carried entries and no branch records is not an empty repository.
+     *
+     * It is the one shape that must not degrade quietly here: a bare list of ref names would
+     * leave every `protected` flag `undefined`, no branch would be collected as protected, and
+     * the section would read "nothing here is protected" — a fail-open answer produced by a
+     * failure to read, which is the exact inversion of the rule the classification enforces.
+     * So the gap is stated instead.
+     */
+    if (branches.length === 0 && Array.isArray(observation.value) && observation.value.length > 0) {
+      const gap = session.insufficient(
+        'git.branches',
+        `${GIT}.${OPS.git.listBranches} listed ${String(observation.value.length)} entr(ies) and `
+        + 'none of them is a branch record, so neither the names nor their protection could be '
+        + 'read from it',
+        `have ${GIT}.${OPS.git.listBranches} answer a record per branch carrying its name and `
+        + 'its branch_protection classification, then re-probe',
+        observation.observedAt,
+      );
+      return {
+        assertions: { git_access: access, branches: gap, protected_branches: gap },
+        available: true,
+        detail: 'the branch listing was in a shape the probe could not read',
+        intendedScope: [],
+      };
+    }
+    const protectedNames = branches
+      .filter((b) => b['protected'] === true)
+      .map((b) => asString(b['name']))
+      .filter((name): name is string => name !== null);
+    /*
+     * Whether any branch is protected *because nobody could tell*.
+     *
+     * The adapter fails closed: protection lives on the VCS host, and where the host cannot be
+     * reached every branch comes back protected at `UNKNOWN` confidence with `failed_closed`
+     * set ([REPOSITORY_ADAPTER.md](../../../docs/REPOSITORY_ADAPTER.md) section 2.2). That is
+     * the right value to gate on and the wrong thing to call a FACT — "every branch here is
+     * protected" and "we could not read protection for any of them" are different statements
+     * about the repository, and only the second is fixed by granting access. So the list is
+     * stated as an inference over the classifications whenever one of them failed closed, and
+     * the reasoning names which.
+     */
+    const assumed = branches
+      .filter((b) => {
+        const classification = b['protection'];
+        return classification !== null && typeof classification === 'object'
+          && (classification as { failed_closed?: unknown }).failed_closed === true;
+      })
+      .map((b) => asString(b['name']))
+      .filter((name): name is string => name !== null);
     return {
       assertions: {
         git_access: access,
@@ -70,13 +121,21 @@ export const branchesProbe: SectionProbe = {
         branch_count: session.observedFact(
           'git.branches', branches.length, evidence, 'git', observation.observedAt,
         ),
-        protected_branches: session.observedFact(
-          'git.branches',
-          branches.filter((b) => b['protected'] === true).map((b) => asString(b['name'])),
-          evidence,
-          'git',
-          observation.observedAt,
-        ),
+        protected_branches: assumed.length === 0
+          ? session.observedFact(
+            'git.branches', protectedNames, evidence, 'git', observation.observedAt,
+          )
+          : session.derived(
+            'git.branches',
+            protectedNames,
+            evidence.map((e) => e.id),
+            `branch protection could not be read for ${assumed.join(', ')}, and unknown `
+            + 'protection is protected, so those names are here because the classification '
+            + 'failed closed rather than because a host reported them protected',
+            'git',
+            observation.observedAt,
+            evidence,
+          ),
       },
       available: true,
       detail: `${branches.length} branch(es)`,
@@ -100,7 +159,7 @@ export const commitsProbe: SectionProbe = {
   freshnessClass: 'git',
   async run(session, input) {
     const args = input.scope.paths.length > 0 ? { paths: [...input.scope.paths] } : {};
-    const observation = await session.observe({
+    const observation = await observe(session, {
       probe: 'git.commits',
       adapter: GIT,
       op: OPS.git.log,
@@ -165,7 +224,7 @@ export const worktreesProbe: SectionProbe = {
   tier: 2,
   freshnessClass: 'git',
   async run(session, _input) {
-    const observation = await session.observe({
+    const observation = await observe(session, {
       probe: 'git.worktrees',
       adapter: GIT,
       op: OPS.git.listWorktrees,
@@ -203,7 +262,7 @@ export const tagsProbe: SectionProbe = {
   tier: 2,
   freshnessClass: 'git',
   async run(session, _input) {
-    const observation = await session.observe({
+    const observation = await observe(session, {
       probe: 'git.tags',
       adapter: GIT,
       op: OPS.git.listTags,
@@ -219,7 +278,8 @@ export const tagsProbe: SectionProbe = {
         intendedScope: [],
       };
     }
-    const tags = records(observation.value);
+    /* A tag is a ref name and nothing else, so a listing of names is a complete listing. */
+    const tags = namedRecords(observation.value);
     return {
       assertions: {
         tags: session.observedFact(
@@ -251,7 +311,7 @@ export const churnProbe: SectionProbe = {
   freshnessClass: 'git',
   async run(session, input) {
     const args = input.scope.paths.length > 0 ? { paths: [...input.scope.paths] } : {};
-    const observation = await session.observe({
+    const observation = await observe(session, {
       probe: 'git.churn',
       adapter: GIT,
       op: OPS.git.churn,
@@ -293,7 +353,7 @@ export const pullRequestsProbe: SectionProbe = {
   tier: 2,
   freshnessClass: 'git',
   async run(session, _input) {
-    const observation = await session.observe({
+    const observation = await observe(session, {
       probe: 'git.pull_requests',
       adapter: GIT,
       op: OPS.git.listPullRequests,

@@ -1,7 +1,14 @@
 import type { AdapterAvailability } from '@agentos/contracts';
 import { fact, selfEvidence, unavailable, unknown } from '../assertions.js';
-import { OPTIONAL_STRING_ARG, STRING_ARG, readOnlyOperation } from '../define.js';
-import type { OperationRegistration } from '../descriptors.js';
+import {
+  OPTIONAL_STRING_ARG,
+  PATH_LIST_ARG,
+  STRING_ARG,
+  STRING_LIST_ARG,
+  readOnlyOperation,
+} from '../define.js';
+import type { OperationInvocation, OperationRegistration } from '../descriptors.js';
+import { ConfinementAbort } from '../framework.js';
 import { ResourceAbsentError, ResourceUnreachableError, isAbsent, messageOf } from '../errors.js';
 import type { AvailabilityProbe, Connector } from '../ports.js';
 
@@ -32,6 +39,44 @@ export interface ProjectManagementOptions {
 }
 
 const ADAPTER = 'pm';
+
+/**
+ * The selectors a caller actually supplied, or `null` where it supplied none.
+ *
+ * Path selectors are confined element by element on the way through. The framework has already
+ * confined them, but it keys its resolved-path map by argument name and a list has no single
+ * entry there — so this is where the worktree-relative form is taken, and taking it from a
+ * verdict rather than from the raw argument is what stops an unchecked path being handed to a
+ * connector that reaches off the machine.
+ */
+function selectors(
+  invocation: OperationInvocation,
+  names: readonly string[],
+): Readonly<Record<string, unknown>> | null {
+  const out: Record<string, unknown> = {};
+  for (const name of names) {
+    const raw = invocation.args[name];
+    if (typeof raw === 'string' && raw.length > 0) {
+      out[name] = raw;
+      continue;
+    }
+    if (!Array.isArray(raw)) continue;
+    const values = raw.filter((e): e is string => typeof e === 'string' && e.length > 0);
+    if (values.length === 0) continue;
+    out[name] = name.endsWith('_paths') ? values.map((v) => confined(invocation, v)) : values;
+  }
+  if (Object.keys(out).length === 0) return null;
+  /* A bound on the answer is not a reason to ask, so it rides along and never counts as one. */
+  const limit = invocation.args['limit'];
+  if (limit !== undefined) out['limit'] = limit;
+  return out;
+}
+
+function confined(invocation: OperationInvocation, requested: string): string {
+  const verdict = invocation.confine(requested);
+  if (verdict.outcome === 'REFUSED') throw new ConfinementAbort(verdict);
+  return verdict.relative;
+}
 
 export function projectManagementOperations(
   options: ProjectManagementOptions,
@@ -138,14 +183,53 @@ export function projectManagementOperations(
     readOnlyOperation({
       adapter: ADAPTER,
       op: 'search_issues',
-      description: 'Searches the project-management system, or reports why it could not.',
-      args: { query: STRING_ARG, limit: OPTIONAL_STRING_ARG },
-      required: ['query'],
+      description:
+        'Searches the project-management system by free text, by the paths a work item scopes, '
+        + 'by capability or by repository — or reports why it could not.',
+      /*
+       * A free-text `query` alone would make this answerable only by a caller that already
+       * knows the system's own query language, and AgentOS never knows which system it is
+       * talking to: no product name appears anywhere in this file, deliberately. The structured
+       * selectors are the product-neutral form of the same question, and the connector — which
+       * does know what it is — turns them into whatever its index wants.
+       *
+       * `scope_paths` is a path argument, so every element is confined against the worktree
+       * root, the dispatch mandate and the deny-list before it is sent anywhere. That matters
+       * more here than for a local read: there is a network on the other side of this call, and
+       * an unchecked path in an outbound query is an unchecked path that left the machine.
+       */
+      args: {
+        query: STRING_ARG,
+        limit: OPTIONAL_STRING_ARG,
+        scope_paths: PATH_LIST_ARG,
+        capabilities: STRING_LIST_ARG,
+        repositories: STRING_LIST_ARG,
+      },
       evidenceKind: 'ticket',
       observationSafe: true,
       handler: async (invocation) => {
         const at = invocation.now.toISOString();
-        const result = await reach('search', invocation.args, 'pm.search_issues', at);
+        const criteria = selectors(
+          invocation, ['query', 'scope_paths', 'capabilities', 'repositories'],
+        );
+        if (criteria === null) {
+          /*
+           * No selector at all. "Every issue in the system" is not the question any probe meant
+           * to ask, and answering it would put an unbounded listing behind an assertion about
+           * one work item's scope. Nothing was established, and that is what is reported.
+           */
+          return {
+            value: unknown(
+              'pm.search_issues', at, 'INSUFFICIENT_EVIDENCE',
+              'name what to search for: a query, the paths a work item scopes, a capability or '
+              + 'a repository. A search with no criterion is a listing of everything, which is '
+              + 'not evidence about anything',
+              'no search criterion was supplied',
+            ),
+            excerpt: 'project management: no search criterion',
+          };
+        }
+        const result = await reach('search', criteria, 'pm.search_issues', at);
         if (!result.ok) return { value: result.value, excerpt: 'project management: unavailable' };
         return {
           value: fact(result.value, 'pm.search_issues', at, selfEvidence({
@@ -222,15 +306,33 @@ export function projectManagementOperations(
     readOnlyOperation({
       adapter: ADAPTER,
       op: 'list_documents',
-      description: 'Documents attached to a project or work item, as declared intent to be reconciled '
-        + 'against code and runtime rather than believed.',
-      args: { key: STRING_ARG },
-      required: ['key'],
+      description: 'Documents attached to a project or work item, or to the paths a work item scopes, '
+        + 'as declared intent to be reconciled against code and runtime rather than believed.',
+      /*
+       * `key` and `scope_paths` are two routes to the same set, and a caller usually holds only
+       * one of them. Discovery reaches this at tier 2, where it has a scope and may have no
+       * external identity at all — a repository with no project-management key still has
+       * decision records worth reconciling — so requiring the key would make the observation
+       * unreachable for exactly the repositories that need it most.
+       */
+      args: { key: STRING_ARG, scope_paths: PATH_LIST_ARG },
       evidenceKind: 'document',
       observationSafe: true,
       handler: async (invocation) => {
         const at = invocation.now.toISOString();
-        const result = await reach('documents', invocation.args, 'pm.list_documents', at);
+        const criteria = selectors(invocation, ['key', 'scope_paths']);
+        if (criteria === null) {
+          return {
+            value: unknown(
+              'pm.list_documents', at, 'INSUFFICIENT_EVIDENCE',
+              'name a work item key, or the paths a work item scopes. Listing every document a '
+              + 'system holds says nothing about this work',
+              'no document selector was supplied',
+            ),
+            excerpt: 'project management: no document selector',
+          };
+        }
+        const result = await reach('documents', criteria, 'pm.list_documents', at);
         if (!result.ok) return { value: result.value, excerpt: 'project management: unavailable' };
         return {
           value: fact(result.value, 'pm.list_documents', at, selfEvidence({

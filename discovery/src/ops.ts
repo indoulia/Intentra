@@ -49,6 +49,16 @@ export const OPS = {
   },
   git: {
     listBranches: 'list_branches',
+    /**
+     * The remote's default branch, and the remotes themselves.
+     *
+     * Attachment step 1 names both as outputs of *identify*
+     * ([REPOSITORY_ADAPTER.md](../../docs/REPOSITORY_ADAPTER.md) section 1), and neither is
+     * the repository adapter's to answer: it reads files and does not run the VCS. So the
+     * identity probe asks git for the two halves of its own section that only git knows.
+     */
+    defaultBranch: 'default_branch',
+    remotes: 'remotes',
     log: 'log',
     listWorktrees: 'list_worktrees',
     listTags: 'list_tags',

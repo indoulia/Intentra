@@ -112,3 +112,27 @@ export const PATH_ARG = Object.freeze({ type: 'string', minLength: 1, format: 'p
 export const STRING_ARG = Object.freeze({ type: 'string', minLength: 1 });
 export const OPTIONAL_STRING_ARG = Object.freeze({ type: 'string' });
 export const INTEGER_ARG = Object.freeze({ type: 'integer', minimum: 1 });
+
+/**
+ * A list of path arguments.
+ *
+ * `items.format: 'path'` is what the framework reads to decide an argument names paths, and
+ * it confines every element before the handler sees any of them. A path argument that arrives
+ * as a list is still a path argument: declaring the list any other way would take the
+ * confinement off exactly the arguments that need it most.
+ */
+export const PATH_LIST_ARG = Object.freeze({ type: 'array', items: PATH_ARG });
+
+/**
+ * A list of glob patterns.
+ *
+ * Not path arguments, and deliberately so. A pattern like `**` + `/package.json` is not a path
+ * and cannot be resolved to one, so confining it is meaningless; what makes a glob safe is
+ * that it is only ever matched against entries an operation has *already* enumerated beneath
+ * a root the confinement layer approved. `repo.find_files` has declared its `glob` this way
+ * since it was written, and this is the same rule applied to a list of them.
+ */
+export const GLOB_LIST_ARG = Object.freeze({ type: 'array', items: STRING_ARG });
+
+/** A list of opaque identifiers: capability names, repository names, search tokens. */
+export const STRING_LIST_ARG = Object.freeze({ type: 'array', items: STRING_ARG });

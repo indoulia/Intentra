@@ -346,6 +346,73 @@ describe('the real policy set loads', () => {
       'ROOT_CAUSE has no applicability predicate, so no proposal can exclude it',
     );
   });
+
+  /*
+   * D3, stated as an assertion over the shipped data rather than over a mutated copy.
+   *
+   * `critical-criteria-suppliable` is meant to make this hold, and for criterion 1 it did not:
+   * the loader seeded the suppliable set with a `PROLOGUE_CRITERIA = [1]` constant, so the one
+   * criterion `stages.json` gives to no stage was the one criterion the check could not see.
+   * `audit` made criteria 1, 3 and 4 critical, `investigation.readonly` could supply only 3 and
+   * 4, COMPLETION computed INDETERMINATE, and no run in the build could end COMPLETE.
+   *
+   * So the property is asserted here directly, from the data, without going through the check
+   * that was supposed to enforce it.
+   */
+  test('every critical criterion of a template default profile is collected by a stage in that template', () => {
+    for (const [id, template] of policies.templates) {
+      const profile = policies.profile(template.dod_profile_default);
+      const collected = new Set<number>();
+      for (const stage of template.stages) {
+        for (const criterion of policies.descriptor(stage).dod_criteria) collected.add(criterion);
+      }
+      const setAside = new Set(profile.not_applicable_by_default.map((n) => n.criterion));
+      for (const criterion of profile.critical_criteria) {
+        assert.ok(
+          collected.has(criterion) || setAside.has(criterion),
+          `${id} defaults to profile ${profile.profile_id}, which makes criterion ${criterion} `
+          + 'critical, and no stage in the template collects a verdict for it. NOT_VALIDATED is '
+          + 'never MET, so every run of this template would compute INCOMPLETE or INDETERMINATE',
+        );
+      }
+    }
+  });
+
+  /*
+   * The same property one level up, for the profiles no template defaults to. A criterion no
+   * stage descriptor anywhere names cannot be supplied by any run of any template, so making it
+   * critical anywhere is making a profile that can never complete — whether or not a template
+   * currently defaults to it.
+   */
+  test('no profile makes critical a criterion no stage in stages.json collects', () => {
+    const collected = new Set<number>();
+    for (const descriptor of policies.stages.values()) {
+      for (const criterion of descriptor.dod_criteria) collected.add(criterion);
+    }
+    assert.ok(!collected.has(1), 'criterion 1 is Context Discovery\'s, and the prologue is not a stage');
+    for (const profile of policies.dod.profiles) {
+      for (const criterion of profile.critical_criteria) {
+        assert.ok(
+          collected.has(criterion),
+          `profile ${profile.profile_id} makes criterion ${criterion} critical and no stage `
+          + 'collects a verdict for it',
+        );
+      }
+    }
+  });
+
+  /*
+   * And the criterion is not silently dropped from the profiles it genuinely belongs to.
+   * "This does not apply" and "we did not check" are different facts, and a criterion removed
+   * from a profile is invisible rather than explicitly not validated (I-15).
+   */
+  test('criterion 1 stays a non-critical criterion of the capability profiles', () => {
+    for (const id of ['data-capability', 'service-capability', 'ui-capability', 'internal-capability'] as const) {
+      const profile = policies.profile(id);
+      assert.ok(profile.criteria.includes(1), `${id} still reports on criterion 1`);
+      assert.ok(!profile.critical_criteria.includes(1), `${id} does not make criterion 1 critical`);
+    }
+  });
 });
 
 /* ---------------------------------------------------------- the floor, positively ---- */
@@ -638,6 +705,48 @@ describe('a mis-authored policy set fails at load, naming the rule', () => {
       },
       'critical-criteria-suppliable',
       /investigation\.readonly/,
+    );
+  });
+
+  /*
+   * The case the rule was written for and did not catch. Criterion 1 is Context Discovery's,
+   * the prologue is not a stage, and no stage descriptor names it — so putting it back into
+   * `audit` reproduces D3 exactly, and the load must now refuse it.
+   */
+  test('making criterion 1 critical again reproduces D3 and fails load', () => {
+    expectLoadFailure(
+      (root) => {
+        const profile = JSON.parse(readFileSync(join(root, 'dod', 'audit.json'), 'utf8')) as {
+          criteria: number[]; critical_criteria: number[];
+          evidence_requirements: Record<string, unknown>;
+        };
+        profile.criteria.unshift(1);
+        profile.critical_criteria.unshift(1);
+        profile.evidence_requirements['1'] = { kinds: ['document'], note: 'the Context Package' };
+        writeFileSync(join(root, 'dod', 'audit.json'), JSON.stringify(profile, null, 2), 'utf8');
+      },
+      'critical-criteria-suppliable',
+      /criterion 1 critical.*context-discovery owns it/s,
+    );
+  });
+
+  /*
+   * And the same criterion made critical in a profile no template defaults to, which the
+   * template-scoped rule never reaches at all.
+   */
+  test('a criterion no stage anywhere collects fails load even in a profile no template defaults to', () => {
+    expectLoadFailure(
+      (root) => {
+        const profile = JSON.parse(
+          readFileSync(join(root, 'dod', 'data-capability.json'), 'utf8'),
+        ) as { critical_criteria: number[] };
+        profile.critical_criteria.unshift(1);
+        writeFileSync(
+          join(root, 'dod', 'data-capability.json'), JSON.stringify(profile, null, 2), 'utf8',
+        );
+      },
+      'critical-criteria-owned-by-a-stage',
+      /no run of any template could ever supply it/,
     );
   });
 

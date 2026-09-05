@@ -1,8 +1,9 @@
 import type { Evidence, RealityElement, WorkItem } from '@agentos/contracts';
 import { ADAPTERS, OPS } from '../ops.js';
 import type { ProbeInput, RealityProbe, RealityProbeResult } from '../probe.js';
-import { asBoolean, asNumber, asRecord, asString, paths, records } from '../probe.js';
+import { asBoolean, asNumber, asRecord, asString, records } from '../probe.js';
 import type { Observation, ProbeSession } from '../session.js';
+import { listedPaths, observe } from './observation.js';
 
 /**
  * The `current_reality` probe set: where this particular piece of work actually stands.
@@ -93,7 +94,7 @@ async function lookupBranch(
   probe: string,
   workItem: WorkItem | null,
 ): Promise<BranchLookup> {
-  const observation = await session.observe({
+  const observation = await observe(session, {
     probe,
     adapter: GIT,
     op: OPS.git.listBranches,
@@ -129,6 +130,36 @@ interface PullRequestLookup {
   readonly searched: boolean;
 }
 
+/**
+ * The host's own identifier for a pull request, as a string.
+ *
+ * Hosts spell it differently — `id`, `number`, `key` — and the adapter takes whichever one the
+ * host uses, opaque and unparsed. Reading the record's own fields in that order is what keeps
+ * this probe from assuming one host's shape; where none of them is present, the answer is
+ * `null` and the observation is not attempted, because an identifier nobody supplied cannot be
+ * invented.
+ */
+function pullRequestId(pr: Readonly<Record<string, unknown>>): string | null {
+  for (const field of ['id', 'number', 'key']) {
+    const value = pr[field];
+    if (typeof value === 'string' && value.length > 0) return value;
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  }
+  return null;
+}
+
+/** The merge question, as the adapter asks it: a ref, its base, and the host's own id. */
+function mergeStateArgs(pr: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
+  const ref = asString(pr['head_branch']) ?? asString(pr['head_sha']) ?? asString(pr['head']);
+  const base = asString(pr['base_branch']) ?? asString(pr['base']);
+  const id = pullRequestId(pr);
+  return {
+    ...(ref === null ? {} : { ref }),
+    ...(base === null ? {} : { base }),
+    ...(id === null ? {} : { pull_request: id }),
+  };
+}
+
 async function lookupPullRequest(
   session: ProbeSession,
   probe: string,
@@ -143,7 +174,7 @@ async function lookupPullRequest(
   if (branchLookup.branch !== null) args['head'] = branchLookup.branch;
   if (tokens.length > 0) args['search'] = tokens;
 
-  const observation = await session.observe({
+  const observation = await observe(session, {
     probe,
     adapter: GIT,
     op: OPS.git.listPullRequests,
@@ -181,15 +212,25 @@ async function lookupPullRequest(
     return { pr: null, evidence, failure: null, searched: true };
   }
 
-  const detail = await session.observe({
-    probe,
-    adapter: GIT,
-    op: OPS.git.readPullRequest,
-    args: { number: chosen['number'] },
-    kind: 'git',
-    ref: `${GIT}.${OPS.git.readPullRequest} #${String(chosen['number'])}`,
-  });
-  if (detail.outcome === 'OBSERVED') {
+  /*
+   * The host's identifier for the pull request, as a string.
+   *
+   * `number` is one host's spelling of it and not the others'. The adapter takes an opaque
+   * `id`, which is also what it hands back as the external locator an idempotency re-read
+   * follows, so the identifier has to survive as the thing the host itself uses.
+   */
+  const id = pullRequestId(chosen);
+  const detail = id === null
+    ? null
+    : await observe(session, {
+      probe,
+      adapter: GIT,
+      op: OPS.git.readPullRequest,
+      args: { id },
+      kind: 'git',
+      ref: `${GIT}.${OPS.git.readPullRequest} ${id}`,
+    });
+  if (detail !== null && detail.outcome === 'OBSERVED') {
     const full = asRecord(detail.value);
     if (full !== null) {
       return { pr: { ...chosen, ...full }, evidence: [...evidence, detail.evidence], failure: null, searched: true };
@@ -249,7 +290,7 @@ export const implementationProbe: RealityProbe = {
     if (scopePaths.length > 0) logArgs['paths'] = [...scopePaths];
     if (tokens.length > 0) logArgs['message_contains'] = tokens;
 
-    const log = await session.observe({
+    const log = await observe(session, {
       probe: 'reality.implementation',
       adapter: GIT,
       op: OPS.git.log,
@@ -306,7 +347,7 @@ export const testsProbe: RealityProbe = {
     const args: Record<string, unknown> = { globs: [...TEST_GLOBS] };
     if (scopePaths.length > 0) args['under'] = [...scopePaths];
 
-    const listing = await session.observe({
+    const listing = await observe(session, {
       probe: 'reality.tests',
       adapter: REPO,
       op: OPS.repo.listPaths,
@@ -323,7 +364,7 @@ export const testsProbe: RealityProbe = {
       };
     }
 
-    const found = paths(listing.value);
+    const found = listedPaths(listing.value);
     if (found.length === 0) {
       return {
         assertion: session.observedFact(
@@ -354,11 +395,13 @@ export const testsProbe: RealityProbe = {
       };
     }
 
-    const ci = await session.observe({
+    const ci = await observe(session, {
       probe: 'reality.tests',
       adapter: GIT,
       op: OPS.git.ciStatus,
-      args: { sha: headSha },
+      /* A commit sha is a ref. The adapter names the argument for what it accepts — a
+       * branch, a tag or a sha — rather than for the one form this probe happens to hold. */
+      args: { ref: headSha },
       kind: 'git',
       ref: `${GIT}.${OPS.git.ciStatus} ${headSha}`,
     });
@@ -493,11 +536,11 @@ export const ciProbe: RealityProbe = {
       };
     }
 
-    const observation = await session.observe({
+    const observation = await observe(session, {
       probe: 'reality.ci',
       adapter: GIT,
       op: OPS.git.ciStatus,
-      args: { sha: headSha },
+      args: { ref: headSha },
       kind: 'git',
       ref: `${GIT}.${OPS.git.ciStatus} ${headSha}`,
     });
@@ -508,7 +551,7 @@ export const ciProbe: RealityProbe = {
        * degradation for the first is "validation is local only", which is a stated limitation
        * rather than a gap in access.
        */
-      const definitions = await session.observe({
+      const definitions = await observe(session, {
         probe: 'reality.ci',
         adapter: REPO,
         op: OPS.repo.listPaths,
@@ -516,7 +559,7 @@ export const ciProbe: RealityProbe = {
         kind: 'file',
         ref: `${REPO}.${OPS.repo.listPaths} for pipeline definitions`,
       });
-      if (definitions.outcome === 'OBSERVED' && paths(definitions.value).length === 0) {
+      if (definitions.outcome === 'OBSERVED' && listedPaths(definitions.value).length === 0) {
         return {
           assertion: session.notApplicable(
             'reality.ci',
@@ -611,13 +654,33 @@ export const reviewsProbe: RealityProbe = {
       };
     }
 
-    const observation = await session.observe({
+    /*
+     * The reviews hang off the pull request's own identifier, so a record that carries none is
+     * a record this probe cannot follow. Sending an empty identifier would ask the host about a
+     * pull request that does not exist and read its "no reviews" as this one's.
+     */
+    const reviewedId = pullRequestId(lookup.pr);
+    if (reviewedId === null) {
+      return {
+        assertion: session.insufficient(
+          'reality.reviews',
+          'a pull request was found and the record carries no identifier the review host would '
+          + 'recognise, so the review threads cannot be looked up',
+          'have the pull-request host report an id, a number or a key on each record',
+        ),
+        available: true,
+        detail: 'the pull request carries no identifier',
+        intendedScope: [],
+      };
+    }
+
+    const observation = await observe(session, {
       probe: 'reality.reviews',
       adapter: GIT,
       op: OPS.git.listReviews,
-      args: { number: lookup.pr['number'] },
+      args: { pull_request: reviewedId },
       kind: 'git',
-      ref: `${GIT}.${OPS.git.listReviews} #${String(lookup.pr['number'])}`,
+      ref: `${GIT}.${OPS.git.listReviews} ${reviewedId}`,
     });
     if (observation.outcome !== 'OBSERVED') {
       return {
@@ -707,13 +770,54 @@ export const mergeStateProbe: RealityProbe = {
       };
     }
 
-    const observation = await session.observe({
+    /*
+     * A merge question needs something to ask it about: a ref the local history can test, or
+     * the host's own identifier for the change. A record carrying neither leaves the pull
+     * request's own state as the only thing established, which is the weaker answer below.
+     */
+    const mergeArgs = mergeStateArgs(lookup.pr);
+    if (Object.keys(mergeArgs).length === 0) {
+      const state = asString(lookup.pr['state'])?.toUpperCase() ?? null;
+      return {
+        assertion: state === null
+          ? session.insufficient(
+            'reality.merge_state',
+            'the pull request record names neither a branch nor an identifier, so there is '
+            + 'nothing to ask the merge question about',
+            'have the pull-request host report a head branch and a base branch on each record',
+          )
+          : session.derived(
+            'reality.merge_state',
+            { state, mergeable: asBoolean(lookup.pr['mergeable']), conflicted: null, blocked_by_policy: null },
+            lookup.evidence.map((e) => e.id),
+            'the pull request record states its own merge state, and it names neither a branch '
+            + 'pair the local history could test nor an identifier the host would recognise, so '
+            + 'mergeability and policy blocks are not established',
+            'git',
+            session.nowIso(),
+            lookup.evidence,
+          ),
+        available: true,
+        detail: 'the pull request record carries nothing to ask the merge question about',
+        intendedScope: [],
+      };
+    }
+
+    const observation = await observe(session, {
       probe: 'reality.merge_state',
       adapter: GIT,
       op: OPS.git.mergeState,
-      args: { number: lookup.pr['number'] },
+      /*
+       * The branch pair, and the pull request's own identifier where there is one.
+       *
+       * The pair is what makes this answerable with no VCS host at all: the local history can
+       * settle whether the head is an ancestor of the base. Sending only the pull-request
+       * number would make "merged?" unanswerable on every repository whose host AgentOS
+       * cannot reach, which is the case the fail-closed rules exist for.
+       */
+      args: mergeArgs,
       kind: 'git',
-      ref: `${GIT}.${OPS.git.mergeState} #${String(lookup.pr['number'])}`,
+      ref: `${GIT}.${OPS.git.mergeState} ${pullRequestId(lookup.pr) ?? '?'}`,
     });
 
     const prState = asString(lookup.pr['state'])?.toUpperCase() ?? null;
@@ -778,7 +882,7 @@ export const deploymentProbe: RealityProbe = {
   element: 'deployment',
   freshnessClass: 'runtime',
   async run(session, input): Promise<RealityProbeResult> {
-    const environments = await session.observe({
+    const environments = await observe(session, {
       probe: 'reality.deployment',
       adapter: RUNTIME,
       op: OPS.runtime.listEnvironments,
@@ -824,7 +928,7 @@ export const deploymentProbe: RealityProbe = {
     for (const environment of records(environments.value)) {
       const name = asString(environment['name']);
       if (name === null) continue;
-      const observation = await session.observe({
+      const observation = await observe(session, {
         probe: 'reality.deployment',
         adapter: RUNTIME,
         op: OPS.runtime.deployedVersion,
@@ -905,15 +1009,19 @@ export const outcomeProbe: RealityProbe = {
       };
     }
 
-    const observation = await session.observe({
+    const observation = await observe(session, {
       probe: 'reality.outcome',
       adapter: RUNTIME,
       op: OPS.runtime.outcomeEvidence,
+      /* `outcome` is the statement to be checked and is what the adapter requires; the rest is
+       * context telling the runtime where to look, never a substitute for it. */
       args: {
+        outcome: workItem.desired_outcome,
         work_item_id: workItem.work_item_id,
-        desired_outcome: workItem.desired_outcome,
-        scope_paths: [...workItem.scope.paths],
-        capabilities: [...workItem.scope.capabilities],
+        ...(workItem.scope.paths.length === 0 ? {} : { scope_paths: [...workItem.scope.paths] }),
+        ...(workItem.scope.capabilities.length === 0
+          ? {}
+          : { capabilities: [...workItem.scope.capabilities] }),
       },
       kind: 'query',
       ref: `${RUNTIME}.${OPS.runtime.outcomeEvidence} for ${workItem.work_item_id}`,
@@ -978,7 +1086,7 @@ export const childrenProbe: RealityProbe = {
       };
     }
 
-    const ledger = await session.observe({
+    const ledger = await observe(session, {
       probe: 'reality.children',
       adapter: HOST,
       op: OPS.host.readChildWorkItems,
@@ -990,7 +1098,7 @@ export const childrenProbe: RealityProbe = {
     const external = workItem.external_identity;
     const pm = external === null
       ? null
-      : await session.observe({
+      : await observe(session, {
         probe: 'reality.children',
         adapter: ADAPTERS.pm,
         op: OPS.pm.listChildren,
@@ -1116,7 +1224,7 @@ export const historyProbe: RealityProbe = {
       };
     }
 
-    const observation = await session.observe({
+    const observation = await observe(session, {
       probe: 'reality.agentos_history',
       adapter: HOST,
       op: OPS.host.readRunHistory,

@@ -15,6 +15,7 @@ import {
   recover,
   runRecord,
 } from '../src/recovery.js';
+import { stageFromCursor, stagesRemaining } from '../src/entry-stage.js';
 import { Journal } from '../src/journal.js';
 import { FixedClock, FixtureAdapters, harness } from './doubles.js';
 
@@ -254,6 +255,181 @@ describe('the projection is a pure function of the log', () => {
     assert.equal(record.work_item_id, made.workItemId);
     assert.equal(record.graph.template_id, 'defect.standard');
     assert.equal(record.current_stage, 'AUDIT');
+  });
+});
+
+/* ============================================ the stage that did not finish ==== */
+
+/**
+ * A stage the run *left* is completed. A stage the run *stopped at* is not.
+ *
+ * `BLOCKED` is semi-terminal and resumable, and the design's rule is that the pre-block stage
+ * is recorded so the run resumes in place. Marking the `from` stage `COMPLETED` on the
+ * escalation said the opposite: a stage that blocked — including one that never dispatched at
+ * all, because no model was reachable — read as done, and every reader of the cursor then
+ * pointed past it. `CANCELLED` has the same shape for the same reason.
+ *
+ * These tests exist because the whole suite passed both with and without that rule, which
+ * means nothing was pinning it.
+ */
+describe('a stage the run blocked at is not a stage the run completed', () => {
+  /** A log that reaches `stage` normally and then escalates out of it. */
+  function stoppedAt(to: 'BLOCKED' | 'CANCELLED') {
+    return fixture((journal) => {
+      journal.run('run_started', {
+        run_id: 'run_20260904T100000Z_000001', holder: 'operator@example.com', reason: 'NEW',
+      });
+      journal.run('workflow_admitted', {
+        graph: graph(), admissible_templates: ['defect.standard'], checks: [],
+      });
+      journal.run('entry_stage_computed', { entry_stage: 'AUDIT', walk: [] });
+      journal.run('transition', {
+        from: 'AUDIT', to: 'ROOT_CAUSE', trigger: 'envelope.COMPLETE', edge_kind: 'advance',
+        proposed_by: null, proposed_stage: null, overridden: false, evidence: [],
+      });
+      /*
+       * ROOT_CAUSE never dispatched: no model was reachable, so there is no envelope and no
+       * dispatch result. This is the case the rule is really about — the stage did not merely
+       * fail to finish, it never ran.
+       */
+      journal.run('dispatch_result', {
+        outcome: 'FAILED',
+        envelope_id: null,
+        failure_reason: 'NO_MODEL',
+        detail: 'no reachable model meets the declared requirement',
+        cost: { input_tokens: 0, output_tokens: 0 },
+      }, { stage: 'ROOT_CAUSE', dispatchId: 'd_0002', agent: 'auditor' });
+      journal.run('transition', {
+        from: 'ROOT_CAUSE', to, trigger: 'EXTERNAL_DEPENDENCY', edge_kind: 'escalate',
+        proposed_by: null, proposed_stage: null, overridden: false, evidence: [],
+      });
+    });
+  }
+
+  function projectionOf(made: ReturnType<typeof stoppedAt>) {
+    return project(made.harness.store.readRunLog(made.workItemId, made.runId).records);
+  }
+
+  test('a run that blocks at a stage does not project that stage as COMPLETED', () => {
+    const projection = projectionOf(stoppedAt('BLOCKED'));
+    assert.equal(
+      projection.cursor.find((c) => c.stage === 'ROOT_CAUSE')?.state,
+      'ACTIVE',
+      'the stage the run stopped at is where the run still is, not somewhere it has been',
+    );
+    assert.notEqual(
+      projection.cursor.find((c) => c.stage === 'ROOT_CAUSE')?.state,
+      'COMPLETED',
+      'a stage that never dispatched has not completed, and the projection every recovery '
+      + 'decision is rebuilt from must not say it did',
+    );
+    assert.equal(
+      projection.cursor.find((c) => c.stage === 'AUDIT')?.state,
+      'COMPLETED',
+      'the stage the run genuinely left is still completed: the rule applies to the '
+      + 'escalation, not to every transition',
+    );
+    assert.equal(projection.currentStage, 'BLOCKED');
+    assert.equal(projection.preBlockStage, 'ROOT_CAUSE');
+  });
+
+  test('stageFromCursor after a block returns the stage that blocked, not the one after it', () => {
+    const made = stoppedAt('BLOCKED');
+    const projection = projectionOf(made);
+    assert.equal(
+      stageFromCursor(projection.cursor, graph()),
+      'ROOT_CAUSE',
+      'the run resumes in place. Reading the blocked stage as done leaves nothing ACTIVE and '
+      + 'nothing PENDING, and the cursor then answers with a stage the run never reached',
+    );
+    assert.notEqual(
+      stageFromCursor(projection.cursor, graph()),
+      'COMPLETION',
+      'which is what it answered while a blocked stage read as completed: the run would have '
+      + 'resumed at COMPLETION, judging work that never happened',
+    );
+  });
+
+  test('stagesRemaining after a block still contains the stage that blocked', () => {
+    const projection = projectionOf(stoppedAt('BLOCKED'));
+    const remaining = stagesRemaining(projection.cursor, graph());
+    assert.ok(
+      remaining.includes('ROOT_CAUSE'),
+      'the stage still owes its outputs, so it is still outstanding',
+    );
+    assert.ok(
+      !remaining.includes('AUDIT'),
+      'and the stage the run really did leave is not',
+    );
+  });
+
+  test('a blocked run resumes in place rather than a stage past the block', () => {
+    /*
+     * The whole point, stated as the recovery path states it: replay the log, rebuild the
+     * cursor, and ask the cursor where the run was. Nothing re-derives the entry stage.
+     */
+    const made = stoppedAt('BLOCKED');
+    const outcome = recover(
+      made.harness.store, made.workItemId, made.runId, () => { /* no torn line */ },
+    );
+    const resumeAt = stageFromCursor(outcome.projection.cursor, graph());
+    assert.equal(resumeAt, 'ROOT_CAUSE');
+    assert.equal(
+      resumeAt, outcome.projection.preBlockStage,
+      'the cursor and the recorded pre-block stage agree, which is what makes "resume in '
+      + 'place" one fact rather than two that can disagree',
+    );
+    assert.ok(stagesRemaining(outcome.projection.cursor, graph()).includes('ROOT_CAUSE'));
+  });
+
+  test('a cancelled run leaves the stage it stopped at unfinished too', () => {
+    const projection = projectionOf(stoppedAt('CANCELLED'));
+    assert.equal(
+      projection.cursor.find((c) => c.stage === 'ROOT_CAUSE')?.state,
+      'ACTIVE',
+      'the run stopped at that stage, it did not finish it',
+    );
+    assert.equal(projection.currentStage, 'CANCELLED');
+    assert.equal(
+      stageFromCursor(projection.cursor, graph()), 'ROOT_CAUSE',
+      'a cancelled run that is looked at afterwards says where it stopped',
+    );
+    assert.ok(stagesRemaining(projection.cursor, graph()).includes('ROOT_CAUSE'));
+    assert.equal(
+      projection.preBlockStage, null,
+      'CANCELLED is not BLOCKED: there is no pre-block stage to resume from, which is why the '
+      + 'cursor has to carry the truth on its own',
+    );
+  });
+
+  test('COMPLETION -> COMPLETE still completes COMPLETION, so the rule does not over-apply', () => {
+    /*
+     * The guard on the other side. Only a stage genuinely left behind is `COMPLETED`, and
+     * `COMPLETION -> COMPLETE` is exactly that: the stage really did finish. A rule that
+     * marked every `from` stage `ACTIVE` would be as wrong in the other direction.
+     */
+    const made = fixture((journal) => {
+      journal.run('run_started', {
+        run_id: 'run_20260904T100000Z_000001', holder: 'operator@example.com', reason: 'NEW',
+      });
+      journal.run('workflow_admitted', {
+        graph: graph(), admissible_templates: ['defect.standard'], checks: [],
+      });
+      journal.run('transition', {
+        from: 'COMPLETION', to: 'COMPLETE', trigger: 'envelope.COMPLETE', edge_kind: 'terminal',
+        proposed_by: null, proposed_stage: null, overridden: false, evidence: [],
+      });
+    });
+    const projection = projectionOf(made);
+    assert.equal(
+      projection.cursor.find((c) => c.stage === 'COMPLETION')?.state,
+      'COMPLETED',
+    );
+    assert.equal(projection.currentStage, 'COMPLETE');
+    assert.ok(
+      !stagesRemaining(projection.cursor, graph()).includes('COMPLETION'),
+      'a completed COMPLETION is not still outstanding',
+    );
   });
 });
 

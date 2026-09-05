@@ -49,6 +49,14 @@ export const WINDOWS = {
   agentos: 86_400_000,
 } as const;
 
+/**
+ * A world's answer to one operation.
+ *
+ * May be asynchronous, because the strongest fixture a world can hold is the **real adapter
+ * handler**, invoked with the arguments the probe really passed. `FakeAdapters.call` awaits
+ * what a responder returns, so a world built out of real answers is read exactly as a world
+ * built out of literals — which is what lets the conformance check compare the two.
+ */
 export type Responder = (args: Readonly<Record<string, unknown>>) => unknown;
 
 export interface FakeWorld {
@@ -84,8 +92,24 @@ export function allOperations(): readonly string[] {
   return out;
 }
 
+/** One call as the probe made it, before anything narrowed or digested it. */
+export interface ProbeRequest {
+  readonly adapter: string;
+  readonly op: string;
+  readonly args: Readonly<Record<string, unknown>>;
+}
+
 export class FakeAdapters implements AdapterRegistry {
   readonly calls: CallRecord[] = [];
+  /**
+   * Every call's arguments, kept whole.
+   *
+   * `CallRecord.args_digest` is a rendering and the conformance check needs the values, so the
+   * requests are recorded beside the records. This is what lets a test validate what the probes
+   * actually pass against the schemas the real adapters actually declare, rather than against a
+   * restatement of them that can drift on its own.
+   */
+  readonly requests: ProbeRequest[] = [];
   #callNumber = 0;
 
   constructor(private readonly world: FakeWorld = {}) {}
@@ -125,13 +149,14 @@ export class FakeAdapters implements AdapterRegistry {
     });
   }
 
-  call(
+  async call(
     adapter: string,
     op: string,
     args: Readonly<Record<string, unknown>>,
     context: AdapterCallContext,
   ): Promise<AdapterCallOutcome> {
     this.#callNumber += 1;
+    this.requests.push({ adapter, op, args });
     const key = `${adapter}.${op}`;
     const call: CallRecord = {
       call_id: `c_${String(this.#callNumber).padStart(3, '0')}`,
@@ -139,7 +164,7 @@ export class FakeAdapters implements AdapterRegistry {
       adapter,
       op,
       args_digest: JSON.stringify(args),
-      paths_touched: pathsTouched(args),
+      paths_touched: pathsTouched(adapter, args),
       capabilities_touched: [],
       outcome: 'OK',
       refusal: null,
@@ -152,75 +177,72 @@ export class FakeAdapters implements AdapterRegistry {
     if (path !== null && (this.world.denied ?? []).some((d) => path.startsWith(d))) {
       const refused: CallRecord = { ...call, outcome: 'REFUSED', refusal: 'security_violation' };
       this.calls.push(refused);
-      return Promise.resolve({
+      return {
         outcome: 'REFUSED',
         refusal: 'security_violation',
         message: `${path} matches the absolute deny-list`,
         call: refused,
-      });
+      };
     }
 
     const refusal = this.world.refusals?.[key];
     if (refusal !== undefined) {
       const refused: CallRecord = { ...call, outcome: 'REFUSED', refusal };
       this.calls.push(refused);
-      return Promise.resolve({
+      return {
         outcome: 'REFUSED',
         refusal,
         message: `${key} was refused as a ${refusal}`,
         call: refused,
-      });
+      };
     }
 
     const error = this.world.errors?.[key];
     if (error !== undefined) {
       const failed: CallRecord = { ...call, outcome: 'ERROR' };
       this.calls.push(failed);
-      return Promise.resolve({ outcome: 'ERROR', message: error, call: failed });
+      return { outcome: 'ERROR', message: error, call: failed };
     }
 
     if (!(key in (this.world.responses ?? {}))) {
       const failed: CallRecord = { ...call, outcome: 'ERROR' };
       this.calls.push(failed);
-      return Promise.resolve({
+      return {
         outcome: 'ERROR',
         message: `the world records no result for ${key}`,
         call: failed,
-      });
+      };
     }
 
     this.calls.push(call);
-    return Promise.resolve({
+    return {
       outcome: 'OK',
-      value: resolve(this.world.responses?.[key], args),
+      value: await resolve(this.world.responses?.[key], args),
       call,
       mutations: [] as readonly MutationEvent[],
-    });
+    };
   }
 
-  replay(locator: Locator, _context: AdapterCallContext): Promise<ReplayResult> {
+  async replay(locator: Locator, _context: AdapterCallContext): Promise<ReplayResult> {
     const key = `${locator.adapter}.${String(locator.op)}`;
     if ((this.world.replayRefuses ?? []).includes(key)) {
-      return Promise.resolve({
+      return {
         outcome: 'REFUSED',
         reason: `${key} is not observation_safe, so the kernel will not replay it`,
-      });
+      };
     }
     if (locator.op === null || this.descriptor(locator.adapter, locator.op) === undefined) {
-      return Promise.resolve({
-        outcome: 'UNREPLAYABLE',
-        reason: `${key} names no replayable operation`,
-      });
+      return { outcome: 'UNREPLAYABLE', reason: `${key} names no replayable operation` };
     }
     if (key in (this.world.drift ?? {})) {
-      const value = resolve(this.world.drift?.[key], locator.args);
-      return Promise.resolve({ outcome: 'OK', value, excerpt: JSON.stringify(value) });
+      const value = await resolve(this.world.drift?.[key], locator.args);
+      return { outcome: 'OK', value, excerpt: JSON.stringify(value) };
     }
     if (!(key in (this.world.responses ?? {}))) {
-      return Promise.resolve({ outcome: 'UNREPLAYABLE', reason: `nothing recorded at ${key}` });
+      return { outcome: 'UNREPLAYABLE', reason: `nothing recorded at ${key}` };
     }
-    const value = resolve(this.world.responses?.[key], locator.args);
-    return Promise.resolve({ outcome: 'OK', value, excerpt: JSON.stringify(value) });
+    const value = await resolve(this.world.responses?.[key], locator.args);
+    return { outcome: 'OK', value, excerpt: JSON.stringify(value) };
   }
 
   classify(kind: Classification['kind'], subject: string): Promise<Classification> {
@@ -239,8 +261,11 @@ export class FakeAdapters implements AdapterRegistry {
   }
 }
 
-function resolve(value: unknown, args: Readonly<Record<string, unknown>>): unknown {
-  return typeof value === 'function' ? (value as Responder)(args) : value;
+async function resolve(
+  value: unknown,
+  args: Readonly<Record<string, unknown>>,
+): Promise<unknown> {
+  return typeof value === 'function' ? await (value as Responder)(args) : value;
 }
 
 function detailFor(adapter: string, state: AdapterAvailability['state']): string {
@@ -256,7 +281,10 @@ function detailFor(adapter: string, state: AdapterAvailability['state']): string
   }
 }
 
-function pathsTouched(args: Readonly<Record<string, unknown>>): readonly string[] {
+function pathsTouched(
+  adapter: string,
+  args: Readonly<Record<string, unknown>>,
+): readonly string[] {
   const out: string[] = [];
   const push = (value: unknown): void => {
     if (typeof value === 'string') out.push(value);
@@ -267,6 +295,13 @@ function pathsTouched(args: Readonly<Record<string, unknown>>): readonly string[
   push(args['path']);
   push(args['under']);
   if (out.length === 0) push(args['globs']);
+  /*
+   * The repository adapter's whole-worktree operations take no arguments and report the
+   * worktree root as the path they touched. The double says the same, because coverage is
+   * computed from these reports and a double that reported nothing would let a probe claim
+   * coverage the real adapter would not have supported.
+   */
+  if (out.length === 0 && adapter === 'repo') out.push('.');
   return out;
 }
 

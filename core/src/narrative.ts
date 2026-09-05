@@ -45,12 +45,28 @@ export function narrate(
   sections.push(authorizationSection(events));
   sections.push(completionSection(events));
 
-  const populated = sections.filter((section) => section.lines.length > 0);
+  const guarded = sections.map((section) => ({
+    heading: section.heading,
+    lines: section.lines.map(withoutDanglingColon).filter((line) => line.length > 0),
+  }));
+  const populated = guarded.filter((section) => section.lines.length > 0);
   const text = populated
     .map((section) => `## ${section.heading}\n\n${section.lines.map((l) => `- ${l}`).join('\n')}`)
     .join('\n\n');
 
   return { sections: populated, text };
+}
+
+/**
+ * A line that promised a reason and then supplied none.
+ *
+ * Rendering a list that turned out to be empty leaves `…: ` dangling, and a sentence that
+ * stops mid-clause reads as a run that stopped for no reason. Every caller below states its
+ * own reason where it has one; this is the structural backstop that keeps a missing one from
+ * reaching a reader as a half-sentence rather than as a visible gap.
+ */
+function withoutDanglingColon(line: string): string {
+  return line.replace(/\s*[:—-]\s*$/, '').trimEnd();
 }
 
 /**
@@ -130,10 +146,30 @@ function resolutionSection(
 
   const rejected = events.filter((e) => e.event === 'work_item_rejected');
   for (const event of rejected) {
+    /*
+     * Every check that stopped the proposal, not only the ones that failed.
+     *
+     * An unreachable external identity records INDETERMINATE — the source could not be
+     * reached, so nothing was established either way — and rendering FAIL alone left this line
+     * ending in a colon with nothing after it. A blocked run whose narrative does not say why
+     * is exactly the failure the narrative obligation exists to prevent: unknown state read as
+     * a run that stopped for no stated reason.
+     */
+    const reasons = event.data.checks
+      .filter((c) => c.result === 'FAIL' || c.result === 'INDETERMINATE')
+      .map((c) => `${c.check} ${c.result} — ${c.detail}`);
+    const what = event.data.next === 'BLOCKED'
+      ? `the resolution proposal on attempt ${event.data.attempt} was not admitted and the run `
+        + 'blocked rather than being refused: the request is admissible and something it '
+        + 'depends on is not'
+      : `a resolution proposal was refused on attempt ${event.data.attempt} and `
+        + `${event.data.next.toLowerCase()} followed`;
     lines.push(
-      `a resolution proposal was refused on attempt ${event.data.attempt} and `
-      + `${event.data.next.toLowerCase()} followed: `
-      + event.data.checks.filter((c) => c.result === 'FAIL').map((c) => c.detail).join('; '),
+      `${what}: `
+      + (reasons.length > 0
+        ? reasons.join('; ')
+        : 'no admission check recorded a reason, which is itself the finding — a stop the log '
+          + 'cannot account for is a kernel defect, not a quiet success'),
     );
   }
 

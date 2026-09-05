@@ -19,6 +19,7 @@ import {
   seededSampler,
 } from '../replay/ports.js';
 import {
+  admitIntake,
   buildKernel,
   identityResolverFor,
   intakeRereaderFor,
@@ -321,6 +322,11 @@ export function parseWorkArguments(args: readonly string[]): ArgumentParse {
  * re-reads it. For a ticket, the ticket is the source: the operator naming a key is not the
  * request, it is a pointer at one, and "the ticket said X" has to be checkable rather than
  * remembered.
+ *
+ * The pointer is then dereferenced by `admitIntake` before the run starts, so that the text
+ * hashed into the `IntakeRecord` and the text this locator re-reads at `COMPLETION` are the
+ * same text. They were not, which is D4: the hash was over the key and the re-read over the
+ * body, so the comparison could only ever say `CHANGED`.
  */
 export function sourceLocatorFor(source: IntakeSource, raw: string): Locator {
   if (source === 'PROJECT_MANAGEMENT') {
@@ -347,10 +353,20 @@ async function work(args: readonly string[], io: CliIo): Promise<number> {
 
   reportBuild(built, io);
 
+  const admitted = await admitIntake(built, sourceLocatorFor(source, raw), raw);
+  if (admitted.unresolved !== null) {
+    /*
+     * Printed rather than swallowed. The run proceeds on what the operator typed, and the
+     * reason it has nothing else is the reason the drift check will say `UNAVAILABLE` at the
+     * end — so it is said once, here, where it can still be acted on.
+     */
+    io.err(`intake      the source was not re-readable: ${admitted.unresolved}`);
+  }
+
   const result = await built.kernel.work({
     source,
-    sourceLocator: sourceLocatorFor(source, raw),
-    raw,
+    sourceLocator: admitted.locator,
+    raw: admitted.raw,
     resolveIdentity: identityResolverFor(built),
     rereadIntake: intakeRereaderFor(built),
   });

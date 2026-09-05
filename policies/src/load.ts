@@ -95,12 +95,9 @@ export interface PolicySet {
   profile(id: DodProfileId): DodProfile;
   /** Stages a proposal may exclude, grouped by the predicate whose `FALSE` excludes them. */
   exclusionGroups(templateId: string): ReadonlyMap<string, readonly TemplateStage[]>;
-  /** Which criteria the roles owning these stages can supply, plus the prologue's. */
+  /** Which criteria the stages of a graph collect verdicts for. */
   suppliableCriteria(stages: readonly TemplateStage[]): ReadonlySet<DodCriterionId>;
 }
-
-/** Criteria the prologue supplies, whatever template is selected. */
-const PROLOGUE_CRITERIA: readonly DodCriterionId[] = [1];
 
 export function loadPolicies(root?: string): PolicySet {
   const source = new PolicyDataSource(root);
@@ -250,8 +247,24 @@ export function loadPolicies(root?: string): PolicySet {
     stagesByRole.set(descriptor.default_agent, list);
   }
 
+  /**
+   * The criteria a graph of these stages can produce a verdict for.
+   *
+   * Seeded empty, and that is the whole of the fix for D3. It used to be seeded with a
+   * `PROLOGUE_CRITERIA = [1]` constant, on the reasoning that `CONTEXT_DISCOVERY` runs in
+   * every run and owns criterion 1. The stage does run; it supplies no verdict. A criterion
+   * verdict reaches `computeDod` only inside an accepted `HandoffEnvelope`, the prologue
+   * dispatches no mandate that produces one, and `DOD_VERDICT_CRITERION_NOT_OWNED` refuses a
+   * verdict from any stage whose descriptor does not list the criterion. So the constant
+   * exempted from this check the one criterion no stage in `stages.json` owns — which is
+   * precisely the criterion the check exists to catch — and every profile making it critical
+   * loaded clean and could never reach `COMPLETE`.
+   *
+   * A check may only assert what the policy data states. That a stage supplies a criterion is
+   * stated in `stages.json` and nowhere else, so this reads `stages.json` and nothing else.
+   */
   function suppliableCriteria(stages: readonly TemplateStage[]): ReadonlySet<DodCriterionId> {
-    const set = new Set<DodCriterionId>(PROLOGUE_CRITERIA);
+    const set = new Set<DodCriterionId>();
     for (const stage of stages) {
       const descriptor = descriptors.get(stage);
       if (descriptor === undefined) continue;
@@ -433,6 +446,12 @@ export function loadPolicies(root?: string): PolicySet {
     }
   }
 
+  /** Every criterion some stage descriptor collects a verdict for, over the whole stage set. */
+  const collectedByAnyStage = new Set<DodCriterionId>();
+  for (const descriptor of descriptors.values()) {
+    for (const criterion of descriptor.dod_criteria) collectedByAnyStage.add(criterion);
+  }
+
   for (const profile of dod.profiles) {
     const file = `dod/${profile.profile_id}.json`;
     const declared = new Set(profile.criteria);
@@ -449,6 +468,24 @@ export function loadPolicies(root?: string): PolicySet {
       if (!declared.has(criterion)) {
         fail(file, 'critical-criteria-declared',
           `criterion ${criterion} is critical and not in this profile's criteria`);
+      }
+      /*
+       * `critical-criteria-suppliable` asks whether the template that defaults to this
+       * profile can supply it. That leaves two holes, and D3 fell through both: a profile no
+       * template defaults to is never checked at all, and a criterion no stage anywhere owns
+       * fails for every template rather than being named once at its cause. So the stronger
+       * statement is made here, against every profile whether or not a template defaults to
+       * it: a criterion `stages.json` gives to no stage cannot be supplied by any run of any
+       * template, so making it critical is making a profile that can only ever compute
+       * INCOMPLETE or INDETERMINATE. Non-critical is the legitimate case (I-15): it comes out
+       * NOT_VALIDATED, is visible in the completion report, and is COMPLETE_WITH_GAPS.
+       */
+      if (!collectedByAnyStage.has(criterion)) {
+        const owner = criterionOwner.get(criterion);
+        fail(file, 'critical-criteria-owned-by-a-stage',
+          `criterion ${criterion} is critical and no stage in stages.json collects a verdict `
+          + `for it (${owner?.owner_role ?? 'unknown'} owns it, and no stage descriptor names `
+          + 'it), so no run of any template could ever supply it');
       }
     }
     for (const entry of profile.not_applicable_by_default) {

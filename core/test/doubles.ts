@@ -18,8 +18,10 @@ import {
   type Classification,
   type Clock,
   type ContextPackage,
+  type CriterionVerdict,
   type CurrentReality,
   type DiscoveryPort,
+  type Evidence,
   type HandoffEnvelope,
   type HostIdentity,
   type HumanChannel,
@@ -34,6 +36,7 @@ import {
   type ReplayResult,
   type Scope,
   type SkillEntry,
+  type Stage,
   type SubstrateResult,
   type ToolGrant,
   type ToolInvoker,
@@ -273,7 +276,17 @@ export class FixtureAdapters implements AdapterRegistry {
     };
   }
 
-  async replay(locator: Locator, _context: AdapterCallContext): Promise<ReplayResult> {
+  /**
+   * A replay, under the same mandate a call runs under.
+   *
+   * This double used to ignore its call context entirely, which is why no unit test noticed
+   * that the kernel replayed the resolution envelope's evidence under a mandate admitting no
+   * path at all. A double that ignores the constraint it is standing in for cannot fail the
+   * way the real adapter fails, so it certifies the wrong thing. The rule is the real
+   * `adapters/src/paths.ts` rule: `out_of_scope` beats `in_scope`, and an absent scope is not
+   * an unlimited one — an empty `in_scope` admits nothing.
+   */
+  async replay(locator: Locator, context: AdapterCallContext): Promise<ReplayResult> {
     if (this.options.refuseReplay === true) {
       return {
         outcome: 'REFUSED',
@@ -282,12 +295,34 @@ export class FixtureAdapters implements AdapterRegistry {
           + 'will not replay it. Verification cannot itself mutate',
       };
     }
+
+    const replayed = typeof locator.args['path'] === 'string' ? locator.args['path'] : null;
+    if (replayed !== null) {
+      const covers = (patterns: readonly string[]): boolean =>
+        patterns.some((entry) => replayed.startsWith(entry.replace(/\*+$/, '')));
+      if (covers(context.mandate.out_of_scope)) {
+        return {
+          outcome: 'REFUSED',
+          reason: `${replayed} matches the mandate's out_of_scope patterns`,
+        };
+      }
+      if (!covers(context.mandate.in_scope)) {
+        return {
+          outcome: 'REFUSED',
+          reason: context.mandate.in_scope.length === 0
+            ? `the mandate admits no paths at all, so ${replayed} is out of scope. An absent `
+              + 'scope is not an unlimited one'
+            : `${replayed} is not covered by the mandate's in_scope patterns `
+              + `(${context.mandate.in_scope.join(', ')})`,
+        };
+      }
+    }
+
     const key = `${locator.adapter}.${String(locator.op)}`;
     const recorded = this.options.replays?.get(key);
     if (recorded !== undefined) return recorded;
 
-    const path = typeof locator.args['path'] === 'string' ? locator.args['path'] : null;
-    const file = (this.options.files ?? []).find((f) => f.path === path);
+    const file = (this.options.files ?? []).find((f) => f.path === replayed);
     if (file === undefined) {
       return {
         outcome: 'UNREPLAYABLE',
@@ -612,16 +647,27 @@ export function defaultSpecs(): readonly AgentSpecView[] {
 /** The failure reasons a substrate can report, extracted from the port's own union. */
 export type SubstrateFailure = Extract<SubstrateResult, { outcome: 'FAILED' }>['failure'];
 
+/**
+ * Which dispatch a scripted response is for, where the position alone cannot say it.
+ *
+ * A script is positional, and that is right for envelopes: an envelope declares the stage it
+ * answers, so a recording and the run it drives agree by construction. A `FAILED` or
+ * `NON_CONFORMING` response declares nothing, so a test that wants the *context* dispatch to
+ * fail has no way to say so — the substrate would answer that dispatch from its own default and
+ * hand the failure to the next one. `stage` says it.
+ */
+export type ScriptedFor = { readonly stage?: Stage };
+
 export type ScriptedResponse =
-  | { readonly kind: 'ENVELOPE'; readonly envelope: unknown }
-  | { readonly kind: 'FAILED'; readonly failure: SubstrateFailure; readonly detail: string }
-  | { readonly kind: 'NON_CONFORMING'; readonly unexpected: readonly string[] }
-  | {
+  | ({ readonly kind: 'ENVELOPE'; readonly envelope: unknown } & ScriptedFor)
+  | ({ readonly kind: 'FAILED'; readonly failure: SubstrateFailure; readonly detail: string } & ScriptedFor)
+  | ({ readonly kind: 'NON_CONFORMING'; readonly unexpected: readonly string[] } & ScriptedFor)
+  | ({
     /** Calls a tool before answering, so the call log and mutation events are real. */
     readonly kind: 'CALLS_THEN_ENVELOPE';
     readonly calls: readonly { readonly tool: string; readonly args: Record<string, unknown> }[];
     readonly envelope: (results: readonly unknown[]) => unknown;
-  };
+  } & ScriptedFor);
 
 /**
  * A substrate that returns recorded envelopes.
@@ -652,8 +698,6 @@ export class ScriptedSubstrate implements AgentSubstrate {
 
   async dispatch(input: InputPackage, invoker: ToolInvoker): Promise<SubstrateResult> {
     this.dispatched.push(input);
-    const response = this.script[this.#index];
-    this.#index += 1;
 
     const expected = input.tools_granted.map((g) => g.tool_name);
     const conforming: ToolSurfaceReport = {
@@ -666,6 +710,34 @@ export class ScriptedSubstrate implements AgentSubstrate {
       detail: 'the fixture substrate exposes exactly the granted tool set',
     };
     const cost = { input_tokens: 1000, output_tokens: 100, usd: 0.05 };
+
+    /*
+     * The prologue's `context` dispatch, where the script does not answer it.
+     *
+     * `CONTEXT_DISCOVERY` dispatches `context-discovery/context` in every run, and a recording
+     * made before that dispatch existed has no response for it. The double answers such a
+     * dispatch itself — **without consuming a scripted response**, so a recording's positions
+     * still line up with the dispatches it was recorded against — and it answers honestly: a
+     * `PARTIAL` naming the recording it does not have, and `NOT_VALIDATED` for every criterion
+     * the dispatch owed, because nothing judged them. A double that answered `MET` here would
+     * be manufacturing the very verdict the dispatch exists to obtain.
+     *
+     * A script that *does* carry a CONTEXT_DISCOVERY envelope at this position keeps it: that
+     * is how a test says what the context mandate returned.
+     */
+    if (input.stage === 'CONTEXT_DISCOVERY' && !answersContext(this.script[this.#index])) {
+      const examined = await readInScope(input, invoker);
+      return {
+        outcome: 'ENVELOPE',
+        envelope: stamp(unrecordedContextEnvelope(input, examined), input),
+        toolSurface: conforming,
+        cost,
+        model: input.model,
+      };
+    }
+
+    const response = this.script[this.#index];
+    this.#index += 1;
 
     if (response === undefined) {
       return {
@@ -769,6 +841,152 @@ export class ScriptedSubstrate implements AgentSubstrate {
  * has to look deliberate, because an envelope that silently answers a stale dispatch is one
  * of the failures the reconciliations exist to catch.
  */
+/** Whether a scripted response declares itself the answer to the context mandate. */
+function answersContext(response: ScriptedResponse | undefined): boolean {
+  if (response === undefined) return false;
+  if (response.stage !== undefined) return response.stage === 'CONTEXT_DISCOVERY';
+  const raw = response.kind === 'ENVELOPE'
+    ? response.envelope
+    : response.kind === 'CALLS_THEN_ENVELOPE' ? response.envelope([]) : null;
+  if (raw === null || typeof raw !== 'object') return false;
+  return (raw as Record<string, unknown>)['stage_in'] === 'CONTEXT_DISCOVERY';
+}
+
+/**
+ * Reads every concrete path this dispatch's mandate admits, through the granted tool.
+ *
+ * The double claims coverage of exactly what came back `OK` and of nothing else, because
+ * `COVERAGE_OVERSTATED` is a rejection rather than a warning and a fixture that satisfied it
+ * by naming paths it never touched would defeat the check it is standing in front of. Glob
+ * entries are skipped: an agent that "examined `src/**`" examined the files under it, and a
+ * read of the literal string is not that.
+ */
+async function readInScope(
+  input: InputPackage,
+  invoker: ToolInvoker,
+): Promise<readonly string[]> {
+  const tool = input.tools_granted.find((g) => g.adapter === 'repo' && g.op === 'read_file');
+  if (tool === undefined) return [];
+  const examined: string[] = [];
+  for (const path of input.mandate.in_scope) {
+    if (/[*?]/.test(path)) continue;
+    const result = await invoker.invoke(tool.tool_name, { path });
+    if (result.outcome === 'OK') examined.push(path);
+  }
+  return examined;
+}
+
+/**
+ * What the double says when it was never given a recording for the context dispatch.
+ *
+ * Built from the input package rather than from a constant, so it owes exactly what this
+ * dispatch asked for — the same `dod_criteria_owed` the kernel put in the package — and it
+ * claims coverage only of the paths it actually read. `PARTIAL` with the gap enumerated is the
+ * honest status: the reads happened, and the judgment nobody recorded is named rather than
+ * invented.
+ *
+ * Where the mandate admits no concrete path there is nothing to read and nothing to claim, so
+ * the envelope is `BLOCKED` and the run stops — which is what a real context agent that could
+ * not reach its own scope would return, and what the kernel is entitled to act on.
+ */
+function unrecordedContextEnvelope(
+  input: InputPackage,
+  examined: readonly string[],
+): HandoffEnvelope {
+  if (examined.length === 0) {
+    return fx.envelope({
+      envelope_id: 'env_context_unrecorded',
+      agent: 'context-discovery',
+      stage_in: 'CONTEXT_DISCOVERY',
+      status: 'BLOCKED',
+      summary:
+        'no recording answered the context mandate and the mandate admits no concrete path to '
+        + 'read, so nothing was examined and there is no coverage to claim',
+      coverage: fx.coverage({ scope_examined: ['(nothing examined)'], confidence: 'UNKNOWN' }),
+      outputs: {},
+      blockers: [fx.blocker({
+        id: 'B-context',
+        kind: 'MISSING_ACCESS',
+        description:
+          'the scripted substrate holds no recording for this dispatch and read nothing, so it '
+          + 'has no basis for a Context Package',
+        needs: 'additional_discovery',
+        evidence: [],
+      })],
+      dod_verdicts: [],
+      next_action: null,
+    });
+  }
+  return fx.envelope({
+    envelope_id: 'env_context_unrecorded',
+    agent: 'context-discovery',
+    stage_in: 'CONTEXT_DISCOVERY',
+    status: 'PARTIAL',
+    summary:
+      'the scripted substrate holds no recording for the context mandate of this dispatch, so '
+      + 'the Context Package stands as the probes wrote it and nothing here judges it',
+    coverage: fx.coverage({ scope_examined: [...examined], confidence: 'FACT' }),
+    outputs: {},
+    unknowns: [fx.unknownRecord({
+      id: 'U-context',
+      subject: 'the context mandate outputs for this dispatch',
+      reason: 'UNAVAILABLE',
+      attempted: 'the scripted substrate, which holds no recording for this dispatch',
+      recoverable_by: 'record a CONTEXT_DISCOVERY envelope at this position in the script',
+      blocks: [],
+    })],
+    dod_verdicts: input.dod_criteria_owed.map((criterion) => fx.criterionVerdict({
+      criterion,
+      verdict: 'NOT_VALIDATED',
+      reason:
+        'no recording answered the context mandate, so nothing judged this criterion. A double '
+        + 'that answered MET would be manufacturing the verdict the dispatch exists to obtain',
+      evidence: [],
+    })),
+    next_action: null,
+  });
+}
+
+/**
+ * A context envelope a test scripts deliberately.
+ *
+ * `evidence` is the pool its criterion-1 verdict cites into, and `scopeExamined` has to name
+ * paths some adapter call actually touched — `COVERAGE_OVERSTATED` is a rejection, not a
+ * warning. The default is the no-adapter form, which claims nothing.
+ */
+export function contextEnvelope(input: {
+  readonly outputs?: Readonly<Record<string, unknown>>;
+  readonly evidence?: readonly Evidence[];
+  readonly scopeExamined?: readonly string[];
+  readonly verdict?: Partial<CriterionVerdict>;
+  readonly overrides?: Partial<HandoffEnvelope>;
+} = {}): HandoffEnvelope {
+  const evidence = input.evidence ?? [];
+  return fx.envelope({
+    envelope_id: 'env_context',
+    agent: 'context-discovery',
+    stage_in: 'CONTEXT_DISCOVERY',
+    summary:
+      'the Context Package the probes built was read, reconciled and judged sufficient for the '
+      + 'admitted scope',
+    outputs: input.outputs ?? {},
+    coverage: fx.coverage({
+      scope_examined: [...(input.scopeExamined ?? ['(no adapters)'])],
+      confidence: input.scopeExamined === undefined ? 'INFERENCE' : 'FACT',
+    }),
+    evidence: [...evidence],
+    dod_verdicts: [fx.criterionVerdict({
+      criterion: 1,
+      verdict: 'MET',
+      reason: null,
+      evidence: evidence.map((entry) => entry.id),
+      ...input.verdict,
+    })],
+    next_action: null,
+    ...input.overrides,
+  });
+}
+
 function stamp(raw: unknown, input: InputPackage): unknown {
   if (raw === null || typeof raw !== 'object') return raw;
   const { KEEP: keep, ...envelope } = raw as Record<string, unknown> & { KEEP?: unknown };

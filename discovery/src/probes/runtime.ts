@@ -2,6 +2,7 @@ import type { Assertion, Classification, Evidence } from '@agentos/contracts';
 import { ADAPTERS, OPS } from '../ops.js';
 import type { SectionProbe } from '../probe.js';
 import { asArray, asNumber, asRecord, asString, records } from '../probe.js';
+import { observe } from './observation.js';
 
 /**
  * The runtime probe set.
@@ -61,7 +62,7 @@ export const environmentsProbe: SectionProbe = {
       .map((entry) => asString(entry))
       .filter((entry): entry is string => entry !== null);
 
-    const observation = await session.observe({
+    const observation = await observe(session, {
       probe: 'runtime.environments',
       adapter: RUNTIME,
       op: OPS.runtime.listEnvironments,
@@ -197,7 +198,7 @@ export const servicesProbe: SectionProbe = {
   tier: 2,
   freshnessClass: 'runtime',
   async run(session, _input) {
-    const listed = await session.observe({
+    const listed = await observe(session, {
       probe: 'runtime.services',
       adapter: RUNTIME,
       op: OPS.runtime.listServices,
@@ -223,7 +224,7 @@ export const servicesProbe: SectionProbe = {
     for (const service of services.slice(0, CLASSIFY_LIMIT)) {
       const name = asString(service['name']);
       if (name === null) continue;
-      const observation = await session.observe({
+      const observation = await observe(session, {
         probe: 'runtime.services',
         adapter: RUNTIME,
         op: OPS.runtime.health,
@@ -278,7 +279,7 @@ export const dataProbe: SectionProbe = {
   tier: 2,
   freshnessClass: 'runtime',
   async run(session, input) {
-    const observation = await session.observe({
+    const observation = await observe(session, {
       probe: 'runtime.data',
       adapter: RUNTIME,
       op: OPS.runtime.query,
@@ -344,7 +345,7 @@ export const logsProbe: SectionProbe = {
   tier: 2,
   freshnessClass: 'runtime',
   async run(session, input) {
-    const observation = await session.observe({
+    const observation = await observe(session, {
       probe: 'runtime.logs',
       adapter: RUNTIME,
       op: OPS.runtime.query,
@@ -441,7 +442,7 @@ export const productionProbe: SectionProbe = {
     for (const environment of production.slice(0, CLASSIFY_LIMIT)) {
       const name = asString(environment['name']);
       if (name === null) continue;
-      const observation = await session.observe({
+      const observation = await observe(session, {
         probe: 'runtime.production',
         adapter: RUNTIME,
         op: OPS.runtime.deployedVersion,

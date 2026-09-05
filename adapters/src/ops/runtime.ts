@@ -1,7 +1,14 @@
 import type { AdapterAvailability } from '@agentos/contracts';
 import { fact, selfEvidence, unavailable, unknown } from '../assertions.js';
-import { OPTIONAL_STRING_ARG, STRING_ARG, readOnlyOperation } from '../define.js';
-import type { OperationRegistration } from '../descriptors.js';
+import {
+  OPTIONAL_STRING_ARG,
+  PATH_LIST_ARG,
+  STRING_ARG,
+  STRING_LIST_ARG,
+  readOnlyOperation,
+} from '../define.js';
+import type { OperationInvocation, OperationRegistration } from '../descriptors.js';
+import { ConfinementAbort } from '../framework.js';
 import { isAbsent, messageOf } from '../errors.js';
 import { classify, type ClassificationObservation, type ClassificationProbe } from '../classification.js';
 import type { AvailabilityProbe, Connector } from '../ports.js';
@@ -29,6 +36,40 @@ export interface RuntimeOptions {
 }
 
 const ADAPTER = 'runtime';
+
+/**
+ * The selectors a caller actually supplied, or `null` where it supplied none.
+ *
+ * Path selectors are confined element by element on the way through. The framework has already
+ * confined them, but it keys its resolved-path map by argument name and a list has no single
+ * entry there — so this is where the worktree-relative form is taken, and taking it from a
+ * verdict rather than from the raw argument is what stops an unchecked path being handed to a
+ * connector that reaches off the machine.
+ */
+function selectors(
+  invocation: OperationInvocation,
+  names: readonly string[],
+): Readonly<Record<string, unknown>> | null {
+  const out: Record<string, unknown> = {};
+  for (const name of names) {
+    const raw = invocation.args[name];
+    if (typeof raw === 'string' && raw.length > 0) {
+      out[name] = raw;
+      continue;
+    }
+    if (!Array.isArray(raw)) continue;
+    const values = raw.filter((e): e is string => typeof e === 'string' && e.length > 0);
+    if (values.length === 0) continue;
+    out[name] = name.endsWith('_paths') ? values.map((v) => confined(invocation, v)) : values;
+  }
+  return Object.keys(out).length === 0 ? null : out;
+}
+
+function confined(invocation: OperationInvocation, requested: string): string {
+  const verdict = invocation.confine(requested);
+  if (verdict.outcome === 'REFUSED') throw new ConfinementAbort(verdict);
+  return verdict.relative;
+}
 
 export function runtimeOperations(options: RuntimeOptions): readonly OperationRegistration[] {
   const reach = async (
@@ -124,15 +165,48 @@ export function runtimeOperations(options: RuntimeOptions): readonly OperationRe
       adapter: ADAPTER,
       op: 'query',
       description:
-        'Runs one read-only query against a runtime data store. Repeatable, and therefore '
-        + 'replayable for evidence verification.',
-      args: { query: STRING_ARG, target: OPTIONAL_STRING_ARG },
-      required: ['query'],
+        'Runs one read-only observation against a runtime data store: a literal query, or a '
+        + 'named purpose over a set of scope paths. Repeatable, and therefore replayable for '
+        + 'evidence verification.',
+      /*
+       * `query` is a literal a caller wrote. `purpose` is a named question — what the data
+       * actually looks like, which errors are recurring — that the connector turns into
+       * whatever its own store speaks. Discovery has the second and not the first: it does not
+       * know what data store is behind this, and a probe that invented a query string for a
+       * store it has never seen would be fabricating the question as well as risking the
+       * answer. The two are alternatives, and at least one has to be present.
+       *
+       * `scope_paths` is a path argument. Every element is confined against the worktree root,
+       * the dispatch mandate and the deny-list before it is sent, because there is a network on
+       * the other side of this call.
+       */
+      args: {
+        query: STRING_ARG,
+        target: OPTIONAL_STRING_ARG,
+        purpose: STRING_ARG,
+        scope_paths: PATH_LIST_ARG,
+      },
       evidenceKind: 'query',
       observationSafe: true,
       handler: async (invocation) => {
         const at = invocation.now.toISOString();
-        const result = await reach('query', invocation.args, 'runtime.query', at);
+        const asked = selectors(invocation, ['query', 'purpose', 'target', 'scope_paths']);
+        if (asked === null || (asked['query'] === undefined && asked['purpose'] === undefined)) {
+          /*
+           * A query with neither a literal nor a purpose asks nothing, and a runtime that
+           * answered it would be answering a question nobody posed. Nothing is established.
+           */
+          return {
+            value: unknown(
+              'runtime.query', at, 'INSUFFICIENT_EVIDENCE',
+              'name a query to run, or a purpose the runtime knows how to answer. A query with '
+              + 'neither asks nothing, and an answer to nothing is not evidence',
+              'neither a query nor a purpose was supplied',
+            ),
+            excerpt: 'query: nothing was asked',
+          };
+        }
+        const result = await reach('query', asked, 'runtime.query', at);
         if (!result.ok) return { value: result.value, excerpt: 'query: unavailable' };
         return {
           value: fact(result.value, 'runtime.query', at, selfEvidence({
@@ -179,15 +253,34 @@ export function runtimeOperations(options: RuntimeOptions): readonly OperationRe
       adapter: ADAPTER,
       op: 'deployed_version',
       description:
-        'Which build a runtime is actually running. What is deployed is an observation; '
-        + 'that it works is not, and this operation does not claim it.',
+        'Which build a runtime is actually running, for one service or for one environment. '
+        + 'What is deployed is an observation; that it works is not, and this operation does '
+        + 'not claim it.',
+      /*
+       * Either selector will do, and requiring the service would make the common question
+       * unaskable. "What is running in production" is answerable by any runtime that knows its
+       * own topology, and forcing a caller to enumerate services first turns one observation
+       * into a fan-out whose failures are attributed to the wrong thing — a service listing
+       * that could not be read would read as an environment with nothing deployed in it.
+       */
       args: { service: STRING_ARG, environment: OPTIONAL_STRING_ARG },
-      required: ['service'],
       evidenceKind: 'http',
       observationSafe: true,
       handler: async (invocation) => {
         const at = invocation.now.toISOString();
-        const result = await reach('deployed_version', invocation.args, 'runtime.deployed_version', at);
+        const asked = selectors(invocation, ['service', 'environment']);
+        if (asked === null) {
+          return {
+            value: unknown(
+              'runtime.deployed_version', at, 'INSUFFICIENT_EVIDENCE',
+              'name the service or the environment whose deployed build is wanted. Neither '
+              + 'names anything a runtime could look up',
+              'neither a service nor an environment was supplied',
+            ),
+            excerpt: 'deployed version: nothing was named',
+          };
+        }
+        const result = await reach('deployed_version', asked, 'runtime.deployed_version', at);
         if (!result.ok) return { value: result.value, excerpt: 'deployed version: unavailable' };
         return {
           value: fact(result.value, 'runtime.deployed_version', at, selfEvidence({
@@ -211,14 +304,35 @@ export function runtimeOperations(options: RuntimeOptions): readonly OperationRe
         "Whether a work item's desired outcome observably holds in a running system. Asked "
         + 'of the runtime and of nothing else: an outcome inferred from a merge, a green '
         + 'pipeline or a deployment is exactly CLAIMED_DONE_UNPROVEN.',
-      args: { outcome: STRING_ARG, environment: OPTIONAL_STRING_ARG },
+      /*
+       * `outcome` stays required, and it is the one argument that cannot be inferred from the
+       * others: an outcome nobody stated is an outcome nobody can check, and defaulting it
+       * would let this operation answer a question it was never asked.
+       *
+       * The rest is context the runtime needs to know *where* to look — which work item, which
+       * paths, which capabilities — and it is context, never a substitute. `scope_paths` is a
+       * path argument and every element is confined before it leaves the machine.
+       */
+      args: {
+        outcome: STRING_ARG,
+        environment: OPTIONAL_STRING_ARG,
+        work_item_id: STRING_ARG,
+        scope_paths: PATH_LIST_ARG,
+        capabilities: STRING_LIST_ARG,
+      },
       required: ['outcome'],
       evidenceKind: 'query',
       observationSafe: true,
       handler: async (invocation) => {
         const at = invocation.now.toISOString();
         const outcome = String(invocation.args['outcome']);
-        const result = await reach('outcome_evidence', invocation.args, 'runtime.outcome_evidence', at);
+        const result = await reach(
+          'outcome_evidence',
+          selectors(invocation, ['outcome', 'environment', 'work_item_id', 'scope_paths', 'capabilities'])
+            ?? { outcome },
+          'runtime.outcome_evidence',
+          at,
+        );
 
         if (!result.ok) {
           /*

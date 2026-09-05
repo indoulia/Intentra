@@ -2,7 +2,14 @@ import { existsSync, lstatSync, readFileSync, readdirSync, statSync } from 'node
 import { join, relative } from 'node:path';
 import type { AdapterAvailability, Assertion, Evidence, EvidenceKind, PathPolicy } from '@agentos/contracts';
 import { fact, inference, selfEvidence, unknown } from '../assertions.js';
-import { PATH_ARG, STRING_ARG, INTEGER_ARG, readOnlyOperation } from '../define.js';
+import {
+  GLOB_LIST_ARG,
+  INTEGER_ARG,
+  PATH_ARG,
+  PATH_LIST_ARG,
+  STRING_ARG,
+  readOnlyOperation,
+} from '../define.js';
 import type { OperationInvocation, OperationRegistration, OperationResult } from '../descriptors.js';
 import { ConfinementAbort } from '../framework.js';
 import { matchesAny, matchesGlob, toPosix } from '../glob.js';
@@ -88,6 +95,20 @@ export function repositoryOperations(options: RepoOptions): readonly OperationRe
     const verdict = invocation.confine(invocation.args[name]);
     if (verdict.outcome === 'REFUSED') throw new ConfinementAbort(verdict);
     return verdict.resolved;
+  };
+
+  /**
+   * Confines one element of a path *list* argument and answers with its worktree-relative form.
+   *
+   * The framework confines every element of a list before the handler runs, but it keys its
+   * resolved-path map by argument name, which a list cannot use — so the elements are confined
+   * again here rather than trusted. Re-confining costs nothing and means the handler never
+   * holds a path whose verdict it did not see itself.
+   */
+  const resolveRelative = (invocation: OperationInvocation, requested: string): string => {
+    const verdict = invocation.confine(requested);
+    if (verdict.outcome === 'REFUSED') throw new ConfinementAbort(verdict);
+    return verdict.relative;
   };
 
   /**
@@ -440,23 +461,64 @@ export function repositoryOperations(options: RepoOptions): readonly OperationRe
     readOnlyOperation({
       adapter: ADAPTER,
       op: 'list_paths',
-      description: 'Lists the entries under one directory of the worktree, one level deep.',
-      args: { path: PATH_ARG, depth: INTEGER_ARG },
-      required: ['path'],
+      description:
+        'Enumerates worktree paths: the entries under one directory, or every path matching a '
+        + 'set of globs, optionally narrowed to the scope paths the dispatch admits.',
+      /*
+       * Four arguments and none of them required, because this is one enumeration asked from
+       * two ends.
+       *
+       * `path`/`depth` is a directory listing. `repo.attach` cites `list_paths {path: "."}` as
+       * its evidence, so that form has to stay callable or the attachment's own evidence stops
+       * being replayable.
+       *
+       * `globs`/`under` is what every path-shaped probe actually wants. "The manifests", "the
+       * pipeline definitions", "the tests covering this scope" are glob questions, and asking
+       * them one directory at a time turns a single attributable observation into a directory
+       * crawl. The two lists are declared differently on purpose:
+       *
+       * - `under` narrows to the paths a dispatch was given, so it is a **path** argument and
+       *   every element goes through confinement — worktree root, mandate, deny-list — before
+       *   it narrows anything. Declaring it any other way would take the mandate check off the
+       *   one argument that carries the mandate's own patterns.
+       * - `globs` are filename patterns like the manifest set, which name no particular path
+       *   and belong to no scope. Confining `**` + `/package.json` would produce a verdict
+       *   about a file that does not exist, which proves nothing; what makes a glob safe is
+       *   that it only ever filters entries already enumerated beneath a confined root.
+       *   `repo.find_files` has declared its `glob` this way since it was written.
+       */
+      args: { path: PATH_ARG, depth: INTEGER_ARG, globs: GLOB_LIST_ARG, under: PATH_LIST_ARG },
       evidenceKind: 'file',
       observationSafe: true,
       handler: (invocation) => {
-        const resolved = resolveArg(invocation, 'path');
+        const globs = stringList(invocation.args['globs']);
+        /* Confined here as well as by the framework: a list argument has no entry in the
+         * resolved-path map, and the handler must not narrow by a pattern nobody checked. */
+        const under = stringList(invocation.args['under'])
+          .map((entry) => resolveRelative(invocation, entry));
         const depth = typeof invocation.args['depth'] === 'number' ? invocation.args['depth'] : 1;
-        if (!existsSync(resolved)) {
-          throw new ResourceAbsentError(resolved, `${resolved} does not exist`);
+        const from = invocation.args['path'] === undefined
+          ? root
+          : resolveArg(invocation, 'path');
+
+        if (!existsSync(from)) {
+          throw new ResourceAbsentError(from, `${from} does not exist`);
         }
-        const { entries, truncated } = walk(resolved, Math.max(0, depth - 1));
-        const value = { root: toPosix(relative(root, resolved)) || '.', entries, truncated };
+
+        /*
+         * A glob question is answered over the whole subtree; a plain listing is not. `depth`
+         * means what it always meant and is ignored where a glob already says how deep to go.
+         */
+        const { entries, truncated } = walk(from, globs.length > 0 ? 32 : Math.max(0, depth - 1));
+        const matched = entries
+          .filter((entry) => globs.length === 0 || matchesAny(entry, globs, true))
+          .filter((entry) => under.length === 0 || matchesAny(entry, under, true));
+        const listedRoot = toPosix(relative(root, from)) || '.';
+
         return Promise.resolve({
-          value,
-          excerpt: entries.join('\n'),
-          pathsTouched: [toPosix(relative(root, resolved)) || '.'],
+          value: { root: listedRoot, globs, under, entries: matched, truncated },
+          excerpt: matched.join('\n'),
+          pathsTouched: matched.length > 0 ? matched : [listedRoot],
         });
       },
     }),
@@ -628,6 +690,17 @@ export function repositoryAvailability(options: RepoOptions): AvailabilityProbe 
 }
 
 /* ---------------------------------------------------------------------- helpers ------ */
+
+/**
+ * A list argument, narrowed to the strings it actually holds.
+ *
+ * An absent list and an empty one mean the same thing to every caller here — "do not narrow
+ * by this" — so both arrive as `[]` and no handler has to distinguish them.
+ */
+function stringList(value: unknown): readonly string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
+}
 
 function readIfPresent(path: string): string | null {
   try {

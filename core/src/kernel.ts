@@ -9,6 +9,7 @@ import {
   type AgentSpecView,
   type AgentSubstrate,
   type Assertion,
+  type BlockerKind,
   type CallRecord,
   type CapabilityRecord,
   type CheckOutcome,
@@ -37,6 +38,7 @@ import {
   type Scope,
   type SkillOffer,
   type Stage,
+  type StageCursorEntry,
   type StageDescriptor,
   type TemplateStage,
   type ToolGrant,
@@ -134,6 +136,17 @@ export interface RunResult {
   readonly detail: string;
   readonly narrative: string;
   readonly checks: readonly CheckOutcome[];
+  /**
+   * Why a `BLOCKED` run stopped, where the kernel knows (decision I-31).
+   *
+   * `REFUSED` and `BLOCKED` are different answers to a caller: the first says the request was
+   * inadmissible, the second says the request was fine and the world was not. Collapsing the
+   * second into the first tells a script its ticket key was wrong when the ticket system is
+   * merely down, so the blocker kind travels with the outcome rather than being flattened
+   * into prose. `null` on every non-blocked outcome, and on a block whose kind the kernel
+   * has no name for.
+   */
+  readonly blockerKind: BlockerKind | null;
 }
 
 /**
@@ -251,6 +264,22 @@ interface DispatchOutcome {
   readonly failed: boolean;
   readonly detail: string;
 }
+
+/**
+ * What the prologue's `context` dispatch produced.
+ *
+ * Two cases and no third, because the third — an envelope the kernel did not accept, carried
+ * forward anyway — is the one that would let a failed dispatch advance the run. `ACCEPTED`
+ * carries an envelope that passed all eight receipt steps; `BLOCKED` ends the run where it
+ * stands, with the reason and, where the kernel has a name for it, the blocker kind.
+ */
+type ContextDispatchOutcome =
+  | { readonly outcome: 'ACCEPTED'; readonly envelope: HandoffEnvelope }
+  | {
+    readonly outcome: 'BLOCKED';
+    readonly blockerKind: BlockerKind | null;
+    readonly detail: string;
+  };
 
 export class Kernel {
   constructor(private readonly ports: KernelPorts) {}
@@ -389,7 +418,9 @@ export class Kernel {
      * believed — the same disbelief step every other envelope gets, applied to the envelope
      * that decides what the work *is*.
      */
-    const verification = await this.verifyResolution(resolution.envelope, record, prologue);
+    const verification = await this.verifyResolution(
+      resolution.envelope, resolution.proposal, record, prologue,
+    );
     if (verification !== null && resolution.envelope !== null) {
       logPrologue('evidence_verification', {
         envelope_id: resolution.envelope.envelope_id,
@@ -433,7 +464,13 @@ export class Kernel {
         { checks: admission.checks, attempt: 1, next: 'BLOCKED' },
         'RESOLUTION',
       );
-      return this.refuse(intakeId, prologue, admission.reason, checks);
+      /*
+       * A block, not a refusal. Admission computed the blocker kind and the kind is the
+       * difference between "resume when the source returns" and "your key is wrong": routing
+       * both through `refuse` kept the reason text, dropped the kind, and told a caller its
+       * request was inadmissible when the request was fine.
+       */
+      return this.block(prologue, admission.blockerKind, admission.reason, checks);
     }
     if (admission.outcome === 'REJECTED') {
       logPrologue(
@@ -460,7 +497,7 @@ export class Kernel {
         );
       }
       const secondVerification = await this.verifyResolution(
-        second.envelope, record, prologue,
+        second.envelope, second.proposal, record, prologue,
       );
       const retry = admitWorkItem({
         ...admissionInput,
@@ -516,9 +553,21 @@ export class Kernel {
    * The same `verifyEvidence` every other envelope goes through, and deliberately the same:
    * duplicating the selection policy, the two-strikes rule and the comparators for this one
    * envelope would be two implementations of the check the whole design rests on.
+   *
+   * **The replay runs under the proposed scope** (decision I-30). No admitted scope exists
+   * yet — the proposal is what admission is deciding about — so the only bound available is
+   * the one the proposal is asking for, and `Scope` is defined as the thing that "becomes
+   * `mandate.in_scope`". Admission check 5 bounds that scope before anything rests on it: an
+   * unbounded scope is refused, so this cannot become a route to unlimited reach. The
+   * conservative reading follows: a proposal gets evidence confirmed only for paths inside
+   * the scope it claims, and evidence reaching outside is withdrawn as unconfirmed. The
+   * empty mandate this used to pass meant "no path at all is in scope" to the path adapter,
+   * so every replay was refused and every typed work item downgraded to UNKNOWN whatever the
+   * repository contained.
    */
   private async verifyResolution(
     envelope: HandoffEnvelope | null,
+    proposal: ProposedWorkItem,
     intake: IntakeRecord,
     prologue: readonly Event[],
   ): Promise<VerificationReport | null> {
@@ -534,7 +583,7 @@ export class Kernel {
         workItemId: intake.intake_id,
         runId: intake.intake_id,
         dispatchId: 'd_res',
-        mandate: { in_scope: [], out_of_scope: [] },
+        mandate: { in_scope: proposal.scope.paths, out_of_scope: [] },
         grantsHeld: [],
         stageMutating: false,
       },
@@ -669,6 +718,7 @@ export class Kernel {
           + 'what makes "someone ran it twice" a refusal instead of two PRs',
         narrative: '',
         checks,
+        blockerKind: null,
       };
     }
 
@@ -843,6 +893,74 @@ export class Kernel {
       requested_sections: [],
     }, { stage: 'CONTEXT_DISCOVERY' });
 
+    /*
+     * The `context` mandate, dispatched — the second half of `CONTEXT_DISCOVERY`.
+     *
+     * `discovery.deepen()` above is the *probe* half: it is what writes `current_reality`, and
+     * it stays the only thing that does. This is the *judgment* half, and the reason it has to
+     * exist is narrow and load-bearing: `DEFINITION_OF_DONE` criterion 1 is owned by
+     * `context-discovery/context` and by nothing else, and a criterion verdict reaches
+     * `computeDod` only inside an accepted envelope. With no dispatch there was no envelope, so
+     * criterion 1 came out `NOT_VALIDATED` in every run of every template and no profile making
+     * it critical could ever complete (decision I-33). The workaround was in policy; this is the
+     * cause.
+     *
+     * It is not a privileged dispatch. Budgets are checked before it, the model is ranked and
+     * selected and journalled, the tool surface is verified against the granted set, the
+     * envelope goes through all eight receipt steps and its evidence is replayed. What it may
+     * *not* do is write reality: nothing the envelope says is merged into `deepened`, so a
+     * context agent claiming a reality element changes nothing about what the probes observed.
+     */
+    const contextDispatch = await this.dispatchContext({
+      workItem,
+      context: deepened,
+      journal,
+      runId,
+      budget: { run: ZERO_BUDGET, workItem: workItem.consumed_budget },
+      runStartedAt: clock.now().toISOString(),
+    });
+
+    if (contextDispatch.outcome === 'BLOCKED') {
+      /*
+       * A failed, malformed or blocked context envelope stops the run here. The alternative —
+       * proceeding on the probe package alone and letting criterion 1 come out `NOT_VALIDATED`
+       * — would advance the state machine on the strength of a dispatch nothing believed, and
+       * the whole point of the disbelief machinery is that an envelope that did not pass it
+       * moves nothing.
+       */
+      journal.run('transition', {
+        from: 'CONTEXT_DISCOVERY',
+        to: 'BLOCKED',
+        trigger: contextDispatch.blockerKind ?? 'contract violation',
+        edge_kind: 'escalate',
+        proposed_by: 'context-discovery',
+        proposed_stage: null,
+        overridden: false,
+        evidence: [],
+      }, { stage: 'CONTEXT_DISCOVERY' });
+      return this.end(
+        journal, workItem, runId, 'BLOCKED', contextDispatch.detail, 'BLOCKED', checks,
+        contextDispatch.blockerKind,
+      );
+    }
+
+    /*
+     * Said out loud, in the run's own log, because it is the property that makes the dispatch
+     * safe to have added: the Context Package the rest of the run reads is version 1, exactly
+     * as the probes wrote it. The envelope's `current_reality` output is the agent's account of
+     * what it read, never a source for what is true.
+     */
+    journal.run('note', {
+      topic: 'context package authority',
+      detail:
+        `the context mandate answered in envelope ${contextDispatch.envelope.envelope_id} and `
+        + 'nothing it says was merged into current_reality. Only a probe writes reality: the '
+        + 'agent\'s job here is the judgment sections and the criterion 1 verdict, and an agent '
+        + 'that could also supply the observations it is judging would be judging its own work',
+    }, { stage: 'CONTEXT_DISCOVERY' });
+
+    const priorEnvelopes: readonly HandoffEnvelope[] = [contextDispatch.envelope];
+
     const registry = this.capabilityRegistry();
     const capabilities: readonly CapabilityRecord[] = registry.records;
     const predicateInputs: PredicateInputs = {
@@ -937,6 +1055,7 @@ export class Kernel {
         }, { stage: 'UNDERSTOOD' });
         return this.end(
           journal, workItem, runId, 'BLOCKED', ladder.detail, 'BLOCKED', checks,
+          ladder.blockerKind,
         );
       }
 
@@ -1128,6 +1247,7 @@ export class Kernel {
       predicateInputs,
       input,
       checks,
+      priorEnvelopes,
       /* Only armed where the run actually starts inside the prefix: a resumed run entering
        * past it would re-resolve on its first transition, which is a lap nobody asked for. */
       safePrefix: safePrefix !== null && safePrefix.includes(entry.entryStage)
@@ -1400,6 +1520,16 @@ export class Kernel {
     readonly input: StartInput;
     readonly checks: CheckOutcome[];
     /**
+     * Envelopes the prologue accepted before the graph was frozen.
+     *
+     * The `context` mandate's envelope is one: it runs at `CONTEXT_DISCOVERY`, before a
+     * template exists, and it carries the criterion 1 verdict. `COMPLETION` collects verdicts
+     * from the envelopes this run accepted, so an envelope the graph did not produce still has
+     * to be among them or the verdict it supplied is silently lost — which is exactly the
+     * defect I-33 recorded. Its cost counts against the run's budget for the same reason.
+     */
+    readonly priorEnvelopes: readonly HandoffEnvelope[];
+    /**
      * Rung 3's admitted prefix, where the ladder took it.
      *
      * The run executes the prefix and **re-resolves at its exit** — the ambiguity did not
@@ -1415,9 +1545,15 @@ export class Kernel {
     const { policies, clock } = this.ports;
     const { journal, graph, runId } = state;
 
-    const envelopes: HandoffEnvelope[] = [];
+    const envelopes: HandoffEnvelope[] = [...state.priorEnvelopes];
     const loopCounters: Record<string, number> = {};
-    let budget = { run: ZERO_BUDGET, workItem: state.workItem.consumed_budget };
+    let budget = state.priorEnvelopes.reduce(
+      (consumed, envelope) => ({
+        run: addCost(consumed.run, envelope.cost),
+        workItem: addCost(consumed.workItem, envelope.cost),
+      }),
+      { run: ZERO_BUDGET, workItem: state.workItem.consumed_budget },
+    );
     let dispatchNumber = 0;
     let attemptInStage = 0;
     let escalatedThisStage = false;
@@ -1677,7 +1813,7 @@ export class Kernel {
           return this.end(
             journal, state.workItem, runId, 'BLOCKED',
             `${action.blockerKind}: ${action.reason}`,
-            'BLOCKED', state.checks,
+            'BLOCKED', state.checks, action.blockerKind,
           );
 
         case 'RERESOLVE':
@@ -2276,6 +2412,7 @@ export class Kernel {
         detail: `re-resolution produced no proposal: ${resolution.detail}`,
         narrative: '',
         checks: args.checks,
+        blockerKind: null,
       };
     }
 
@@ -2285,7 +2422,7 @@ export class Kernel {
         : String(resolution.proposal.external_identity.value),
     );
     const verification = await this.verifyResolution(
-      resolution.envelope, args.intake, events,
+      resolution.envelope, resolution.proposal, args.intake, events,
     );
     const registry = this.capabilityRegistry();
 
@@ -2320,6 +2457,7 @@ export class Kernel {
           + 'relabelling',
         narrative: '',
         checks: [...args.checks, ...admission.checks],
+        blockerKind: admission.outcome === 'BLOCKED' ? admission.blockerKind : null,
       };
     }
 
@@ -2556,7 +2694,9 @@ export class Kernel {
       workflow: {
         template_id: state.graph.template_id,
         version: state.graph.template_version,
-        stages_remaining: stagesRemaining([], state.graph),
+        stages_remaining: stagesRemaining(
+          this.cursorNow(state.workItem.work_item_id, runId), state.graph,
+        ),
       },
       context_package_ref: `context/v1.json`,
       context_sections: this.materialize(state.context, effectiveSpec.required_inputs),
@@ -3038,6 +3178,413 @@ export class Kernel {
     };
   }
 
+  /**
+   * The `context` mandate at `CONTEXT_DISCOVERY`, after admission.
+   *
+   * `IMPLEMENTATION_PLAN` WP-5 asks for Context Discovery with **both** mandates: `resolution`
+   * on tier-1 orientation, `context` after admission. Only the first was ever dispatched, and
+   * the consequence was not cosmetic — `context-discovery/context` is the sole owner of
+   * Definition-of-Done criterion 1, a verdict reaches `computeDod` only inside an accepted
+   * envelope, so criterion 1 was `NOT_VALIDATED` in every run of every template and five of the
+   * seven profiles could never complete. Decision I-33 made it non-critical everywhere and said
+   * the cause was elsewhere. This is the cause.
+   *
+   * Three things about it are deliberate.
+   *
+   * **It writes no reality.** `discovery.deepen()` produced the observations and remains the
+   * only writer of `current_reality`; the envelope's `current_reality` output is the agent's
+   * account of what it examined, and the kernel merges none of it. An agent that supplied both
+   * the observations and the judgment of them would be judging its own work, which is the one
+   * separation the evidence model rests on.
+   *
+   * **It is not exempt from anything.** The budget is checked before it, the model is ranked
+   * and selected and the selection journalled, the granted tool set is the read-only surface
+   * the role's permitted adapters expose, the substrate's effective tool surface must equal it,
+   * and the envelope goes through all eight receipt steps with its evidence replayed through
+   * the originating adapters. A `d_ctx` dispatch appears in the log exactly as `d_0001` does.
+   *
+   * **It gets one attempt.** The graph's retry protocol lives in the run loop, which owns an
+   * attempt counter and a stage cursor; the prologue has neither, and a second private retry
+   * loop here would be a second implementation of a rule that already exists. A failure blocks,
+   * with the reason named, and the run resumes at the same point.
+   */
+  private async dispatchContext(args: {
+    readonly workItem: WorkItem;
+    readonly context: ContextPackage;
+    readonly journal: Journal;
+    readonly runId: string;
+    readonly budget: {
+      readonly run: WorkItem['consumed_budget'];
+      readonly workItem: WorkItem['consumed_budget'];
+    };
+    readonly runStartedAt: string;
+  }): Promise<ContextDispatchOutcome> {
+    const { policies, clock, store } = this.ports;
+    const { journal, runId, workItem } = args;
+    const stage: Stage = 'CONTEXT_DISCOVERY';
+    const role: AgentRole = 'context-discovery';
+    const dispatchId = 'd_ctx';
+
+    const blocked = (
+      blockerKind: BlockerKind | null,
+      detail: string,
+    ): ContextDispatchOutcome => ({ outcome: 'BLOCKED', blockerKind, detail });
+
+    const spec = this.ports.agents.spec(role, 'context');
+    if (spec === undefined) {
+      /*
+       * Fail closed. The mandate that owns criterion 1 is not registered, so nothing in this
+       * run could ever supply it — and a run that proceeds to compute a Definition of Done it
+       * knows in advance has no owner for one of its criteria is a run manufacturing a
+       * `NOT_VALIDATED` it could have named as a configuration fault instead.
+       */
+      journal.run('dispatch_result', {
+        outcome: 'FAILED',
+        envelope_id: null,
+        failure_reason: 'NO_MODEL',
+        detail:
+          'no Context Discovery context mandate is registered, so the only owner of criterion '
+          + '1 cannot be dispatched',
+        cost: { input_tokens: 0, output_tokens: 0 },
+      }, { stage, dispatchId, agent: role });
+      return blocked(
+        'MISSING_CAPABILITY',
+        'MISSING_CAPABILITY: no Context Discovery context mandate is registered. It is the only '
+        + 'owner of Definition-of-Done criterion 1, so no envelope in this run could supply it',
+      );
+    }
+
+    const verdict = checkDispatchBudget(
+      { run: args.budget.run, workItem: args.budget.workItem, runStartedAt: args.runStartedAt },
+      policies.budgets,
+      clock.now(),
+    );
+    if (!verdict.within) {
+      journal.run('budget', {
+        kind: 'EXCEEDED',
+        counter: verdict.counter,
+        scope: verdict.scope,
+        value: verdict.value,
+        cap: verdict.cap,
+        tried: verdict.report,
+      }, { stage, dispatchId, agent: role });
+      return blocked(
+        'BUDGET_EXHAUSTED',
+        `BUDGET_EXHAUSTED: ${verdict.counter} exhausted per ${verdict.scope} before the context `
+        + `mandate could be dispatched: ${verdict.report.join('; ')}`,
+      );
+    }
+
+    const model = await this.chooseModel(spec, journal, stage, false, null);
+    if (model === null) {
+      /*
+       * Invariant 16's second case, at the stage before the graph exists. A run *does* exist
+       * here — the lease is held and the log is open — so this blocks with the external
+       * dependency named rather than refusing the way the pre-admission prologue does.
+       */
+      journal.run('dispatch_result', {
+        outcome: 'FAILED',
+        envelope_id: null,
+        failure_reason: 'NO_MODEL',
+        detail:
+          'no reachable model meets the context mandate declared requirement. Proceeding '
+          + 'without it would leave criterion 1 unowned and report the gap as a judgment',
+        cost: { input_tokens: 0, output_tokens: 0 },
+      }, { stage, dispatchId, agent: role });
+      return blocked(
+        'EXTERNAL_DEPENDENCY',
+        'EXTERNAL_DEPENDENCY: no reachable model meets the context mandate requirement. No '
+        + 'state advances, no envelope merges, and the run resumes at the same point when a '
+        + 'model returns',
+      );
+    }
+
+    const mandateScope: Scope = workItem.scope;
+    const tools = await this.grantToolsForSpec(spec);
+    const callContext: AdapterCallContext = {
+      workItemId: workItem.work_item_id,
+      runId,
+      dispatchId,
+      mandate: { in_scope: mandateScope.paths, out_of_scope: [] },
+      grantsHeld: [],
+      stageMutating: false,
+    };
+
+    const inputPackage: InputPackage = {
+      work_item_id: workItem.work_item_id,
+      run_id: runId,
+      dispatch_id: dispatchId,
+      agent: role,
+      mandate_name: spec.mandate_name,
+      stage,
+      work_item_ref: '../work-item.json',
+      intake_ref: null,
+      workflow: null,
+      context_package_ref: 'context/v1.json',
+      context_sections: this.materialize(args.context, spec.required_inputs),
+      capability_registry_ref: null,
+      prior_envelopes: [],
+      mandate: {
+        objective: spec.objective,
+        in_scope: mandateScope.paths,
+        out_of_scope: [],
+        capabilities: mandateScope.capabilities,
+        advisory_notes:
+          'current_reality is written by the probes and is supplied to you as an observation. '
+          + 'Report what you examined and judge what it means; do not restate it as your own '
+          + 'finding, and never fill a gap the probes left.',
+      },
+      required_inputs: spec.required_inputs,
+      required_outputs: spec.required_outputs,
+      dod_profile_ref: null,
+      dod_criteria_owed: spec.dod_criteria_owned,
+      constraints: workItem.constraints,
+      authorization_scope: { autonomous: [], gated: [], grants_held: [] },
+      tools_granted: tools,
+      skills_available: [],
+      model,
+      budget: dispatchBudget(policies.budgets),
+    };
+
+    /* Write before act, as everywhere else: the intent is on disk before the agent is invoked. */
+    journal.run('dispatch_intent', {
+      input_package: inputPackage,
+      attempt: 1,
+    }, { stage, dispatchId, agent: role });
+
+    const result = await this.ports.substrate.dispatch(inputPackage, {
+      invoke: async (toolName, toolArgs) => {
+        const grant = tools.find((t) => t.tool_name === toolName);
+        if (grant === undefined) {
+          return {
+            outcome: 'REFUSED',
+            refusal: 'unknown_tool',
+            message:
+              `${toolName} is not in this dispatch's granted tool set. The effective tool `
+              + 'surface is an allowlist, and a tool outside it is absent rather than forbidden',
+            abortDispatch: true,
+          };
+        }
+        const call = await this.ports.adapters.call(grant.adapter, grant.op, toolArgs, callContext);
+        journal.run('adapter_call', call.call, { stage, dispatchId, agent: role });
+        if (call.outcome === 'OK') {
+          for (const mutation of call.mutations) {
+            journal.run('mutation', mutation, { stage, dispatchId, agent: role });
+          }
+          return { outcome: 'OK', value: call.value };
+        }
+        if (call.outcome === 'REFUSED') {
+          const isSecurity = call.refusal === 'security_violation';
+          journal.run(isSecurity ? 'security_violation' : 'scope_violation', {
+            adapter: grant.adapter,
+            op: grant.op,
+            requested: typeof toolArgs['path'] === 'string' ? toolArgs['path'] : grant.op,
+            resolved: null,
+            rule: isSecurity ? 'deny_list' : 'mandate_in_scope',
+            deny_list_entry: null,
+            aborted_dispatch: isSecurity,
+            detail: call.message,
+          }, { stage, dispatchId, agent: role });
+          return {
+            outcome: 'REFUSED',
+            refusal: call.refusal,
+            message: call.message,
+            abortDispatch: isSecurity,
+          };
+        }
+        return { outcome: 'ERROR', message: call.message };
+      },
+    });
+
+    journal.run('tool_surface_conformance', {
+      substrate: this.ports.substrate.name,
+      verdict: result.toolSurface?.verdict ?? 'UNVERIFIABLE',
+      expected: result.toolSurface?.expected ?? tools.map((t) => t.tool_name),
+      effective: result.toolSurface?.effective ?? [],
+      unexpected: result.toolSurface?.unexpected ?? [],
+      missing: result.toolSurface?.missing ?? [],
+      detail: result.toolSurface?.detail
+        ?? 'the substrate reported no tool surface, so conformance is unverifiable and the '
+          + 'dispatch fails closed',
+    }, { stage, dispatchId, agent: role });
+
+    if (result.outcome === 'FAILED') {
+      journal.run('dispatch_result', {
+        outcome: 'FAILED',
+        envelope_id: null,
+        failure_reason: result.failure,
+        detail: result.detail,
+        cost: {
+          input_tokens: result.cost.input_tokens,
+          output_tokens: result.cost.output_tokens,
+          usd: result.cost.usd,
+        },
+      }, { stage, dispatchId, agent: role });
+      return blocked(
+        'EXTERNAL_DEPENDENCY',
+        `EXTERNAL_DEPENDENCY: the context mandate dispatch failed (${result.failure}): `
+        + `${result.detail}. A FAILED envelope never satisfies an exit condition, so the `
+        + 'prologue does not advance and the run resumes at the same point',
+      );
+    }
+
+    if (result.toolSurface.verdict !== 'CONFORMS') {
+      journal.run('dispatch_result', {
+        outcome: 'ABORTED',
+        envelope_id: null,
+        failure_reason: 'TOOL_SURFACE_VIOLATION',
+        detail: result.toolSurface.detail,
+        cost: {
+          input_tokens: result.cost.input_tokens,
+          output_tokens: result.cost.output_tokens,
+          usd: result.cost.usd,
+        },
+      }, { stage, dispatchId, agent: role });
+      return blocked(
+        'MISSING_CAPABILITY',
+        'MISSING_CAPABILITY: the effective tool surface does not equal the adapter operations '
+        + `the kernel exposed to the context mandate: ${result.toolSurface.detail}. The tool `
+        + 'surface is an allowlist, never a denylist, and subtraction fails open',
+      );
+    }
+
+    /* ---------------------------------------------- envelope receipt ---- */
+
+    const receipt = await receiveEnvelope({
+      raw: result.envelope,
+      expectation: {
+        dispatchId,
+        stage,
+        agent: role,
+        requiredOutputs: spec.required_outputs,
+        dodCriteriaOwed: spec.dod_criteria_owned,
+        /* No graph is frozen yet. The empty stage set is the honest input to the
+         * BLOCKED_BY_ARCHITECTURE legality rule: there is no ARCHITECTURE stage to route to. */
+        graphStages: [],
+      },
+      agents: policies.agents,
+      evidencePolicy: policies.evidence,
+      adapters: this.ports.adapters,
+      callContext,
+      clock,
+      mutations: this.mutationsFor(journal, runId, workItem.work_item_id, dispatchId),
+      calls: this.callsFor(journal, runId, workItem.work_item_id, dispatchId),
+      knownObligations: new Set(),
+      existingAssertions: new Map(),
+      incomingAssertions: new Map(),
+      sampler: this.ports.random,
+    });
+
+    if (receipt.outcome === 'REJECTED') {
+      journal.run('envelope_rejected', {
+        envelope_id: null,
+        step: receipt.step,
+        violations: receipt.violations,
+      }, { stage, dispatchId, agent: role });
+      journal.run('dispatch_result', {
+        outcome: receipt.handleAs === 'FAILED' ? 'FAILED' : 'ABORTED',
+        envelope_id: null,
+        failure_reason: receipt.handleAs === 'FAILED' ? 'MALFORMED_ENVELOPE' : null,
+        detail: receipt.violations.map((v) => v.message).join('; '),
+        cost: {
+          input_tokens: result.cost.input_tokens,
+          output_tokens: result.cost.output_tokens,
+          usd: result.cost.usd,
+        },
+      }, { stage, dispatchId, agent: role });
+
+      return receipt.handleAs === 'FAILED'
+        ? blocked(
+          'EXTERNAL_DEPENDENCY',
+          'EXTERNAL_DEPENDENCY: the context mandate returned a malformed envelope. A malformed '
+          + 'envelope is a FAILED dispatch, never a parse-and-repair: the kernel does not guess '
+          + `what an agent meant. ${receipt.violations.map((v) => v.message).join('; ')}`,
+        )
+        : blocked(
+          null,
+          receipt.violations.map((v) => `${v.code}: ${v.message}`).join('; '),
+        );
+    }
+
+    const persisted = withVerification(
+      receipt.envelope, receipt.verification, clock.now().toISOString(),
+    );
+    store.putEnvelope(workItem.work_item_id, runId, persisted);
+
+    journal.run('envelope_received', {
+      envelope_id: persisted.envelope_id,
+      status: persisted.status,
+      steps: receipt.steps,
+    }, { stage, dispatchId, agent: role });
+    journal.run('evidence_verification', {
+      envelope_id: persisted.envelope_id,
+      results: receipt.verification.outcomes.map((o) => ({
+        evidence_id: o.evidence_id,
+        status: o.status,
+        selected_because: o.selected_because,
+        detail: o.detail,
+      })),
+      mismatch_count: receipt.verification.mismatchCount,
+    }, { stage, dispatchId, agent: role });
+
+    for (const outcome of receipt.verification.outcomes) {
+      if (outcome.status !== 'MISMATCH' && outcome.status !== 'UNREPLAYABLE') continue;
+      journal.run('evidence_integrity', {
+        envelope_id: persisted.envelope_id,
+        evidence_id: outcome.evidence_id,
+        model,
+        status: outcome.status,
+        downgraded_assertions: receipt.verification.downgrades.map((d) => d.evidence_id),
+        demoted_findings: receipt.verification.demotedFindings,
+        envelope_rejected: false,
+      }, { stage, dispatchId, agent: role });
+    }
+
+    for (const { conflict, resolution } of receipt.conflicts) {
+      journal.run('conflict', {
+        conflict_id: conflict.conflictId,
+        subject: conflict.subject,
+        position_a: conflict.positionA,
+        position_b: conflict.positionB,
+        phase: resolution.phase,
+        winner: resolution.phase === 'RESOLVED_BY_RULE' ? resolution.winner : 'NONE',
+        rule: resolution.phase === 'RESOLVED_BY_RULE' ? resolution.rule : null,
+        detail: resolution.detail,
+      }, { stage, dispatchId, agent: role });
+    }
+
+    journal.run('dispatch_result', {
+      outcome: 'ENVELOPE',
+      envelope_id: persisted.envelope_id,
+      failure_reason: null,
+      detail: '',
+      cost: {
+        input_tokens: result.cost.input_tokens,
+        output_tokens: result.cost.output_tokens,
+        usd: result.cost.usd,
+      },
+    }, { stage, dispatchId, agent: role });
+
+    /*
+     * A `BLOCKED` or `FAILED` envelope is an honest answer and is still not one the prologue
+     * may proceed on: the mandate that owns criterion 1 reported that it could not complete,
+     * and treating that as a context package would be reading a stated failure as a result.
+     */
+    if (persisted.status === 'BLOCKED' || persisted.status === 'FAILED') {
+      const first = persisted.blockers[0];
+      const kind: BlockerKind = first?.kind ?? 'EXTERNAL_DEPENDENCY';
+      return blocked(
+        kind,
+        `${kind}: the context mandate returned ${persisted.status} — `
+        + `${first?.description ?? persisted.summary}. Criterion 1 has no other owner, so the `
+        + 'run stops here rather than proceeding on a package its own author reported it could '
+        + 'not build',
+      );
+    }
+
+    return { outcome: 'ACCEPTED', envelope: persisted };
+  }
+
   private async dispatchOrchestrator(
     workItem: WorkItem,
     context: ContextPackage,
@@ -3293,6 +3840,24 @@ export class Kernel {
     };
   }
 
+  /**
+   * The stage cursor as the log says it stands right now.
+   *
+   * Rebuilt by `project()` — the same function recovery and `run.json` use — rather than by a
+   * second cursor carried in the loop. Two notions of "which stages are done" would drift the
+   * moment one of them learned something the other did not, and the one that would drift is
+   * the in-memory one: the log is what survives a crash. So the input package's
+   * `stages_remaining` is derived from the same projection a recovering kernel would rebuild,
+   * and an agent's read-only view of the workflow agrees with the run record by construction.
+   *
+   * It was `stagesRemaining([], graph)` — a hard-coded empty cursor, which filters nothing, so
+   * every dispatch was told every stage was still outstanding: stages this run had already
+   * completed, stages the resume sweep had marked COMPLETED_PRIOR, all of them.
+   */
+  private cursorNow(workItemId: string, runId: string): readonly StageCursorEntry[] {
+    return project(this.ports.store.readRunLog(workItemId, runId).records).cursor;
+  }
+
   private mutationsFor(
     _journal: Journal,
     runId: string,
@@ -3383,6 +3948,35 @@ export class Kernel {
       detail,
       narrative: narrate(prologue, null).text,
       checks,
+      blockerKind: null,
+    };
+  }
+
+  /**
+   * The prologue's other ending: the request was admissible and the world was not.
+   *
+   * Distinct from `refuse` because the two are different answers (decision I-31). A refusal
+   * says the request cannot be admitted and a fresh attempt at the same request will fail the
+   * same way; a block says nothing is wrong with the request and the run resumes when the
+   * dependency returns. No Work Item was admitted and no run was started, so there is no run
+   * log to end — but the outcome and its blocker kind still travel to the caller, which is
+   * what keeps "the ticket system is down" from reaching a script as "your request was
+   * inadmissible".
+   */
+  private block(
+    prologue: readonly Event[],
+    blockerKind: BlockerKind,
+    detail: string,
+    checks: readonly CheckOutcome[],
+  ): RunResult {
+    return {
+      outcome: 'BLOCKED',
+      workItemId: null,
+      runId: null,
+      detail,
+      narrative: narrate(prologue, null).text,
+      checks,
+      blockerKind,
     };
   }
 
@@ -3394,6 +3988,7 @@ export class Kernel {
     detail: string,
     lifecycle: WorkItem['lifecycle'],
     checks: readonly CheckOutcome[],
+    blockerKind: BlockerKind | null = null,
   ): { readonly result: RunResult; readonly workItem: WorkItem } {
     journal.both('run_ended', { outcome, detail }, { stage: 'COMPLETION' });
 
@@ -3416,6 +4011,7 @@ export class Kernel {
         detail,
         narrative: narrate(log.records, updated).text,
         checks,
+        blockerKind: outcome === 'BLOCKED' ? blockerKind : null,
       },
       workItem: updated,
     };

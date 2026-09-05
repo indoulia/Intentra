@@ -925,13 +925,26 @@ describe('workflow admission with mutating templates admissible', () => {
     });
     const evaluated = result.evaluations.find((e) => e.predicate === 'architecture.required');
     assert.ok(evaluated !== undefined, 'the kernel evaluated the predicate itself');
-    if (evaluated.value !== 'FALSE') {
-      assert.ok(
-        result.graph.stages.includes('ARCHITECTURE'),
-        'TRUE or INDETERMINATE keeps the stage: including a review costs only tokens',
-      );
-      assert.ok(result.violations.some((v) => v.code === 'EXCLUSION_PREDICATE_NOT_FALSE'));
-    }
+    /*
+     * The precondition is asserted rather than branched on. `architecture.required` is only
+     * satisfiable by an observation, and the scope here reaches a declared contract boundary,
+     * so it is TRUE — and if it ever stopped being TRUE this test would have to say so out
+     * loud rather than quietly stop checking anything.
+     */
+    assert.equal(
+      evaluated.value,
+      'TRUE',
+      'the scope reaches a declared contract boundary, so the stage is not optional here',
+    );
+    assert.ok(
+      result.graph.stages.includes('ARCHITECTURE'),
+      'TRUE or INDETERMINATE keeps the stage: including a review costs only tokens',
+    );
+    assert.ok(result.violations.some((v) => v.code === 'EXCLUSION_PREDICATE_NOT_FALSE'));
+    assert.ok(
+      result.graph.excluded_stages.every((e) => e.stage !== 'ARCHITECTURE'),
+      'and the stage is not recorded as excluded either: the claim was overridden, not honoured',
+    );
   });
 
   test('an excluded stage records the predicate and the value the kernel evaluated', async () => {

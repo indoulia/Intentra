@@ -8,6 +8,7 @@ import {
   createAdapterSuite,
   type AdapterSuite,
   type ChildWorkItemEntry,
+  type Connector,
   type RunLedgerEntry,
   type RunLedgerReader,
 } from '../src/index.js';
@@ -20,9 +21,12 @@ import {
   READ_ONLY_EXECUTION,
   ScriptedRunner,
   context,
+  failed,
+  ok,
   scratch,
   unreachableConnector,
   type Scratch,
+  type ScriptedCommand,
 } from './helpers.js';
 
 /**
@@ -335,6 +339,175 @@ describe('runtime.outcome_evidence', () => {
   });
 });
 
+describe('git.list_branches', () => {
+  /*
+   * Attachment steps 1 and 8, in one answer.
+   *
+   * The sequence identifies the branches, the default branch and the protected branches, and
+   * **the last of those fails closed** (REPOSITORY_ADAPTER 2.2). A listing of bare ref names
+   * satisfies the first and silently drops the other two, and a consumer reading it has no way
+   * to tell "this branch is unprotected" from "nothing here said". So each record carries the
+   * flag a caller gates on *and* the classification that says whether it was observed or
+   * assumed — the second is what keeps a run that was conservative because it was blind
+   * distinguishable from one that was conservative because the branch really was protected.
+   */
+  /** `git branch --all --format=%(refname)%1f%(refname:short)`, as git writes it. */
+  const SEPARATOR = String.fromCharCode(31);
+  const BRANCHES = [
+    ['refs/heads/main', 'main'],
+    ['refs/heads/feature/x', 'feature/x'],
+    /* The remote's HEAD. Its short form is `origin`, which is no branch at all. */
+    ['refs/remotes/origin/HEAD', 'origin'],
+    ['refs/remotes/origin/main', 'origin/main'],
+  ].map((pair) => pair.join(SEPARATOR)).join('\n');
+
+  function gitScript(): Readonly<Record<string, ScriptedCommand>> {
+    return {
+      git: (args) => {
+        if (args[0] === 'branch') return ok(`${BRANCHES}\n`);
+        if (args[0] === 'symbolic-ref') return ok('origin/main\n');
+        return ok('');
+      },
+    };
+  }
+
+  async function branchSuite(host: Connector | null): Promise<AdapterSuite> {
+    return createAdapterSuite({
+      worktreeRoot: space.worktree,
+      installationRoot: join(space.root, 'installation'),
+      home: join(space.root, 'home'),
+      paths: PATHS,
+      evidence: EVIDENCE,
+      execution: READ_ONLY_EXECUTION,
+      budgets: BUDGETS,
+      clock,
+      runner: new ScriptedRunner(gitScript()),
+      vcsHost: host,
+    });
+  }
+
+  async function listed(host: Connector | null): Promise<ReadonlyArray<Record<string, unknown>>> {
+    const { framework } = await branchSuite(host);
+    const outcome = await framework.call('git', 'list_branches', {}, context());
+    assert.equal(outcome.outcome, 'OK');
+    const assertion = asAssertion(outcome.outcome === 'OK' ? outcome.value : null);
+    assert.equal(assertion.confidence, 'FACT');
+    return (assertion.confidence === 'FACT' ? assertion.value : []) as ReadonlyArray<
+      Record<string, unknown>
+    >;
+  }
+
+  test('a branch is a record: its name, whether it is the default, whether it is protected', async () => {
+    const branches = await listed(null);
+    assert.deepEqual(
+      branches.map((branch) => branch['name']),
+      ['main', 'feature/x', 'origin/main'],
+      "the remote's HEAD is a symbolic pointer at a branch and not a branch, and its short "
+      + 'form `origin` would otherwise be listed, counted and classified as one',
+    );
+    assert.deepEqual(
+      branches.filter((branch) => branch['default'] === true).map((branch) => branch['name']),
+      ['main'],
+      'exactly one, taken from the remote HEAD and preferring the local ref over its remote '
+      + 'twin, so that a base branch named from this is a branch a merge can target',
+    );
+  });
+
+  test('with no VCS host, every branch is protected and the record says it failed closed', async () => {
+    for (const branch of await listed(null)) {
+      assert.equal(
+        branch['protected'], true,
+        'unknown protection means protected: merging into it requires a MERGE_PROTECTED grant',
+      );
+      const classification = branch['protection'] as Record<string, unknown>;
+      assert.equal(classification['value'], 'PROTECTED');
+      assert.equal(classification['confidence'], 'UNKNOWN');
+      assert.equal(
+        classification['failed_closed'], true,
+        'the conservative value is what gates, and this flag is what says nobody observed it. '
+        + 'Without it a blind run and a genuinely protected branch read identically',
+      );
+    }
+  });
+
+  test('where the host answers, the classification is a FACT and did not fail closed', async () => {
+    const host = new FakeConnector('vcs', true, (resource, args) => {
+      if (resource !== 'branch_protection') throw new Error(`no fixture for ${resource}`);
+      return { protected: args['branch'] === 'main' };
+    });
+    const branches = await listed(host);
+    const byName = new Map(branches.map((branch) => [branch['name'], branch]));
+
+    const main = byName.get('main') as Record<string, unknown>;
+    assert.equal(main['protected'], true);
+    assert.equal((main['protection'] as Record<string, unknown>)['confidence'], 'FACT');
+    assert.equal((main['protection'] as Record<string, unknown>)['failed_closed'], false);
+
+    const feature = byName.get('feature/x') as Record<string, unknown>;
+    assert.equal(
+      feature['protected'], false,
+      'a host that positively reports a branch unprotected is an observation, and the whole '
+      + 'point of recording confidence is that this case stays available',
+    );
+    assert.equal((feature['protection'] as Record<string, unknown>)['failed_closed'], false);
+  });
+
+  test('a host that will not answer protection fails closed rather than reporting unprotected', async () => {
+    const branches = await listed(unreachableConnector('vcs'));
+    for (const branch of branches) {
+      assert.equal(branch['protected'], true);
+      assert.equal((branch['protection'] as Record<string, unknown>)['failed_closed'], true);
+    }
+  });
+
+  test('git that will not run is UNAVAILABLE, never a repository with no branches', async () => {
+    const { framework } = await createAdapterSuite({
+      worktreeRoot: space.worktree,
+      installationRoot: join(space.root, 'installation'),
+      home: join(space.root, 'home'),
+      paths: PATHS,
+      evidence: EVIDENCE,
+      execution: READ_ONLY_EXECUTION,
+      budgets: BUDGETS,
+      clock,
+      runner: new ScriptedRunner({}),
+    });
+    const outcome = await framework.call('git', 'list_branches', {}, context());
+    const assertion = asAssertion(outcome.outcome === 'OK' ? outcome.value : null);
+    assert.equal(assertion.confidence, 'UNKNOWN');
+    assert.equal(assertion.confidence === 'UNKNOWN' ? assertion.reason : null, 'UNAVAILABLE');
+  });
+
+  test('an unreadable remote HEAD marks no branch default rather than guessing one', async () => {
+    const { framework } = await createAdapterSuite({
+      worktreeRoot: space.worktree,
+      installationRoot: join(space.root, 'installation'),
+      home: join(space.root, 'home'),
+      paths: PATHS,
+      evidence: EVIDENCE,
+      execution: READ_ONLY_EXECUTION,
+      budgets: BUDGETS,
+      clock,
+      runner: new ScriptedRunner({
+        git: (args) => (args[0] === 'branch' ? ok(`${BRANCHES}\n`) : failed('no such ref')),
+      }),
+    });
+    const outcome = await framework.call('git', 'list_branches', {}, context());
+    const assertion = asAssertion(outcome.outcome === 'OK' ? outcome.value : null);
+    const branches = (assertion.confidence === 'FACT' ? assertion.value : []) as ReadonlyArray<
+      Record<string, unknown>
+    >;
+    assert.ok(branches.length > 0);
+    for (const branch of branches) {
+      assert.equal(
+        'default' in branch, false,
+        '`default: false` on every branch would be a claim nobody established. The key is '
+        + 'absent, so a reader looking for the base branch finds none and says so',
+      );
+    }
+  });
+});
+
 describe('the operations the probes name all exist', () => {
   /*
    * `discovery/src/ops.ts` declares the whole vocabulary in one table so that this coupling
@@ -345,8 +518,8 @@ describe('the operations the probes name all exist', () => {
   const EXPECTED: Readonly<Record<string, readonly string[]>> = {
     repo: ['identify', 'list_paths', 'read_file', 'detect_stack', 'commands'],
     git: [
-      'list_branches', 'log', 'list_worktrees', 'list_tags', 'churn', 'list_prs', 'read_pr',
-      'list_reviews', 'ci_status', 'merge_state',
+      'list_branches', 'default_branch', 'remotes', 'log', 'list_worktrees', 'list_tags',
+      'churn', 'list_prs', 'read_pr', 'list_reviews', 'ci_status', 'merge_state',
     ],
     pm: ['read_issue', 'search_issues', 'list_children', 'list_links', 'list_documents'],
     runtime: [

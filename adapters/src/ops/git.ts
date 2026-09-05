@@ -2,10 +2,19 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AdapterAvailability } from '@agentos/contracts';
 import { fact, inference, selfEvidence, unavailable, unknown } from '../assertions.js';
-import { INTEGER_ARG, OPTIONAL_STRING_ARG, STRING_ARG, readOnlyOperation } from '../define.js';
-import type { OperationRegistration } from '../descriptors.js';
+import {
+  INTEGER_ARG,
+  OPTIONAL_STRING_ARG,
+  PATH_LIST_ARG,
+  STRING_ARG,
+  STRING_LIST_ARG,
+  readOnlyOperation,
+} from '../define.js';
+import type { OperationInvocation, OperationRegistration } from '../descriptors.js';
+import { ConfinementAbort } from '../framework.js';
 import { ResourceAbsentError, ResourceUnreachableError, isAbsent, messageOf } from '../errors.js';
 import type { AvailabilityProbe, Connector, ProcessRunner } from '../ports.js';
+import { DANGEROUS_VALUE, classify } from '../classification.js';
 import type { ClassificationObservation, ClassificationProbe } from '../classification.js';
 
 /**
@@ -35,6 +44,46 @@ const ADAPTER = 'git';
 /** The field separator git writes for %x1f, named so no editor rewrites the literal. */
 const UNIT_SEPARATOR = String.fromCharCode(31);
 const DEFAULT_TIMEOUT_MS = 20_000;
+
+/** The branch listing, and the remote HEAD that says which of them is the default. */
+const BRANCH_LIST_ARGS = [
+  'branch', '--all', `--format=%(refname)%1f%(refname:short)`,
+] as const;
+const DEFAULT_BRANCH_ARGS = ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'] as const;
+
+/**
+ * A list argument, narrowed to the non-empty strings it holds.
+ *
+ * An absent list and an empty one mean the same thing to every caller here — do not narrow by
+ * this — so both arrive as `[]` and no handler has to tell them apart.
+ */
+function stringList(value: unknown): readonly string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
+}
+
+/**
+ * A path-list argument, confined element by element, as worktree-relative paths.
+ *
+ * The framework confines every element of a list argument before the handler runs, but it
+ * keys its resolved-path map by argument name, which a list cannot use. Confining again here
+ * is what lets a handler hand a path to git having seen its verdict rather than having assumed
+ * one — and it is where the worktree-relative form comes from, which is what a pathspec wants.
+ */
+function confinedList(invocation: OperationInvocation, name: string): readonly string[] {
+  const out: string[] = [];
+  for (const requested of stringList(invocation.args[name])) {
+    const verdict = invocation.confine(requested);
+    if (verdict.outcome === 'REFUSED') throw new ConfinementAbort(verdict);
+    out.push(verdict.relative);
+  }
+  return out;
+}
+
+/** `-- a b c`, or nothing. The separator is what stops a path being read as a revision. */
+function pathspec(paths: readonly string[]): readonly string[] {
+  return paths.length === 0 ? [] : ['--', ...paths];
+}
 
 export function gitOperations(options: GitOptions): readonly OperationRegistration[] {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -156,12 +205,103 @@ export function gitOperations(options: GitOptions): readonly OperationRegistrati
       ['rev-parse', '--abbrev-ref', 'HEAD'],
       (stdout) => stdout.trim(),
     ),
-    local(
-      'list_branches',
-      'Every local and remote branch, by short ref name.',
-      ['branch', '--all', '--format=%(refname:short)'],
-      (stdout) => stdout.split('\n').map((line) => line.trim()).filter((line) => line.length > 0),
-    ),
+    readOnlyOperation({
+      adapter: ADAPTER,
+      op: 'list_branches',
+      description:
+        'Every local and remote branch: its short ref name, whether it is the default branch, '
+        + 'and whether it is protected. Protection fails closed, and each branch carries the '
+        + 'classification that says whether that was observed or assumed.',
+      evidenceKind: 'git',
+      observationSafe: true,
+      handler: async (invocation) => {
+        const at = invocation.now.toISOString();
+        const probe = `${ADAPTER}.list_branches`;
+        let stdout: string;
+        try {
+          stdout = await git(BRANCH_LIST_ARGS);
+        } catch (error) {
+          return {
+            value: unavailable(
+              probe, at,
+              'make git available on this host and grant read access to the repository metadata',
+              messageOf(error),
+            ),
+            excerpt: `git ${BRANCH_LIST_ARGS.join(' ')}: unavailable`,
+          };
+        }
+
+        const names = stdout.split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0)
+          .map((line) => line.split(UNIT_SEPARATOR))
+          /*
+           * A remote's HEAD is a symbolic pointer at a branch, not a branch. It is excluded on
+           * its **full** ref name, because the short form of `refs/remotes/origin/HEAD` is
+           * `origin` — a plausible-looking branch name that is no branch at all, and one that
+           * would otherwise be listed, counted, and asked about by the protection classifier.
+           */
+          .filter(([full]) => full !== undefined && !full.endsWith('/HEAD'))
+          .map(([, short]) => short)
+          .filter((short): short is string => short !== undefined && short.length > 0);
+
+        /*
+         * Which of them is the default, from the remote's own HEAD. Where that is not
+         * readable, no branch is marked: `default` is left off every record rather than set
+         * to `false`, because "this is not the default branch" is a claim and nothing here
+         * established it. A reader looking for the base branch then finds none and says so.
+         */
+        let defaultRef: string | null = null;
+        let defaultDetail = 'the remote HEAD is not readable, so no branch is marked default';
+        try {
+          const short = (await git(DEFAULT_BRANCH_ARGS)).trim().replace(/^origin\//, '');
+          defaultRef = names.find((name) => name === short)
+            ?? names.find((name) => name === `origin/${short}`)
+            ?? null;
+          defaultDetail = defaultRef === null
+            ? `the remote HEAD names ${short}, which is not among the listed branches`
+            : `the remote HEAD names ${short}`;
+        } catch (error) {
+          defaultDetail = `the remote HEAD could not be read: ${messageOf(error)}`;
+        }
+
+        /*
+         * Attachment step 8, per branch. Protection lives on the VCS host and not in the
+         * checkout, so with no host configured nothing is established and every branch comes
+         * back protected at UNKNOWN confidence with `failed_closed: true`
+         * (REPOSITORY_ADAPTER 2.2). The flag is what a caller gates on; the classification
+         * beside it is what keeps "this branch really is protected" distinguishable from
+         * "we could not find out", which is the distinction the whole rule rests on.
+         */
+        const protection = branchProtectionProbe(options);
+        const branches: Array<Readonly<Record<string, unknown>>> = [];
+        for (const name of names) {
+          const classification = classify(
+            'branch_protection', name, await protection.probe(name),
+          );
+          branches.push({
+            name,
+            ...(defaultRef === null ? {} : { default: name === defaultRef }),
+            protected: classification.value === DANGEROUS_VALUE.branch_protection,
+            protection: classification,
+          });
+        }
+
+        const evidence = selfEvidence({
+          adapter: ADAPTER,
+          op: 'list_branches',
+          args: invocation.args,
+          kind: 'git',
+          ref: `git ${BRANCH_LIST_ARGS.join(' ')}`,
+          excerpt: stdout.trim(),
+          observedAt: at,
+        });
+        return {
+          value: fact(branches, probe, at, evidence),
+          excerpt: `${String(branches.length)} branch(es); ${defaultDetail}`,
+        };
+      },
+    }),
     local(
       'remotes',
       'Configured remotes and their fetch and push URLs.',
@@ -177,7 +317,7 @@ export function gitOperations(options: GitOptions): readonly OperationRegistrati
     local(
       'default_branch',
       "The remote's default branch, from its HEAD symbolic ref.",
-      ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'],
+      [...DEFAULT_BRANCH_ARGS],
       (stdout) => stdout.trim().replace(/^origin\//, ''),
     ),
     local(
@@ -219,17 +359,27 @@ export function gitOperations(options: GitOptions): readonly OperationRegistrati
       adapter: ADAPTER,
       op: 'churn',
       description:
-        'Which paths changed most over a window of commits. Change concentration is an '
-        + 'observation about where work has been happening, not a judgement about quality.',
-      args: { limit: INTEGER_ARG },
+        'Which paths changed most over a window of commits, optionally restricted to a set of '
+        + 'paths. Change concentration is an observation about where work has been happening, '
+        + 'not a judgement about quality.',
+      /*
+       * `paths` is what makes this answerable about a work item rather than about the
+       * repository: "where is the churn" is a different question from "where is the churn in
+       * the code I am allowed to touch". It is a path argument, so every element is confined
+       * against the worktree root, the dispatch mandate and the deny-list before it reaches
+       * git's pathspec.
+       */
+      args: { limit: INTEGER_ARG, paths: PATH_LIST_ARG },
       evidenceKind: 'git',
       observationSafe: true,
       handler: async (invocation) => {
         const at = invocation.now.toISOString();
         const limit = typeof invocation.args['limit'] === 'number' ? invocation.args['limit'] : 200;
+        const paths = confinedList(invocation, 'paths');
         try {
           const stdout = await git([
             'log', `--max-count=${String(limit)}`, '--numstat', '--format=%H',
+            ...pathspec(paths),
           ]);
           const counts = new Map<string, { commits: number; added: number; removed: number }>();
           for (const line of stdout.split('\n')) {
@@ -278,15 +428,43 @@ export function gitOperations(options: GitOptions): readonly OperationRegistrati
         'Whether a ref has been merged into its base, from the VCS host where one is '
         + 'configured and from the local history otherwise. Never inferred from a green '
         + 'pipeline.',
-      args: { ref: STRING_ARG, base: OPTIONAL_STRING_ARG },
+      /*
+       * `ref`/`base` is the pair the local history can settle with an ancestor test, so it is
+       * what makes this answerable with no VCS host at all. `pull_request` is the host's own
+       * identifier for the same question and is passed straight through where one is known —
+       * a host knows whether a merge was recorded, which reachability does not say.
+       */
+      args: {
+        ref: STRING_ARG,
+        base: OPTIONAL_STRING_ARG,
+        pull_request: OPTIONAL_STRING_ARG,
+      },
       evidenceKind: 'git',
       observationSafe: true,
       handler: async (invocation) => {
         const at = invocation.now.toISOString();
-        const ref = String(invocation.args['ref']);
+        const ref = typeof invocation.args['ref'] === 'string' && invocation.args['ref'].length > 0
+          ? invocation.args['ref']
+          : null;
         const base = typeof invocation.args['base'] === 'string' && invocation.args['base'].length > 0
           ? invocation.args['base']
           : null;
+        const pullRequest = typeof invocation.args['pull_request'] === 'string'
+          ? invocation.args['pull_request']
+          : null;
+        if (ref === null && pullRequest === null) {
+          /* Nothing to ask about. `String(undefined)` would have asked the host about a ref
+           * named "undefined" and reported whatever came back as this change's merge state. */
+          return {
+            value: unknown(
+              'git.merge_state', at, 'INSUFFICIENT_EVIDENCE',
+              'name the ref whose merge state is wanted, or the pull request the host knows it '
+              + 'by. Neither names a change',
+              'neither a ref nor a pull request was supplied',
+            ),
+            excerpt: 'merge state: nothing was named',
+          };
+        }
 
         const hosted = await viaHost('merge_state', invocation.args, 'git.merge_state', at);
         if (hosted.ok) {
@@ -296,7 +474,7 @@ export function gitOperations(options: GitOptions): readonly OperationRegistrati
               op: 'merge_state',
               args: invocation.args,
               kind: 'git',
-              ref: `merge state of ${ref}`,
+              ref: `merge state of ${ref ?? String(pullRequest)}`,
               excerpt: JSON.stringify(hosted.value),
               observedAt: at,
             })),
@@ -309,7 +487,7 @@ export function gitOperations(options: GitOptions): readonly OperationRegistrati
          * where a base is named: an ancestor test is an observation, and it is a weaker one
          * than the host's because it says nothing about how the merge was recorded.
          */
-        if (base === null) {
+        if (base === null || ref === null) {
           return { value: hosted.assertion, excerpt: 'merge state: unavailable' };
         }
         try {
@@ -357,8 +535,32 @@ export function gitOperations(options: GitOptions): readonly OperationRegistrati
     readOnlyOperation({
       adapter: ADAPTER,
       op: 'log',
-      description: 'Commits reachable from a ref, newest first.',
-      args: { ref: OPTIONAL_STRING_ARG, limit: INTEGER_ARG },
+      description:
+        'Commits reachable from a ref and not from another, newest first, optionally '
+        + 'restricted to a set of paths and to subjects containing given text.',
+      /*
+       * Four narrowings, and each one is the difference between "the repository has commits"
+       * and "this work item has an implementation".
+       *
+       * - `not` excludes what the base branch already had, which is the only way to see the
+       *   commits a branch actually contributed rather than everything it inherited.
+       * - `paths` restricts to the work item's scope. A path argument, so every element is
+       *   confined before it becomes a pathspec.
+       * - `message_contains` matches commit subjects against the work item's identity tokens,
+       *   which is how a commit is recognised as belonging to a ticket in a repository whose
+       *   branch names say nothing. The tokens are matched literally, never as expressions.
+       *
+       * Doing this narrowing in the adapter rather than in the caller is not a convenience:
+       * `git log` can answer the narrow question directly, and a caller that had to read the
+       * whole history and filter it would be citing evidence for one claim and drawing another.
+       */
+      args: {
+        ref: OPTIONAL_STRING_ARG,
+        limit: INTEGER_ARG,
+        not: STRING_ARG,
+        paths: PATH_LIST_ARG,
+        message_contains: STRING_LIST_ARG,
+      },
       evidenceKind: 'git',
       observationSafe: true,
       handler: async (invocation) => {
@@ -366,10 +568,26 @@ export function gitOperations(options: GitOptions): readonly OperationRegistrati
         const ref = typeof invocation.args['ref'] === 'string' && invocation.args['ref'].length > 0
           ? invocation.args['ref']
           : 'HEAD';
+        const excluded = typeof invocation.args['not'] === 'string' && invocation.args['not'].length > 0
+          ? invocation.args['not']
+          : null;
         const limit = typeof invocation.args['limit'] === 'number' ? invocation.args['limit'] : 25;
+        const paths = confinedList(invocation, 'paths');
+        const tokens = stringList(invocation.args['message_contains']);
         const format = '%H%x1f%an%x1f%aI%x1f%s';
+        /* `base..ref` rather than `ref ^base`: one revision argument, no shell metacharacter,
+         * and the same meaning on every platform. */
+        const range = excluded === null ? ref : `${excluded}..${ref}`;
         try {
-          const stdout = await git(['log', `--max-count=${String(limit)}`, `--format=${format}`, ref]);
+          const stdout = await git([
+            'log',
+            `--max-count=${String(limit)}`,
+            `--format=${format}`,
+            /* Literal, so a ticket key with a dot or a bracket in it is not an expression. */
+            ...(tokens.length > 0 ? ['--fixed-strings', ...tokens.map((t) => `--grep=${t}`)] : []),
+            range,
+            ...pathspec(paths),
+          ]);
           const commits = stdout.split('\n')
             .filter((line) => line.length > 0)
             .map((line) => {
@@ -386,7 +604,7 @@ export function gitOperations(options: GitOptions): readonly OperationRegistrati
             op: 'log',
             args: invocation.args,
             kind: 'git',
-            ref: `git log ${ref}`,
+            ref: `git log ${range}`,
             excerpt: stdout.trim(),
             observedAt: at,
           });
@@ -448,8 +666,22 @@ export function gitOperations(options: GitOptions): readonly OperationRegistrati
     readOnlyOperation({
       adapter: ADAPTER,
       op: 'list_prs',
-      description: 'Pull requests on this repository, or an explicit UNAVAILABLE.',
-      args: { state: OPTIONAL_STRING_ARG, head: OPTIONAL_STRING_ARG },
+      description:
+        'Pull requests on this repository, optionally narrowed by state, by head branch and '
+        + 'by search tokens, or an explicit UNAVAILABLE.',
+      /*
+       * `search` carries the work item's identity tokens. Finding the pull request for a work
+       * item by listing every pull request and filtering locally would be the same answer with
+       * a worse failure mode: on a busy repository the listing truncates, and a truncated
+       * listing that matched nothing is indistinguishable from a work item with no pull
+       * request. Handing the tokens to the host makes the narrowing the host's, where the
+       * index is.
+       */
+      args: {
+        state: OPTIONAL_STRING_ARG,
+        head: OPTIONAL_STRING_ARG,
+        search: STRING_LIST_ARG,
+      },
       evidenceKind: 'http',
       observationSafe: true,
       handler: async (invocation) => {

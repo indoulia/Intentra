@@ -1606,12 +1606,18 @@ describe('the invariant suite', () => {
 
     /*
      * State is asserted against the log, which is authoritative, rather than against the
-     * cursor, which is a projection. Worth naming why: `project()` marks a transition's
-     * `from` stage `COMPLETED` on every edge including the escalation to `BLOCKED`, so the
-     * cursor reads a stage that never dispatched as done. `preBlockStage` carries the truth
-     * and is what the run resumes from — but `stagesRemaining` and `stageFromCursor` both
-     * read the cursor, and this is reported as a finding rather than asserted here, because
-     * asserting the current shape would pin it.
+     * cursor, which is a projection.
+     *
+     * Writing this test is what found the defect that made the distinction urgent:
+     * `project()` marked a transition's `from` stage `COMPLETED` on every edge, including the
+     * escalation to `BLOCKED`, so a stage that never dispatched read as done and
+     * `stageFromCursor` answered `COMPLETION` — the run would have resumed by judging work
+     * that never happened. That is fixed (decision I-28: a stage the run *stopped at* stays
+     * `ACTIVE`; only a stage it *left* is `COMPLETED`), and `core/test/recovery.test.ts`
+     * pins it directly under "a stage the run blocked at is not a stage the run completed".
+     *
+     * The log is still what this invariant asserts against, because the invariant is about
+     * state not advancing rather than about how the projection renders it.
      */
     const projection = project(log);
     assert.equal(

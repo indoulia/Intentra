@@ -351,8 +351,8 @@ export function intakeRereaderFor(
       return {
         outcome: 'UNAVAILABLE',
         detail:
-          `${locator.adapter} declares no operation for this locator, so the source cannot be `
-          + 're-executed and drift is indeterminate rather than absent',
+          `the ${locator.adapter} locator names no operation to re-execute, so the source `
+          + 'cannot be re-read and drift is indeterminate rather than absent',
       };
     }
     const call = await built.framework.call(locator.adapter, locator.op, locator.args, BOOTSTRAP);
@@ -363,7 +363,7 @@ export function intakeRereaderFor(
           `re-reading ${locator.adapter}.${locator.op} answered ${call.outcome}: ${call.message}`,
       };
     }
-    const raw = rawTextOf(call.value);
+    const raw = intakeTextOf(call.value);
     if (raw === null) {
       return {
         outcome: 'UNAVAILABLE',
@@ -373,6 +373,53 @@ export function intakeRereaderFor(
       };
     }
     return { outcome: 'OK', raw };
+  };
+}
+
+/**
+ * The intake text the run is admitted against, read through the locator that will be
+ * re-executed at `COMPLETION`.
+ *
+ * This is the second half of D4, and the half that matters. `sourceLocatorFor` was already
+ * right that for a project-management intake the *ticket* is the source: the operator naming a
+ * key is a pointer at the request, not the request. But `IntakeRecord.content_hash` is computed
+ * over whatever `StartInput.raw` carries, and the CLI carried the key the operator typed. So
+ * the hash was over `"INV-7"` and the re-read at `COMPLETION` was over the ticket body — two
+ * different things, and the comparison between them would have said `CHANGED` on every run of
+ * every ticket, for ever, without a ticket ever having changed. A drift check that always fires
+ * is a drift check nobody reads.
+ *
+ * So the pointer is dereferenced here, once, through the same reader the drift check uses:
+ * what is hashed at admission and what is re-read at completion are produced by the same code
+ * against the same locator, which is the only way the comparison means anything.
+ *
+ * A source that cannot be read at admission is admitted on what the operator typed and its
+ * locator is stripped of its operation, so `COMPLETION` records `UNAVAILABLE`. That is the
+ * honest answer: the body was never seen, so nothing about it can have changed or stayed the
+ * same. Inventing `CHANGED` from a hash of the key would be worse than saying nothing.
+ */
+export async function admitIntake(
+  built: BuiltKernel,
+  locator: Locator,
+  typed: string,
+): Promise<{
+    readonly locator: Locator;
+    readonly raw: string;
+    /** Why the source could not be dereferenced, or `null` where it was. */
+    readonly unresolved: string | null;
+  }> {
+  /*
+   * `host.read_intake` answers with the invocation itself, so the typed text already *is* the
+   * source. Dereferencing it would be a second read of the same string.
+   */
+  if (locator.adapter === 'host') return { locator, raw: typed, unresolved: null };
+
+  const read = await intakeRereaderFor(built)(locator);
+  if (read.outcome === 'OK') return { locator, raw: read.raw, unresolved: null };
+  return {
+    locator: { ...locator, op: null },
+    raw: typed,
+    unresolved: read.detail,
   };
 }
 
@@ -524,11 +571,50 @@ function unwrap(value: unknown): unknown {
   return value;
 }
 
-function rawTextOf(value: unknown): string | null {
-  if (typeof value === 'string') return value;
-  const record = asRecord(unwrap(value));
+/**
+ * The text of an intake read, whatever shape the adapter answered with.
+ *
+ * The first half of D4. This used to accept a string or a `{raw}` record and nothing else,
+ * which is the shape `host.read_intake` answers with — so a natural-language intake compared
+ * fine and `pm.read_issue`, which answers with a ticket record, produced no text at all and
+ * every project-management run recorded `source_drift: UNAVAILABLE`. "The ticket system did
+ * not answer" and "the ticket answered and we could not read it" are different facts, and only
+ * the first is a fact about the world.
+ *
+ * A record with no `raw` is rendered as sorted `key: value` lines. Sorted, because the hash has
+ * to be over the ticket and not over the order a connector happened to serialize it in; as
+ * lines rather than as JSON, because this text is what the narrative quotes back verbatim and
+ * what a `CHANGED` diff is taken over, and both are read by a human.
+ *
+ * Volatile framing is dropped before rendering: `unwrap` removes the assertion envelope, whose
+ * `observed_at` moves on every read and would make every ticket look edited.
+ */
+export function intakeTextOf(value: unknown): string | null {
+  if (typeof value === 'string') return value.length === 0 ? null : value;
+  const unwrapped = unwrap(value);
+  if (typeof unwrapped === 'string') return unwrapped.length === 0 ? null : unwrapped;
+  const record = asRecord(unwrapped);
   const raw = record['raw'];
-  return typeof raw === 'string' ? raw : null;
+  if (typeof raw === 'string') return raw;
+  const keys = Object.keys(record).sort();
+  if (keys.length === 0) return null;
+  return keys
+    .map((key) => `${key}: ${stableText(record[key])}`)
+    .join('\n');
+}
+
+/** A field of an intake record, rendered so that two reads of the same value agree. */
+function stableText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return String(value);
+  }
+  /* A symbol or a function is not content a source can have sent, and neither stringifies. */
+  if (typeof value !== 'object') return '';
+  if (Array.isArray(value)) return `[${value.map(stableText).join(', ')}]`;
+  const record = asRecord(value);
+  return `{${Object.keys(record).sort().map((k) => `${k}: ${stableText(record[k])}`).join(', ')}}`;
 }
 
 function excerptOf(value: unknown): string {

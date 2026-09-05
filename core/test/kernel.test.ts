@@ -2,6 +2,7 @@ import { test, describe, after } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   fixtures as fx,
+  type CheckOutcome,
   type Event,
   type HandoffEnvelope,
   type Stage,
@@ -14,6 +15,7 @@ import {
   README_CONTENT,
   resolutionEnvelope,
   rootCauseEnvelope,
+  ScriptedSubstrate,
   workflowEnvelope,
   type ScriptedResponse,
 } from './doubles.js';
@@ -113,6 +115,276 @@ describe('a read-only run, end to end, with no model and no repository', () => {
     assert.ok(
       firstIndexOf('WORKFLOW_SELECTED') < firstIndexOf('AUDIT'),
       'the graph is selected before the first stage of it runs',
+    );
+  });
+
+  /* ------------------------------------------- the prologue's context mandate ---- */
+
+  /**
+   * Four properties of the dispatch added at `CONTEXT_DISCOVERY`.
+   *
+   * `context-discovery/context` is the only owner of Definition-of-Done criterion 1, and until
+   * the prologue dispatched it the criterion was `NOT_VALIDATED` in every run of every template
+   * (decisions I-33 and I-38). These are the properties that make adding it safe rather than
+   * merely useful: it runs once, it supplies its verdict through an envelope like everything
+   * else, a failure stops the run instead of advancing it, and it cannot write reality.
+   */
+  test('the context mandate is dispatched exactly once, after admission, and owes criterion 1', async () => {
+    const h = rig({ script: goodScript() });
+    const result = await new Kernel(h.ports).work(start());
+    assert.ok(result.workItemId !== null && result.runId !== null);
+
+    const contextDispatches = h.substrate.dispatched.filter(
+      (input) => input.stage === 'CONTEXT_DISCOVERY',
+    );
+    assert.equal(
+      contextDispatches.length,
+      1,
+      'once per run: two dispatches would be two answers to one owed criterion',
+    );
+    const [dispatch] = contextDispatches;
+    assert.ok(dispatch !== undefined);
+    assert.equal(dispatch.agent, 'context-discovery');
+    assert.equal(dispatch.mandate_name, 'context');
+    assert.deepEqual(
+      [...dispatch.dod_criteria_owed],
+      [1],
+      'the package tells the agent which criterion it owes, which is where the obligation '
+      + 'comes from',
+    );
+
+    /*
+     * After admission, and the package proves it: an admitted Work Item's id and scope, and the
+     * versioned Context Package the probes wrote. The `resolution` mandate has none of these,
+     * which is why it is the one that runs on tier-1 orientation and this one does not.
+     */
+    assert.equal(dispatch.work_item_id, result.workItemId);
+    assert.equal(dispatch.context_package_ref, 'context/v1.json');
+    assert.ok(
+      dispatch.mandate.in_scope.length > 0,
+      'it is scoped by the admitted Work Item, which did not exist when resolution ran',
+    );
+
+    const log = events(h, result.workItemId, result.runId);
+    const received = log.filter(
+      (e) => e.event === 'envelope_received' && e.stage === 'CONTEXT_DISCOVERY',
+    );
+    assert.equal(received.length, 1, 'and its envelope went through receipt like any other');
+    const [envelope] = received;
+    assert.ok(envelope !== undefined && envelope.event === 'envelope_received');
+    assert.ok(
+      envelope.data.steps.some((step) => step.check === 'reconciliation'),
+      'including the reconciliation of its coverage against the calls it actually made',
+    );
+    assert.ok(
+      log.some((e) => e.event === 'tool_surface_conformance' && e.stage === 'CONTEXT_DISCOVERY'),
+      'and the tool surface check, which is not something a prologue dispatch is exempt from',
+    );
+  });
+
+  test('the criterion 1 verdict the context envelope carries is the one COMPLETION judges', async () => {
+    /*
+     * A `TASK` admitted on evidence naming its own scope, because a `TASK`'s outcome binds to
+     * `documentation` — a profile that *names* criterion 1 — and the run under `audit` would
+     * never report the criterion at all. The point here is the arithmetic, so the run has to be
+     * one where the arithmetic includes it.
+     */
+    const evidence = fx.evidence({
+      id: 'E-01',
+      kind: 'file',
+      locator: { adapter: 'repo', op: 'read_file', args: { path: 'README.md' } },
+      ref: 'README.md',
+      excerpt: README_CONTENT,
+    });
+    const h = rig({
+      script: [
+        {
+          kind: 'ENVELOPE',
+          envelope: resolutionEnvelope({
+            type: fx.factAssertion('TASK', { evidence: [evidence], probe: 'resolution' }),
+          }),
+        },
+        { kind: 'ENVELOPE', envelope: workflowEnvelope() },
+        withCall(auditEnvelope()),
+        withCall(rootCauseEnvelope()),
+        withCall(completionEnvelope()),
+      ],
+    });
+    const result = await new Kernel(h.ports).work(start());
+    assert.ok(result.workItemId !== null && result.runId !== null);
+    assert.equal(
+      h.store.getWorkItem(result.workItemId)?.type,
+      'TASK',
+      'the precondition: the type survived, so the outcome binds to a profile naming criterion 1',
+    );
+
+    const log = events(h, result.workItemId, result.runId);
+    const computed = log.find((e) => e.event === 'dod_computed');
+    assert.ok(computed !== undefined && computed.event === 'dod_computed');
+
+    /*
+     * `collectVerdicts` reads the envelopes the run accepted, and the context envelope is now
+     * among them — so criterion 1 is attributed to the envelope that supplied it. Before the
+     * prologue dispatched the mandate this was `NOT_VALIDATED` with `supplied_by_envelope:
+     * null` in every run of every template, which is decision I-33's whole subject.
+     */
+    const contextUnderstood = computed.data.criteria.find((c) => c.criterion === 1);
+    assert.ok(contextUnderstood !== undefined, 'criterion 1 is one of this profile\'s criteria');
+    assert.equal(contextUnderstood.owner_role, 'context-discovery');
+    assert.notEqual(
+      contextUnderstood.supplied_by_envelope,
+      null,
+      'the verdict reached COMPLETION inside an envelope, which is the only way a verdict '
+      + 'reaches COMPLETION at all',
+    );
+
+    const received = log.find(
+      (e) => e.event === 'envelope_received' && e.stage === 'CONTEXT_DISCOVERY',
+    );
+    assert.ok(received !== undefined && received.event === 'envelope_received');
+    assert.equal(
+      contextUnderstood.supplied_by_envelope,
+      received.data.envelope_id,
+      'and the envelope it names is the one the context dispatch returned, not some other',
+    );
+  });
+
+  test('a FAILED context dispatch does not advance state: the run blocks in the prologue', async () => {
+    const h = rig({
+      script: [
+        { kind: 'ENVELOPE', envelope: resolutionEnvelope() },
+        {
+          kind: 'FAILED',
+          stage: 'CONTEXT_DISCOVERY',
+          failure: 'TIMEOUT',
+          detail: 'the context mandate did not answer in time',
+        },
+        { kind: 'ENVELOPE', envelope: workflowEnvelope() },
+        withCall(auditEnvelope()),
+      ],
+    });
+    const result = await new Kernel(h.ports).work(start());
+    assert.equal(result.outcome, 'BLOCKED');
+    assert.equal(result.blockerKind, 'EXTERNAL_DEPENDENCY');
+    assert.ok(result.workItemId !== null && result.runId !== null);
+
+    const log = events(h, result.workItemId, result.runId);
+    assert.ok(
+      log.some(
+        (e) => e.event === 'dispatch_result'
+          && e.stage === 'CONTEXT_DISCOVERY'
+          && e.data.outcome === 'FAILED',
+      ),
+      'the failure is recorded against the dispatch that had it',
+    );
+
+    /* Nothing after it ran. No workflow was admitted, no stage was dispatched, no Definition
+     * of Done was computed over verdicts nobody supplied. */
+    assert.ok(!kinds(log).includes('workflow_admitted'), 'no workflow was selected');
+    assert.ok(!kinds(log).includes('dod_computed'), 'and nothing was judged complete');
+    assert.deepEqual(
+      h.substrate.dispatched.map((input) => input.stage),
+      ['RESOLUTION', 'CONTEXT_DISCOVERY'],
+      'the run stopped where the dispatch failed rather than stepping past it',
+    );
+    assert.equal(
+      h.store.readLease(result.workItemId),
+      null,
+      'and the lease is released, so the run resumes at the same point when the dependency '
+      + 'returns',
+    );
+  });
+
+  test('a malformed context envelope is a failed dispatch, never a parse-and-repair', async () => {
+    const h = rig({
+      script: [
+        { kind: 'ENVELOPE', envelope: resolutionEnvelope() },
+        { kind: 'ENVELOPE', stage: 'CONTEXT_DISCOVERY', envelope: { not: 'an envelope' } },
+        { kind: 'ENVELOPE', envelope: workflowEnvelope() },
+      ],
+    });
+    const result = await new Kernel(h.ports).work(start());
+    assert.equal(result.outcome, 'BLOCKED');
+    assert.ok(result.workItemId !== null && result.runId !== null);
+    const log = events(h, result.workItemId, result.runId);
+    const rejected = log.filter((e) => e.event === 'envelope_rejected');
+    assert.ok(rejected.length > 0, 'the rejection is an event, not a thrown error');
+    assert.equal(rejected[0]?.event === 'envelope_rejected' ? rejected[0].data.step : null, 'schema');
+    assert.ok(!kinds(log).includes('workflow_admitted'));
+  });
+
+  test('the probes are the only writers of current_reality: a context envelope claiming one changes nothing', async () => {
+    /*
+     * The property that makes the dispatch safe to have added at all. Discovery observed the
+     * implementation as absent; the context agent's envelope says the opposite, in the one
+     * output whose name invites it. The stored Context Package is what discovery wrote, and the
+     * predicate that reads it reads discovery's value — an agent that could supply both the
+     * observation and the judgment of it would be judging its own work.
+     */
+    const claimed = {
+      implementation_present: fx.factAssertion(true, { probe: 'the agent said so' }),
+    };
+    const h = rig({
+      discovery: { reality: { implementation_present: fx.factAssertion(false, { probe: 'git.log' }) } },
+      script: [
+        { kind: 'ENVELOPE', envelope: resolutionEnvelope() },
+        withCall(fx.envelope({
+          envelope_id: 'env_context_overreaching',
+          agent: 'context-discovery',
+          stage_in: 'CONTEXT_DISCOVERY',
+          outputs: { context_package: 'inline', current_reality: claimed, gaps: 'none' },
+          coverage: fx.coverage({ scope_examined: ['README.md'] }),
+          evidence: [fx.evidence({
+            id: 'E-01',
+            locator: { adapter: 'repo', op: 'read_file', args: { path: 'README.md' } },
+            ref: 'README.md',
+            excerpt: README_CONTENT,
+          })],
+          dod_verdicts: [fx.criterionVerdict({ criterion: 1, evidence: ['E-01'] })],
+          next_action: null,
+        })),
+        { kind: 'ENVELOPE', envelope: workflowEnvelope() },
+        withCall(auditEnvelope()),
+        withCall(rootCauseEnvelope()),
+        withCall(completionEnvelope()),
+      ],
+    });
+
+    const result = await new Kernel(h.ports).work(start());
+    assert.ok(result.workItemId !== null && result.runId !== null);
+
+    const stored = h.store.getVersioned(
+      result.workItemId, result.runId, 'context', 1,
+    ) as { readonly current_reality: Record<string, { readonly value: unknown }> };
+    assert.equal(
+      stored.current_reality['implementation_present']?.value,
+      false,
+      'the stored Context Package is the one the probes wrote, and the envelope did not '
+      + 'overwrite it',
+    );
+
+    const log = events(h, result.workItemId, result.runId);
+    assert.ok(
+      log.some(
+        (e) => e.event === 'envelope_received' && e.stage === 'CONTEXT_DISCOVERY',
+      ),
+      'the envelope was accepted — this is not a test of it being rejected, but of what an '
+      + 'accepted one is allowed to change',
+    );
+    const versions = log.filter((e) => e.event === 'context_package_versioned');
+    assert.equal(
+      versions.length,
+      1,
+      'and no second version was written: the package the rest of the run reads is v1, exactly '
+      + 'as discovery produced it',
+    );
+    assert.ok(
+      log.some(
+        (e) => e.event === 'note'
+          && e.data.topic === 'context package authority'
+          && /Only a probe writes reality/.test(e.data.detail),
+      ),
+      'the run log says so in its own words, so a reader does not have to infer it',
     );
   });
 
@@ -343,7 +615,12 @@ describe('the kernel disbelieves agents while a run is in flight', () => {
     const result = await new Kernel(h.ports).work(start());
     assert.ok(result.workItemId !== null && result.runId !== null);
     const log = events(h, result.workItemId, result.runId);
-    const report = log.find((e) => e.event === 'tool_surface_conformance');
+    /* The AUDIT dispatch's report, named rather than taken as the first one in the log: the
+     * prologue's `context` dispatch is checked too and conforms, and taking whichever report
+     * came first would make this assertion about the wrong dispatch. */
+    const report = log.find(
+      (e) => e.event === 'tool_surface_conformance' && e.stage === 'AUDIT',
+    );
     assert.ok(report !== undefined && report.event === 'tool_surface_conformance');
     assert.notEqual(report.data.verdict, 'CONFORMS');
     assert.notEqual(result.outcome, 'COMPLETE');
@@ -462,6 +739,57 @@ describe('exit test 1: killed mid-dispatch, it resumes from the log', () => {
     const recovered = new Kernel(h.ports).recoverRun(first.workItemId, first.runId);
     assert.deepEqual(recovered.projection.interruptedDispatches, []);
   });
+
+  test('a run that blocked resumes at the stage that blocked, not the one after it', async () => {
+    /*
+     * A real block, through the whole kernel: the audit's coverage claim is not supported by
+     * any adapter call, the envelope is rejected and the run escalates out of `AUDIT`.
+     *
+     * `AUDIT` produced nothing. Recovery replays the log, rebuilds the cursor and asks the
+     * cursor where the run was — it never re-derives the entry stage, because the frozen graph
+     * and the cursor already say. So the cursor has to be right: a blocked stage read as
+     * `COMPLETED` leaves nothing `ACTIVE` and nothing `PENDING`, and the answer then jumps to
+     * `COMPLETION` — a run resuming by judging work that never happened.
+     */
+    const h = rig({
+      script: [
+        { kind: 'ENVELOPE', envelope: resolutionEnvelope() },
+        { kind: 'ENVELOPE', envelope: workflowEnvelope() },
+        { kind: 'ENVELOPE', envelope: auditEnvelope() },
+      ],
+    });
+    const kernel = new Kernel(h.ports);
+    const result = await kernel.work(start());
+    assert.equal(result.outcome, 'BLOCKED');
+    assert.ok(result.workItemId !== null && result.runId !== null);
+
+    const escalation = events(h, result.workItemId, result.runId).find(
+      (e) => e.event === 'transition' && e.data.to === 'BLOCKED',
+    );
+    assert.ok(escalation !== undefined && escalation.event === 'transition');
+    assert.equal(escalation.data.from, 'AUDIT', 'the precondition: the run blocked at AUDIT');
+
+    const record = h.store.getRun(result.workItemId, result.runId);
+    assert.ok(record !== null);
+    assert.notEqual(
+      record.cursor.find((c) => c.stage === 'AUDIT')?.state,
+      'COMPLETED',
+      'the stage the run stopped at did not complete, and run.json must not say it did',
+    );
+    assert.equal(record.pre_block_stage, 'AUDIT');
+
+    const recovered = kernel.recoverRun(result.workItemId, result.runId);
+    assert.equal(
+      kernel.stageOf(record.graph, recovered.projection.cursor),
+      'AUDIT',
+      'the run resumes in place',
+    );
+    assert.notEqual(
+      kernel.stageOf(record.graph, recovered.projection.cursor),
+      'COMPLETION',
+      'and not at the judgment of work the run never did',
+    );
+  });
 });
 
 /* ============================================== exit test 4: one run at a time ==== */
@@ -479,20 +807,53 @@ describe('exit test 4: two starts against one work item, exactly one wins', () =
     assert.ok(first.workItemId !== null && first.runId !== null);
 
     /*
-     * The first run never released its lease, because its script ran out mid-run — which is
-     * the state a killed process leaves behind. A second start against the same content
-     * derives the same work item id and must be refused rather than opening a second run.
+     * The state a killed process leaves behind: a lease still held by a run that is not
+     * running. The kernel releases its own lease in a `finally`, so this has to be established
+     * rather than hoped for — and it is established, not branched on, because a test that
+     * checks the invariant only when it happens to hold is a test that can pass having
+     * asserted nothing.
+     *
+     * A second start against the same content derives the same work item id and must be
+     * refused rather than opening a second run against it.
      */
+    const abandoned = 'run_20260904T100000Z_0000ff';
+    const acquired = h.store.acquireLease(
+      first.workItemId,
+      abandoned,
+      'pid:killed',
+      h.clock.now(),
+      h.policies.budgets.lease_timeout_ms,
+    );
+    assert.equal(
+      acquired.outcome, 'ACQUIRED',
+      'the precondition: the first run released its lease, so the killed process can take it',
+    );
     const lease = h.store.readLease(first.workItemId);
-    if (lease !== null) {
-      const second = await new Kernel(h.ports).work(start());
-      assert.equal(second.outcome, 'REFUSED');
-      assert.match(
-        second.detail,
-        new RegExp(lease.run_id),
-        'the refusal names the run that holds it, so the operator knows what to look at',
-      );
-    }
+    assert.equal(lease?.run_id, abandoned, 'and the lease is held, which is what makes this a race');
+
+    /*
+     * The second start gets its own script. The refusal has to come from the lease, and a
+     * start that ran out of recorded envelopes would be refused at resolution instead —
+     * which is a refusal, but not this one.
+     */
+    const second = await new Kernel({
+      ...h.ports,
+      substrate: new ScriptedSubstrate([
+        { kind: 'ENVELOPE', envelope: resolutionEnvelope() },
+      ]),
+    }).work(start());
+    assert.equal(second.outcome, 'REFUSED');
+    assert.equal(second.runId, null, 'a refused start opens no run');
+    assert.match(
+      second.detail,
+      new RegExp(abandoned),
+      'the refusal names the run that holds it, so the operator knows what to look at',
+    );
+    assert.equal(
+      h.store.readLease(first.workItemId)?.run_id,
+      abandoned,
+      'and the refused start did not take the lease from the run that holds it',
+    );
   });
 
   test('the same intake resolves to the same work item, which is what makes the refusal possible', async () => {
@@ -611,9 +972,16 @@ describe('the fixtures are the fixtures the kernel receives', () => {
     }
     const stages = h.substrate.dispatched.map((d) => d.stage);
     assert.deepEqual(
-      stages.slice(0, 2),
-      ['RESOLUTION', 'WORKFLOW_SELECTED'],
-      'the two prologue dispatches, in order, before any template stage',
+      stages.slice(0, 3),
+      ['RESOLUTION', 'CONTEXT_DISCOVERY', 'WORKFLOW_SELECTED'],
+      'the three prologue dispatches, in order, before any template stage — Context Discovery '
+      + 'with both of its mandates, and the Orchestrator proposing a workflow only after them',
+    );
+    assert.equal(
+      stages.filter((s) => s === 'CONTEXT_DISCOVERY').length,
+      1,
+      'the context mandate is dispatched exactly once per run: it produces the criterion 1 '
+      + 'verdict, and two of them would be two answers to one owed criterion',
     );
   });
 
@@ -629,6 +997,117 @@ describe('the fixtures are the fixtures the kernel receives', () => {
       + 'component that gathers it',
     );
   });
+});
+
+/* ============================================== what the dispatch is told ==== */
+
+/**
+ * `stages_remaining` is the agent's read-only view of the workflow, and it has to be true.
+ *
+ * It was built from a hard-coded empty cursor — `stagesRemaining([], graph)` — which filters
+ * nothing, so every dispatch was told every stage was still outstanding: stages this run had
+ * already completed, and stages the resume sweep had marked `COMPLETED_PRIOR` from observed
+ * reality. An agent planning against "everything is still to do" is an agent planning against
+ * a fact that is not one.
+ */
+describe('every dispatch is told which stages actually remain', () => {
+  /** A prior run's ledger entry, the only honest observation that a stage already ran. */
+  function priorRun(stages: readonly string[]) {
+    return fx.factAssertion(
+      [{ run_id: 'run_20260903T090000Z_0000aa', outcome: 'BLOCKED', stages_completed: stages }],
+      { evidence: ['E-ledger-1'], probe: 'agentos.history' },
+    );
+  }
+
+  function workflowView(h: ReturnType<typeof rig>, stage: Stage) {
+    const dispatched = h.substrate.dispatched.find((d) => d.stage === stage);
+    assert.ok(dispatched !== undefined, `${stage} was dispatched`);
+    assert.ok(dispatched.workflow !== null, 'a graph dispatch carries the workflow view');
+    return dispatched.workflow;
+  }
+
+  test('the first dispatch of a fresh run is told every stage is still ahead of it', async () => {
+    const h = rig({ script: goodScript() });
+    const result = await new Kernel(h.ports).work(start());
+    assert.ok(result.workItemId !== null && result.runId !== null);
+    const admitted = events(h, result.workItemId, result.runId)
+      .find((e) => e.event === 'workflow_admitted');
+    assert.ok(admitted !== undefined && admitted.event === 'workflow_admitted');
+    assert.deepEqual(
+      [...workflowView(h, 'AUDIT').stages_remaining],
+      [...admitted.data.graph.stages],
+      'nothing has happened yet, so nothing is filtered — including the stage being '
+      + 'dispatched, which is still outstanding until it produces something',
+    );
+  });
+
+  test('a dispatch is not told a stage this run already completed is still remaining', async () => {
+    const h = rig({ script: goodScript() });
+    const result = await new Kernel(h.ports).work(start());
+    assert.ok(result.workItemId !== null && result.runId !== null);
+    const remaining = workflowView(h, 'ROOT_CAUSE').stages_remaining;
+    assert.ok(
+      !remaining.includes('AUDIT'),
+      'AUDIT completed and the run left it. Telling the next agent it is still outstanding '
+      + 'is telling it something the log flatly contradicts',
+    );
+    assert.ok(remaining.includes('ROOT_CAUSE'), 'the stage being dispatched still owes its outputs');
+    assert.ok(remaining.includes('COMPLETION'));
+  });
+
+  test('a stage the resume sweep marked COMPLETED_PRIOR is not listed as remaining', async () => {
+    /*
+     * A prior run's ledger says AUDIT completed, so the sweep marks it COMPLETED_PRIOR from
+     * observed reality and the run enters at ROOT_CAUSE. `COMPLETED_PRIOR` means the mutation
+     * has already occurred, not that the criteria are met — but it certainly does not mean the
+     * stage is still to run.
+     */
+    const h = rig({
+      discovery: { reality: { agentos_history: priorRun(['AUDIT']) } },
+      script: [
+        { kind: 'ENVELOPE', envelope: resolutionEnvelope() },
+        { kind: 'ENVELOPE', envelope: workflowEnvelope() },
+        withCall(rootCauseEnvelope()),
+        withCall(completionEnvelope()),
+      ],
+    });
+    const result = await new Kernel(h.ports).work(start());
+    assert.ok(result.workItemId !== null && result.runId !== null);
+    const log = events(h, result.workItemId, result.runId);
+    assert.ok(
+      log.some((e) => e.event === 'stage_marked_completed_prior' && e.data.marked_stage === 'AUDIT'),
+      'the precondition: the sweep really did mark AUDIT already done',
+    );
+    const remaining = workflowView(h, 'ROOT_CAUSE').stages_remaining;
+    assert.ok(!remaining.includes('AUDIT'));
+    assert.deepEqual([...remaining], ['ROOT_CAUSE', 'COMPLETION']);
+  });
+
+  test('no dispatch is told a stage the frozen graph does not contain', async () => {
+    /*
+     * The stages the run may still reach are the frozen graph's, and a stage excluded at
+     * admission is not among them. Asserted over every dispatch rather than one, because
+     * "which stages remain" is answered fresh for each.
+     */
+    const h = rig({ script: goodScript() });
+    const result = await new Kernel(h.ports).work(start());
+    assert.ok(result.workItemId !== null && result.runId !== null);
+    const admitted = events(h, result.workItemId, result.runId)
+      .find((e) => e.event === 'workflow_admitted');
+    assert.ok(admitted !== undefined && admitted.event === 'workflow_admitted');
+    const inGraph = new Set<string>(admitted.data.graph.stages);
+    const graphDispatches = h.substrate.dispatched.filter((d) => d.workflow !== null);
+    assert.ok(graphDispatches.length > 0, 'the precondition: the run reached the graph');
+    for (const dispatched of graphDispatches) {
+      for (const stage of dispatched.workflow?.stages_remaining ?? []) {
+        assert.ok(
+          inGraph.has(stage),
+          `${dispatched.stage} was told ${stage} remains, and it is not in the frozen graph`,
+        );
+      }
+    }
+  });
+
 });
 
 /* ============================================ what WP-3 deliberately defers ==== */
@@ -667,5 +1146,261 @@ describe('exit tests 2 and 3 need the adapter idempotency framework', () => {
       'a second run against the same work item finds the first run’s key, which is the point of '
       + 'a work-item-scoped ledger',
     );
+  });
+});
+
+/* ================ resolution evidence replays under the proposed scope ==== */
+
+describe('resolution evidence is replayed under the scope the proposal claims', () => {
+  /**
+   * The mandate the resolution replay runs under.
+   *
+   * The proposal has not been admitted, so no admitted scope exists to replay against — but
+   * the *proposed* scope does, and admission check 5 has bounded it. Passing an empty mandate
+   * instead meant "no path at all is in scope" at the adapter, so every replay was refused,
+   * every FACT lost its evidence, and every typed work item downgraded to UNKNOWN whatever the
+   * repository actually contained.
+   */
+
+  function verificationOf(h: ReturnType<typeof rig>, workItemId: string, runId: string) {
+    const event = events(h, workItemId, runId).find((e) => e.event === 'evidence_verification');
+    assert.ok(
+      event !== undefined && event.event === 'evidence_verification',
+      'the resolution envelope was replayed at all',
+    );
+    return event.data.results;
+  }
+
+  test('evidence naming a path inside the proposed scope replays and confirms', async () => {
+    const h = rig({ script: goodScript() });
+    const result = await new Kernel(h.ports).work(start());
+    assert.ok(result.workItemId !== null && result.runId !== null);
+
+    const outcome = verificationOf(h, result.workItemId, result.runId)
+      .find((r) => r.evidence_id === 'E-01');
+    assert.ok(outcome !== undefined, 'E-01 is in the replay report');
+    assert.equal(
+      outcome.status,
+      'VERIFIED',
+      'README.md is exactly what the proposal scoped itself to, so the replay reaches it',
+    );
+  });
+
+  test('evidence naming a path outside the proposed scope is refused and supports no FACT', async () => {
+    /*
+     * The proposal claims `src/session/**` and cites a file outside it. A proposal does not get
+     * evidence confirmed for reach it did not ask for, so the citation is withdrawn as
+     * unconfirmed and the FACT resting on it stops being one.
+     */
+    const h = rig({
+      script: [
+        {
+          kind: 'ENVELOPE',
+          envelope: resolutionEnvelope({
+            scope: {
+              paths: ['src/session/**'],
+              capabilities: [],
+              repositories: ['subject'],
+              confidence: 'INFERENCE',
+            },
+          }),
+        },
+      ],
+    });
+    const result = await new Kernel(h.ports).work(start());
+    assert.ok(result.workItemId !== null && result.runId !== null);
+
+    const outcome = verificationOf(h, result.workItemId, result.runId)
+      .find((r) => r.evidence_id === 'E-01');
+    assert.ok(outcome !== undefined);
+    assert.equal(
+      outcome.status,
+      'UNREPLAYABLE',
+      'the replay was refused: README.md is not inside src/session/**',
+    );
+    assert.match(
+      outcome.detail,
+      /in_scope patterns \(src\/session\/\*\*\)/,
+      'refused because it is outside the scope the proposal claimed — not because the mandate '
+      + 'admitted nothing at all, which would refuse in-scope evidence just as readily',
+    );
+
+    const admitted = events(h, result.workItemId, result.runId)
+      .find((e) => e.event === 'work_item_admitted');
+    assert.ok(admitted !== undefined && admitted.event === 'work_item_admitted');
+    assert.equal(
+      admitted.data.work_item.type,
+      'UNKNOWN',
+      'the TASK minimum is named_path_exists, and the only path named was withdrawn',
+    );
+    const schema = admitted.data.checks.find((c) => c.check === 'schema_and_confidence');
+    assert.ok(schema !== undefined);
+    assert.equal(schema.result, 'INDETERMINATE');
+    assert.match(schema.detail, /withdrawn as unconfirmed/);
+  });
+
+  test('a TASK with real in-scope file evidence is admitted TASK, not downgraded to UNKNOWN', async () => {
+    const h = rig({ script: goodScript() });
+    const result = await new Kernel(h.ports).work(start());
+    assert.ok(result.workItemId !== null && result.runId !== null);
+
+    const admitted = events(h, result.workItemId, result.runId)
+      .find((e) => e.event === 'work_item_admitted');
+    assert.ok(admitted !== undefined && admitted.event === 'work_item_admitted');
+    assert.equal(admitted.data.work_item.type, 'TASK');
+    assert.equal(admitted.data.type_downgraded, false);
+    assert.equal(
+      admitted.data.work_item.claimed_type,
+      null,
+      'nothing was downgraded, so there is no claimed type to record',
+    );
+    const minimum = admitted.data.checks.find((c) => c.check === 'type_minimum_evidence');
+    assert.ok(minimum !== undefined);
+    assert.equal(minimum.result, 'PASS');
+  });
+});
+
+/* ===================== an unreachable external item blocks, and says so ==== */
+
+describe('a named external item that cannot be resolved blocks rather than being refused', () => {
+  /**
+   * `REFUSED` and `BLOCKED` are different answers.
+   *
+   * The first says the request was inadmissible; the second says the request was fine and the
+   * world was not, and the run resumes when the source returns. Routing a block through the
+   * refusal path kept the reason text and dropped the blocker kind, so a script whose ticket
+   * system was merely down was told its request was inadmissible.
+   */
+
+  function identityCheck(result: { readonly checks: readonly CheckOutcome[] }): CheckOutcome {
+    const check = result.checks.find((c) => c.check === 'external_identity');
+    assert.ok(check !== undefined, 'admission recorded the identity check');
+    return check;
+  }
+
+  const unreachable = (): StartInput => start({
+    resolveIdentity: async () => ({
+      outcome: 'UNAVAILABLE',
+      identity: 'PROJ-1471',
+      detail: 'the project-management adapter timed out after 30000ms',
+    }),
+  });
+
+  const absent = (): StartInput => start({
+    resolveIdentity: async () => ({ outcome: 'ABSENT', identity: 'PROJ-9999' }),
+  });
+
+  test('an unreachable external item yields BLOCKED carrying EXTERNAL_DEPENDENCY', async () => {
+    const h = rig({ script: [{ kind: 'ENVELOPE', envelope: resolutionEnvelope() }] });
+    const result = await new Kernel(h.ports).work(unreachable());
+
+    assert.equal(
+      result.outcome,
+      'BLOCKED',
+      'the request was admissible and the ticket system was not reachable. That is a block',
+    );
+    assert.equal(result.blockerKind, 'EXTERNAL_DEPENDENCY');
+    assert.match(result.detail, /PROJ-1471/);
+  });
+
+  test('a reachable-but-absent external item is distinguishable from an unreachable one', async () => {
+    const h1 = rig({ script: [{ kind: 'ENVELOPE', envelope: resolutionEnvelope() }] });
+    const down = await new Kernel(h1.ports).work(unreachable());
+    const h2 = rig({ script: [{ kind: 'ENVELOPE', envelope: resolutionEnvelope() }] });
+    const missing = await new Kernel(h2.ports).work(absent());
+
+    assert.equal(missing.outcome, 'BLOCKED');
+    assert.equal(missing.blockerKind, 'EXTERNAL_DEPENDENCY');
+    assert.equal(
+      identityCheck(down).result,
+      'INDETERMINATE',
+      'unreachable establishes nothing either way',
+    );
+    assert.equal(
+      identityCheck(missing).result,
+      'FAIL',
+      'reachable and absent is an answer: the key is wrong, and a human should hear it',
+    );
+    assert.notEqual(
+      down.detail,
+      missing.detail,
+      '"resume when the source returns" and "the key is wrong" are different things to say',
+    );
+    assert.match(missing.detail, /the source is reachable/);
+  });
+
+  test('neither silently becomes an investigation of the repository', async () => {
+    for (const input of [unreachable(), absent()]) {
+      const h = rig({ script: [{ kind: 'ENVELOPE', envelope: resolutionEnvelope() }] });
+      const result = await new Kernel(h.ports).work(input);
+
+      assert.equal(
+        result.outcome,
+        'BLOCKED',
+        'the run blocked; it neither ran nor was told its request was inadmissible',
+      );
+      assert.equal(result.blockerKind, 'EXTERNAL_DEPENDENCY');
+      assert.equal(result.workItemId, null, 'no work item was admitted');
+      assert.equal(result.runId, null, 'no run was started');
+      assert.deepEqual(
+        h.store.listWorkItems(),
+        [],
+        'the work is definitionally that external item; investigating something else is a '
+        + 'different task, not a weaker version of this one',
+      );
+      assert.deepEqual(
+        h.substrate.dispatched.map((d) => d.stage),
+        ['RESOLUTION'],
+        'resolution ran and nothing after it did',
+      );
+    }
+  });
+});
+
+/* ===================== a blocked run says why, in its narrative ==== */
+
+describe('a run blocked on an unreachable external identity narrates the reason', () => {
+  /**
+   * The narrative obligation is not decorative: it is the mitigation for the residual risk the
+   * freeze carries forward, because a run that did the wrong thing correctly is invisible
+   * without it. A blocked run whose narrative does not say why is exactly that failure — and
+   * rendering only `FAIL` checks left the line ending mid-sentence, because an unreachable
+   * identity is `INDETERMINATE`.
+   */
+
+  const blocked = async () => {
+    const h = rig({ script: [{ kind: 'ENVELOPE', envelope: resolutionEnvelope() }] });
+    return new Kernel(h.ports).work(start({
+      resolveIdentity: async () => ({
+        outcome: 'UNAVAILABLE',
+        identity: 'PROJ-1471',
+        detail: 'the project-management adapter timed out after 30000ms',
+      }),
+    }));
+  };
+
+  test('the narrative names the identity and why it could not be resolved', async () => {
+    const result = await blocked();
+
+    assert.equal(result.outcome, 'BLOCKED');
+    assert.match(result.narrative, /PROJ-1471/, 'the narrative names the identity');
+    assert.match(result.narrative, /UNAVAILABLE/, 'and says it could not be reached');
+    assert.match(
+      result.narrative,
+      /external_identity INDETERMINATE/,
+      'the INDETERMINATE check that caused the block is rendered, not filtered out',
+    );
+  });
+
+  test('no narrative line ends in a colon with nothing after it', async () => {
+    const result = await blocked();
+
+    assert.ok(result.narrative.length > 0, 'a blocked run still gets a narrative');
+    for (const line of result.narrative.split('\n')) {
+      assert.ok(
+        !/[:—]\s*$/.test(line),
+        `a line promised a reason and supplied none: "${line}"`,
+      );
+    }
   });
 });

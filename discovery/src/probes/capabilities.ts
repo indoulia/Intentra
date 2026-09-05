@@ -2,6 +2,7 @@ import type { Assertion } from '@agentos/contracts';
 import { ADAPTERS, OPS } from '../ops.js';
 import type { SectionProbe } from '../probe.js';
 import { asString, records } from '../probe.js';
+import { observe } from './observation.js';
 
 /**
  * Agent and model capability probes, and the authorization surface they imply.
@@ -46,7 +47,7 @@ export const agentCapabilitiesProbe: SectionProbe = {
       ['tools', OPS.host.listTools],
       ['plugins', OPS.host.listPlugins],
     ] as const) {
-      const observation = await session.observe({
+      const observation = await observe(session, {
         probe: 'host.agent_capabilities',
         adapter: HOST,
         op,
@@ -65,7 +66,7 @@ export const agentCapabilitiesProbe: SectionProbe = {
         : session.noAccess('host.agent_capabilities', `the installed ${key}`, observation);
     }
 
-    const servers = await session.observe({
+    const servers = await observe(session, {
       probe: 'host.agent_capabilities',
       adapter: HOST,
       op: OPS.host.listMcpServers,
@@ -121,7 +122,7 @@ export const modelCapabilitiesProbe: SectionProbe = {
   tier: 1,
   freshnessClass: 'agentos',
   async run(session, _input) {
-    const observation = await session.observe({
+    const observation = await observe(session, {
       probe: 'host.model_capabilities',
       adapter: HOST,
       op: OPS.host.listModels,

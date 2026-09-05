@@ -1,27 +1,16 @@
 {
   "profile_id": "audit",
-  "description": "The deliverable is findings. Done means findings are evidence-backed, coverage is stated and every unknown is recorded. The criteria are exactly the three an audit path can supply - context understood, canonical ownership, source and data contracts - because a profile demanding a verdict no stage in its template owns is a profile that can never complete.",
+  "description": "The deliverable is findings. Done means findings are evidence-backed, coverage is stated and every unknown is recorded. The criteria are exactly the two the audit path supplies - canonical ownership and source and data contracts - both owed by the Auditor's first pass, which is what AUDIT collects. Criterion 1 is deliberately not among them: DEFINITION_OF_DONE section 3 gives it to Context Discovery, whose mandate runs in the kernel prologue and not in any stage a template contains, so no stage in an audit path may supply it without breaking the one-owner-per-criterion rule - and a profile demanding a verdict no stage in its template owns is a profile that can never complete.",
   "criteria": [
-    1,
     3,
     4
   ],
   "critical_criteria": [
-    1,
     3,
     4
   ],
   "not_applicable_by_default": [],
   "evidence_requirements": {
-    "1": {
-      "kinds": [
-        "file",
-        "document",
-        "ticket",
-        "query"
-      ],
-      "note": "package contents; for criterion 16, documentation compared against the code it describes rather than against the diff"
-    },
     "3": {
       "kinds": [
         "file",

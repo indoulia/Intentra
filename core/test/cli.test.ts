@@ -73,15 +73,22 @@ describe('a replay fixture is untrusted input', () => {
     assert.equal(fixture.intake.source, 'NATURAL_LANGUAGE');
     assert.equal(fixture.intake.raw, 'Fix typo in README.');
     assert.ok(fixture.context !== null, 'a replay with no reality would decide against nothing');
-    assert.equal(fixture.envelopes.length, 4);
+    assert.equal(fixture.envelopes.length, 5);
     assert.deepEqual(
       fixture.envelopes.map((e) => e.file),
-      ['01-resolution.json', '02-workflow.json', '03-audit.json', '04-root-cause.json'],
+      [
+        '01-resolution.json', '02-context.json', '03-workflow.json', '04-audit.json',
+        '05-root-cause.json',
+      ],
       'dispatched in filename order, which is why the files are numbered',
     );
     assert.ok(
-      fixture.envelopes[2]?.calls.length === 1,
+      fixture.envelopes[3]?.calls.length === 1,
       'the audit dispatch records the call it made, so its coverage claim is checkable',
+    );
+    assert.ok(
+      fixture.envelopes[1]?.calls.length === 1,
+      'and so does the context dispatch, which is not exempt from the reconciliation either',
     );
     assert.ok(fixture.adapters.operations.length > 0);
     assert.ok(fixture.models.length > 0, 'a run with no model makes no progress');
@@ -162,7 +169,10 @@ describe('agentos replay drives the whole kernel from recorded envelopes', () =>
     const outcome = await replayFixture(FIXTURE, { stateRoot: tempRoot() });
     assert.deepEqual(
       [...outcome.dispatched],
-      ['01-resolution.json', '02-workflow.json', '03-audit.json', '04-root-cause.json'],
+      [
+        '01-resolution.json', '02-context.json', '03-workflow.json', '04-audit.json',
+        '05-root-cause.json',
+      ],
       'every recorded envelope was consumed, in order',
     );
     assert.deepEqual(outcome.unused, [], 'the run took the path the recording took');
@@ -224,21 +234,21 @@ describe('agentos replay drives the whole kernel from recorded envelopes', () =>
      * is exactly what would have happened live.
      */
     const work = brokenFixture((root) => {
-      rmSync(join(root, 'envelopes', '03-audit.calls.json'));
+      rmSync(join(root, 'envelopes', '04-audit.calls.json'));
     });
     const outcome = await replayFixture(work, { stateRoot: tempRoot() });
     assert.equal(outcome.result.outcome, 'BLOCKED');
     assert.match(outcome.result.detail, /COVERAGE_OVERSTATED/);
     assert.ok(
-      outcome.unused.includes('04-root-cause.json'),
+      outcome.unused.includes('05-root-cause.json'),
       'the run stopped where the rejection stopped it, and says which envelopes it never asked for',
     );
   });
 
   test('a run that asks for more envelopes than were recorded fails honestly', async () => {
     const work = brokenFixture((root) => {
-      rmSync(join(root, 'envelopes', '04-root-cause.json'));
-      rmSync(join(root, 'envelopes', '04-root-cause.calls.json'));
+      rmSync(join(root, 'envelopes', '05-root-cause.json'));
+      rmSync(join(root, 'envelopes', '05-root-cause.calls.json'));
     });
     const outcome = await replayFixture(work, { stateRoot: tempRoot() });
     assert.notEqual(outcome.result.outcome, 'COMPLETE');

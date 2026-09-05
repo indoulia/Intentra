@@ -7,7 +7,13 @@
  * agents through one interface" is a property of the module graph rather than a convention.
  */
 
-export { buildKernel, identityResolverFor, intakeRereaderFor } from './build.js';
+export {
+  admitIntake,
+  buildKernel,
+  identityResolverFor,
+  intakeRereaderFor,
+  intakeTextOf,
+} from './build.js';
 export {
   authenticatedPrincipal,
   deterministicSampler,

@@ -7,8 +7,9 @@ import type {
   SectionProbe,
   SectionProbeResult,
 } from '../probe.js';
-import { asRecord, asString, paths } from '../probe.js';
+import { asRecord, asString } from '../probe.js';
 import type { Observation, ProbeSession } from '../session.js';
+import { attachmentOutput, listedPaths, observe } from './observation.js';
 
 /**
  * The repository probe set.
@@ -31,6 +32,16 @@ import type { Observation, ProbeSession } from '../session.js';
  * exists and its absence records nothing as missing, because any code path that requires it
  * is a bug.
  */
+
+/**
+ * The worktree root, as the repository adapter names it in the paths it reports touching.
+ *
+ * Coverage is arithmetic over those reports — `scope_examined` is what a probe intended
+ * intersected with what its calls actually reached — so a probe naming the host's absolute
+ * path here would be claiming coverage of something no call ever reported. Every other path
+ * in this file is worktree-relative, and this is the same rule applied to the root.
+ */
+const WORKTREE = '.';
 
 /** The paths a repository declares itself through, independent of language or ecosystem. */
 const MANIFEST_GLOBS = [
@@ -118,7 +129,7 @@ async function listing(
   const args = scopePaths.length > 0
     ? { globs: [...globs], under: [...scopePaths] }
     : { globs: [...globs] };
-  const observation = await session.observe({
+  const observation = await observe(session, {
     probe,
     adapter: ADAPTERS.repo,
     op: OPS.repo.listPaths,
@@ -130,7 +141,7 @@ async function listing(
     return { found: [], evidence: [], failure: observation };
   }
   return {
-    found: paths(observation.value),
+    found: listedPaths(observation.value),
     evidence: [observation.evidence],
     failure: null,
   };
@@ -261,11 +272,17 @@ export const identityProbe: SectionProbe = {
       observedAt,
     );
 
-    const observation = await session.observe({
+    const observation = await observe(session, {
       probe: 'repo.identity',
       adapter: ADAPTERS.repo,
       op: OPS.repo.identify,
-      args: { path: input.repositoryPath },
+      /*
+       * No arguments. The repository adapter is attached to exactly one worktree and
+       * answers about that one; a `path` here would either be ignored, which would make
+       * the evidence locator say something the adapter did not do, or it would re-root the
+       * adapter, which is confinement decided by the caller.
+       */
+      args: {},
       kind: 'command',
       ref: `${ADAPTERS.repo}.${OPS.repo.identify} at ${input.repositoryPath}`,
     });
@@ -278,7 +295,7 @@ export const identityProbe: SectionProbe = {
         },
         available: false,
         detail: 'the repository could not be identified',
-        intendedScope: [input.repositoryPath],
+        intendedScope: [WORKTREE],
       };
     }
 
@@ -297,7 +314,7 @@ export const identityProbe: SectionProbe = {
         },
         available: true,
         detail: 'the identity operation returned an unusable shape',
-        intendedScope: [input.repositoryPath],
+        intendedScope: [WORKTREE],
       };
     }
 
@@ -308,25 +325,66 @@ export const identityProbe: SectionProbe = {
         'repo.identity', identity, evidence, 'repository', observation.observedAt,
       ),
     };
-    for (const [key, field] of [
-      ['root', 'root'], ['vcs', 'vcs'], ['default_branch', 'default_branch'],
-      ['current_branch', 'current_branch'], ['remotes', 'remotes'],
+    /*
+     * Two vocabularies, one observation.
+     *
+     * The adapter answers in the attachment sequence's words — step 1 identifies the
+     * repository's `path` ([REPOSITORY_ADAPTER.md](../../../docs/REPOSITORY_ADAPTER.md)
+     * section 1) — and this section of the Context Package is written in the Context Model's,
+     * where the same thing is the `root`. Neither document is wrong and neither has to change:
+     * mapping one onto the other is what a probe is for, because the probe is what populates a
+     * `ContextPackage` section. What must not happen is the mapping being skipped and the
+     * section reporting INSUFFICIENT_EVIDENCE for something the adapter plainly established.
+     */
+    for (const [key, fields] of [
+      ['root', ['root', 'path']],
+      ['vcs', ['vcs']],
+      ['current_branch', ['current_branch']],
     ] as const) {
-      const value = identity[field];
-      assertions[key] = value === undefined
+      const field = fields.find((name) => identity[name] !== undefined);
+      assertions[key] = field === undefined
         ? session.insufficient(
           'repo.identity',
-          `the identity record carries no ${field}`,
-          `have the repository adapter report ${field}`,
+          `the identity record carries none of: ${fields.join(', ')}`,
+          `have the repository adapter report ${fields[0]}`,
           observation.observedAt,
         )
-        : session.observedFact('repo.identity', value, evidence, 'repository', observation.observedAt);
+        : session.observedFact(
+          'repo.identity', identity[field], evidence, 'repository', observation.observedAt,
+        );
+    }
+
+    /*
+     * The two halves of identify the repository adapter cannot answer.
+     *
+     * Attachment step 1 names remotes and the default branch among its outputs, and the
+     * repository adapter reads files rather than running the VCS — it says so itself, and
+     * defers `worktree_clean` to `git.status` for the same reason. So they are asked of the
+     * adapter that owns them. An unreachable git is `UNAVAILABLE` here, never "no remotes".
+     */
+    for (const [key, op, subject] of [
+      ['default_branch', OPS.git.defaultBranch, "the remote's default branch"],
+      ['remotes', OPS.git.remotes, 'the configured remotes'],
+    ] as const) {
+      const fromGit = await observe(session, {
+        probe: 'repo.identity',
+        adapter: ADAPTERS.git,
+        op,
+        args: {},
+        kind: 'git',
+        ref: `${ADAPTERS.git}.${op}`,
+      });
+      assertions[key] = fromGit.outcome === 'OBSERVED'
+        ? session.observedFact(
+          'repo.identity', fromGit.value, [fromGit.evidence], 'repository', fromGit.observedAt,
+        )
+        : session.noAccess('repo.identity', subject, fromGit);
     }
     return {
       assertions,
       available: true,
       detail: 'repository identified',
-      intendedScope: [input.repositoryPath],
+      intendedScope: [WORKTREE],
     };
   },
 };
@@ -405,12 +463,18 @@ export const stackProbe: SectionProbe = {
   section: 'repository',
   tier: 1,
   freshnessClass: 'repository',
-  async run(session, input) {
-    const observation = await session.observe({
+  async run(session, _input) {
+    const observation = await observe(session, {
       probe: 'repo.stack',
       adapter: ADAPTERS.repo,
       op: OPS.repo.detectStack,
-      args: { path: input.repositoryPath },
+      /*
+       * No arguments. The repository adapter is attached to exactly one worktree and
+       * answers about that one; a `path` here would either be ignored, which would make
+       * the evidence locator say something the adapter did not do, or it would re-root the
+       * adapter, which is confinement decided by the caller.
+       */
+      args: {},
       kind: 'command',
       ref: `${ADAPTERS.repo}.${OPS.repo.detectStack}`,
     });
@@ -425,20 +489,50 @@ export const stackProbe: SectionProbe = {
           'linters', 'containers',
         ]) {
           const value = stack[key];
-          assertions[key] = value === undefined
-            ? session.insufficient(
-              'repo.stack',
-              `the stack detection returned no ${key}`,
-              `have the repository adapter report ${key}, or read it from the manifests`,
-              observation.observedAt,
-            )
-            : session.observedFact('repo.stack', value, evidence, 'repository', observation.observedAt);
+          if (value !== undefined) {
+            assertions[key] = session.observedFact(
+              'repo.stack', value, evidence, 'repository', observation.observedAt,
+            );
+            continue;
+          }
+          /*
+           * `languages` is the one key the two vocabularies genuinely disagree about rather
+           * than merely spell differently. The attachment sequence detects **ecosystems**
+           * from manifests, and an ecosystem is not a language: `package.json` says node, and
+           * says nothing about whether the source is JavaScript or TypeScript. So the
+           * adapter's answer is not renamed into this key — it is carried through under its
+           * own name below, and the language question is answered from the layout, which is
+           * where the answer actually is and what this probe's own `recoverable_by` has been
+           * naming all along.
+           */
+          const census = key === 'languages'
+            ? await languageCensus(session, observation.observedAt)
+            : null;
+          assertions[key] = census ?? session.insufficient(
+            'repo.stack',
+            `the stack detection returned no ${key}`,
+            `have the repository adapter report ${key}, or read it from the manifests`,
+            observation.observedAt,
+          );
+        }
+        /*
+         * The adapter's own words, kept where it established something the Context Model has
+         * no synonym for. Dropping it because this section is written in a different
+         * vocabulary would throw away a real observation; inventing a gap for a key the
+         * Context Model never asked for would be the opposite error, so it appears only when
+         * the adapter answered it.
+         */
+        const ecosystems = stack['ecosystems'];
+        if (ecosystems !== undefined) {
+          assertions['ecosystems'] = session.observedFact(
+            'repo.stack', ecosystems, evidence, 'repository', observation.observedAt,
+          );
         }
         return {
           assertions,
           available: true,
           detail: 'stack detected by the repository adapter',
-          intendedScope: [input.repositoryPath],
+          intendedScope: [WORKTREE],
         };
       }
     }
@@ -450,7 +544,7 @@ export const stackProbe: SectionProbe = {
         assertions: { languages: session.noAccess('repo.stack', 'the technology stack', failure) },
         available: false,
         detail: 'neither stack detection nor a manifest listing was possible',
-        intendedScope: [input.repositoryPath],
+        intendedScope: [WORKTREE],
       };
     }
 
@@ -483,10 +577,78 @@ export const stackProbe: SectionProbe = {
       },
       available: true,
       detail: 'stack inferred from manifests because the adapter offers no detection',
-      intendedScope: [input.repositoryPath],
+      intendedScope: [WORKTREE],
     };
   },
 };
+
+/**
+ * Source extensions, and the language each one *is*.
+ *
+ * Deliberately not exhaustive and deliberately not clever. An extension nobody put here is
+ * counted as nothing rather than guessed at, because a census that named a language from an
+ * extension it did not recognise would be the "detection from a name" the attachment sequence
+ * forbids. Configuration, markup and data extensions are absent on purpose: a repository is
+ * not written in JSON.
+ */
+const LANGUAGE_BY_EXTENSION: Readonly<Record<string, string>> = {
+  '.ts': 'TypeScript', '.tsx': 'TypeScript', '.mts': 'TypeScript', '.cts': 'TypeScript',
+  '.js': 'JavaScript', '.jsx': 'JavaScript', '.mjs': 'JavaScript', '.cjs': 'JavaScript',
+  '.py': 'Python', '.rb': 'Ruby', '.go': 'Go', '.rs': 'Rust', '.java': 'Java',
+  '.kt': 'Kotlin', '.kts': 'Kotlin', '.scala': 'Scala', '.swift': 'Swift',
+  '.cs': 'C#', '.fs': 'F#', '.vb': 'Visual Basic',
+  '.c': 'C', '.h': 'C', '.cc': 'C++', '.cpp': 'C++', '.cxx': 'C++', '.hpp': 'C++',
+  '.m': 'Objective-C', '.mm': 'Objective-C++',
+  '.php': 'PHP', '.ex': 'Elixir', '.exs': 'Elixir', '.erl': 'Erlang',
+  '.dart': 'Dart', '.lua': 'Lua', '.pl': 'Perl', '.r': 'R', '.jl': 'Julia',
+  '.sh': 'Shell', '.bash': 'Shell', '.ps1': 'PowerShell', '.sql': 'SQL',
+};
+
+/**
+ * Which languages the source is written in, counted off the layout.
+ *
+ * An `INFERENCE` and never a `FACT`, and the distinction is the whole point: the file listing
+ * is the observation, and "this repository is written in TypeScript" is a reading of it. The
+ * reading is a good one — an extension is a stronger signal than a manifest, which is why the
+ * adapter refuses to answer this from a manifest at all — but it is still a reading, so it
+ * cites the listing it derives from and says so in one sentence.
+ *
+ * Returns `null` where nothing can be read: the listing failed, or nothing in it carries a
+ * recognised source extension. The caller then states the gap, because a census that found no
+ * source and an empty answer must not read the same.
+ */
+async function languageCensus(
+  session: ProbeSession,
+  observedAt: string,
+): Promise<Assertion | null> {
+  const found = await listing(session, 'repo.stack', ['**/*'], []);
+  if (found.failure !== null) return null;
+
+  const counts = new Map<string, number>();
+  for (const path of found.found) {
+    const dot = path.lastIndexOf('.');
+    if (dot <= 0) continue;
+    const language = LANGUAGE_BY_EXTENSION[path.slice(dot).toLowerCase()];
+    if (language === undefined) continue;
+    counts.set(language, (counts.get(language) ?? 0) + 1);
+  }
+  if (counts.size === 0) return null;
+
+  const ranked = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  return session.derived(
+    'repo.stack',
+    ranked.map(([language]) => language),
+    found.evidence.map((e) => e.id),
+    'counted from the source extensions in the observed listing, commonest first ('
+    + ranked.map(([language, count]) => `${language} ${String(count)}`).join(', ')
+    + '). The listing is the fact and which language a file is written in is a reading of its '
+    + 'extension; compiling or running the source is what would settle it',
+    'repository',
+    observedAt,
+    found.evidence,
+  );
+}
 
 function manifestToPackageManager(path: string): string | null {
   const name = path.replace(/\\/g, '/').split('/').pop() ?? '';
@@ -522,12 +684,18 @@ export const commandsProbe: SectionProbe = {
   section: 'repository',
   tier: 2,
   freshnessClass: 'repository',
-  async run(session, input) {
-    const observation = await session.observe({
+  async run(session, _input) {
+    const observation = await observe(session, {
       probe: 'repo.commands',
       adapter: ADAPTERS.repo,
       op: OPS.repo.commands,
-      args: { path: input.repositoryPath },
+      /*
+       * No arguments. The repository adapter is attached to exactly one worktree and
+       * answers about that one; a `path` here would either be ignored, which would make
+       * the evidence locator say something the adapter did not do, or it would re-root the
+       * adapter, which is confinement decided by the caller.
+       */
+      args: {},
       kind: 'command',
       ref: `${ADAPTERS.repo}.${OPS.repo.commands}`,
     });
@@ -538,10 +706,21 @@ export const commandsProbe: SectionProbe = {
         },
         available: false,
         detail: 'commands could not be determined',
-        intendedScope: [input.repositoryPath],
+        intendedScope: [WORKTREE],
       };
     }
-    const discovered = asRecord(observation.value);
+    /*
+     * The commands, out of the attachment-output map they arrive in.
+     *
+     * `repo.commands` is attachment step 7 projected out of the whole sequence, so it answers
+     * `{ commands: <the commands> }` and not the commands themselves. Reading it one level too
+     * shallow finds no `test` key and reports a repository that declares no test command —
+     * silently, and identically to a repository that really declares none. Where the operation
+     * answers the commands directly, that is read too: the shape the projection produces is
+     * the adapter's business, and neither reading invents anything.
+     */
+    const projected = asRecord(attachmentOutput(observation.value, 'commands'));
+    const discovered = projected ?? asRecord(observation.value);
     if (discovered === null) {
       return {
         assertions: {
@@ -554,15 +733,24 @@ export const commandsProbe: SectionProbe = {
         },
         available: true,
         detail: 'the command operation returned an unusable shape',
-        intendedScope: [input.repositoryPath],
+        intendedScope: [WORKTREE],
       };
     }
 
     const evidence = [observation.evidence];
     const assertions: Record<string, Assertion> = {};
-    for (const kind of ['build', 'test', 'lint', 'run'] as const) {
-      const entry = asRecord(discovered[kind]);
-      const command = entry === null ? asString(discovered[kind]) : asString(entry['command']);
+    /*
+     * `start` is what a Node manifest calls the run command, and nothing else in the sequence
+     * claims that name. Reading it as `run` is reading the repository's own vocabulary, which
+     * is what attachment step 7 discovers from; every one of these stays an INFERENCE until
+     * something executes it, so nothing is upgraded by the alias.
+     */
+    for (const [kind, aliases] of [
+      ['build', ['build']], ['test', ['test']], ['lint', ['lint']], ['run', ['run', 'start']],
+    ] as const) {
+      const declared = aliases.map((name) => discovered[name]).find((v) => v !== undefined);
+      const entry = asRecord(declared);
+      const command = entry === null ? asString(declared) : asString(entry['command']);
       const key = `${kind}_command`;
       if (command === null) {
         assertions[key] = session.insufficient(
@@ -594,7 +782,7 @@ export const commandsProbe: SectionProbe = {
       assertions,
       available: true,
       detail: 'commands determined',
-      intendedScope: [input.repositoryPath],
+      intendedScope: [WORKTREE],
     };
   },
 };

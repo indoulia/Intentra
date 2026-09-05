@@ -710,6 +710,47 @@ describe('entry-stage computation', () => {
     assert.ok(stagesRemaining(cursor, graph).includes('IMPLEMENTATION'));
     assert.ok(!stagesRemaining(cursor, graph).includes('AUDIT'));
   });
+
+  test('a stage marked COMPLETED_PRIOR is not among the stages remaining', () => {
+    /*
+     * The resume sweep's own output, fed straight back. `COMPLETED_PRIOR` means the mutation
+     * this stage performs has already occurred — the stage is not still to run, whatever its
+     * criteria still owe.
+     */
+    const graph = defectGraph();
+    const cursor: readonly StageCursorEntry[] = [
+      {
+        stage: 'AUDIT', state: 'COMPLETED_PRIOR', reality_evidence: ['E-ledger-1'],
+        entered_at: null, left_at: null,
+      },
+      { stage: 'ROOT_CAUSE', state: 'ACTIVE', reality_evidence: [], entered_at: null, left_at: null },
+    ];
+    assert.ok(!stagesRemaining(cursor, graph).includes('AUDIT'));
+    assert.ok(stagesRemaining(cursor, graph).includes('ROOT_CAUSE'), 'the active stage still owes its outputs');
+  });
+
+  test('a stage excluded at admission is not among the stages remaining', () => {
+    /*
+     * Two mechanisms, both of which must hold. Exclusion is decided once, at admission, and
+     * the frozen graph simply does not carry the stage afterwards — so the walk cannot reach
+     * it. The `EXCLUDED` cursor state says the same thing where a cursor carries one, and
+     * `stagesRemaining` honours that too rather than depending on the graph alone.
+     */
+    const excluded = defectGraph({
+      stages: policies.templates.get('defect.standard')?.stages.filter((s) => s !== 'UX_REVIEW'),
+      excluded_stages: [{ stage: 'UX_REVIEW', predicate: 'ux.required', evaluated: 'FALSE' }],
+    });
+    assert.ok(
+      !stagesRemaining([], excluded).includes('UX_REVIEW'),
+      'an excluded stage is not a stage the run may still reach',
+    );
+    assert.ok(stagesRemaining([], excluded).includes('IMPLEMENTATION'));
+
+    const cursor: readonly StageCursorEntry[] = [
+      { stage: 'UX_REVIEW', state: 'EXCLUDED', reality_evidence: [], entered_at: null, left_at: null },
+    ];
+    assert.ok(!stagesRemaining(cursor, defectGraph()).includes('UX_REVIEW'));
+  });
 });
 
 /* ==================================================================== DoD ==== */

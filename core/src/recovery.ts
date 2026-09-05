@@ -118,7 +118,24 @@ export function project(events: readonly Event[]): Projection {
         break;
 
       case 'transition': {
-        cursor = upsertCursor(cursor, event.data.from, { state: 'COMPLETED', left_at: event.at });
+        /*
+         * A stage the run left is completed. A stage the run *blocked at* is not.
+         *
+         * `BLOCKED` is semi-terminal and resumable, and the design's rule is that the
+         * pre-block stage is recorded so the run resumes in place. Marking it `COMPLETED`
+         * said the opposite: the stage that blocked — including one that never dispatched at
+         * all, because no model was reachable — read as done, and `stageFromCursor` then
+         * returned the stage *after* the one that never ran. That is unknown state converted
+         * into false success, in the projection every recovery decision is rebuilt from.
+         *
+         * `CANCELLED` is the same shape for the same reason: the run stopped at that stage,
+         * it did not finish it. Only a stage genuinely left behind is `COMPLETED`, which
+         * includes `COMPLETION -> COMPLETE`, where the stage really did complete.
+         */
+        const blockedInPlace = event.data.to === 'BLOCKED' || event.data.to === 'CANCELLED';
+        cursor = blockedInPlace
+          ? upsertCursor(cursor, event.data.from, { state: 'ACTIVE' })
+          : upsertCursor(cursor, event.data.from, { state: 'COMPLETED', left_at: event.at });
         if (event.data.to !== 'BLOCKED' && event.data.to !== 'CANCELLED' && event.data.to !== 'COMPLETE') {
           cursor = upsertCursor(cursor, event.data.to, { state: 'ACTIVE', entered_at: event.at });
         }

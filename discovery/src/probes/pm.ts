@@ -3,6 +3,7 @@ import { INTENT_KEYS } from '../intent-keys.js';
 import { ADAPTERS, OPS } from '../ops.js';
 import type { SectionProbe } from '../probe.js';
 import { asRecord, asString, records } from '../probe.js';
+import { observe } from './observation.js';
 
 /**
  * The project-management probe set.
@@ -112,7 +113,7 @@ export const workItemTicketProbe: SectionProbe = {
       };
     }
 
-    const observation = await session.observe({
+    const observation = await observe(session, {
       probe: 'pm.work_item',
       adapter: PM,
       op: OPS.pm.readIssue,
@@ -190,7 +191,7 @@ export const workItemTicketProbe: SectionProbe = {
       ),
     };
 
-    const links = await session.observe({
+    const links = await observe(session, {
       probe: 'pm.work_item',
       adapter: PM,
       op: OPS.pm.listLinks,
@@ -220,7 +221,7 @@ export const intentProbe: SectionProbe = {
   tier: 2,
   freshnessClass: 'intent',
   async run(session, input) {
-    const observation = await session.observe({
+    const observation = await observe(session, {
       probe: 'pm.issues',
       adapter: PM,
       op: OPS.pm.searchIssues,
@@ -294,7 +295,7 @@ export const pmDocumentsProbe: SectionProbe = {
   tier: 2,
   freshnessClass: 'intent',
   async run(session, input) {
-    const observation = await session.observe({
+    const observation = await observe(session, {
       probe: 'pm.documents',
       adapter: PM,
       op: OPS.pm.listDocuments,
