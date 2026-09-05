@@ -1,5 +1,5 @@
 {
-  "name": "@agentos/core",
+  "name": "@intentra/core",
   "version": "0.3.0",
   "private": true,
   "type": "module",
@@ -7,12 +7,12 @@
   "types": "./dist/src/index.d.ts",
   "exports": { ".": "./dist/src/index.js" },
   "dependencies": {
-    "@agentos/contracts": "0.3.0",
-    "@agentos/policies": "0.3.0",
-    "@agentos/registries": "0.3.0",
-    "@agentos/adapters": "0.3.0",
-    "@agentos/state": "0.3.0",
-    "@agentos/agents": "0.3.0",
-    "@agentos/discovery": "0.3.0"
+    "@intentra/contracts": "0.3.0",
+    "@intentra/policies": "0.3.0",
+    "@intentra/registries": "0.3.0",
+    "@intentra/adapters": "0.3.0",
+    "@intentra/state": "0.3.0",
+    "@intentra/agents": "0.3.0",
+    "@intentra/discovery": "0.3.0"
   }
 }
