@@ -1,5 +1,5 @@
 {
-  "name": "agentos",
+  "name": "intentra",
   "version": "0.3.0",
   "private": true,
   "type": "module",
@@ -34,7 +34,7 @@
     "freeze:check": "node tools/bin/freeze-manifest.mjs --check",
     "ajv-parity": "node tools/bin/ajv-parity.mjs",
     "conformance": "node tools/bin/conformance.mjs",
-    "agentos": "node core/dist/src/cli/main.js"
+    "intentra": "node core/dist/src/cli/main.js"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
