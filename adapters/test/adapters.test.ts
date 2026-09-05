@@ -357,6 +357,12 @@ describe('the git adapter', () => {
     const absent = await withDeleted.call('git', 'read_pr', { id: 'pr-1' }, context());
     assert.equal(absent.outcome, 'ERROR');
     assert.match(absent.outcome === 'ERROR' ? absent.message : '', /deleted/);
+    assert.equal(
+      absent.outcome === 'ERROR' ? absent.presence : null,
+      'ABSENT',
+      'the host answered and the pull request is not there: that is a fact, and the outcome '
+      + 'carries it rather than only describing it in prose a caller would have to parse',
+    );
 
     const { framework: withNone } = await suite({ vcsHost: null });
     const unreachable = await withNone.call('git', 'read_pr', { id: 'pr-1' }, context());
@@ -364,6 +370,69 @@ describe('the git adapter', () => {
       unreachable.outcome === 'ERROR' ? unreachable.message : '',
       /Unreachable is not absent/,
     );
+    assert.equal(
+      unreachable.outcome === 'ERROR' ? unreachable.presence : null,
+      'UNREACHABLE',
+      'and silence stays silence',
+    );
+  });
+});
+
+/* --------------------------------------------------------------------- presence ------ */
+
+/**
+ * K-2: the failed call says which silence it heard.
+ *
+ * The framework already separated absence from unreachability for the idempotency re-read,
+ * where reading silence as absence is how a system opens the same pull request twice. The
+ * distinction was then thrown away on the way out, so every caller that was not the ledger
+ * saw one undifferentiated `ERROR`. These hold it on the outcome itself, which is where
+ * `identityResolverFor` reads it.
+ */
+describe('a failed call reports what it established, and no more', () => {
+  test('an explicit absence is ABSENT', async () => {
+    const answering = new FakeConnector('pm', true, () => {
+      throw new ResourceAbsentError('STORY-999', 'STORY-999 does not exist');
+    });
+    const { framework } = await suite({ projectManagement: answering });
+    const outcome = await framework.call('pm', 'read_issue', { key: 'STORY-999' }, context());
+    assert.equal(outcome.outcome, 'ERROR');
+    assert.equal(outcome.outcome === 'ERROR' ? outcome.presence : null, 'ABSENT');
+  });
+
+  test('an unreachable system is UNREACHABLE, not an absence', async () => {
+    const { framework } = await suite({ projectManagement: unreachableConnector('pm') as FakeConnector });
+    const outcome = await framework.call('pm', 'read_issue', { key: 'STORY-999' }, context());
+    assert.equal(outcome.outcome, 'ERROR');
+    assert.equal(outcome.outcome === 'ERROR' ? outcome.presence : null, 'UNREACHABLE');
+  });
+
+  test('an unconfigured system is UNREACHABLE: not configured is not absent', async () => {
+    const { framework } = await suite({ projectManagement: null });
+    const outcome = await framework.call('pm', 'read_issue', { key: 'STORY-999' }, context());
+    assert.equal(outcome.outcome, 'ERROR');
+    assert.equal(outcome.outcome === 'ERROR' ? outcome.presence : null, 'UNREACHABLE');
+  });
+
+  test('an unclassified throw is UNREACHABLE: the fail-closed branch performs no work', async () => {
+    const noisy = new FakeConnector('pm', true, () => {
+      throw new Error('socket hang up');
+    });
+    const { framework } = await suite({ projectManagement: noisy });
+    const outcome = await framework.call('pm', 'read_issue', { key: 'STORY-999' }, context());
+    assert.equal(outcome.outcome, 'ERROR');
+    assert.equal(
+      outcome.outcome === 'ERROR' ? outcome.presence : null,
+      'UNREACHABLE',
+      'anything that does not classify itself is silence, which establishes nothing',
+    );
+  });
+
+  test('an operation nobody registered establishes nothing either', async () => {
+    const { framework } = await suite({});
+    const outcome = await framework.call('pm', 'no_such_op', {}, context());
+    assert.equal(outcome.outcome, 'ERROR');
+    assert.equal(outcome.outcome === 'ERROR' ? outcome.presence : null, 'UNREACHABLE');
   });
 });
 

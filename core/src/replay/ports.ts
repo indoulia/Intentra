@@ -211,6 +211,8 @@ export class RecordedAdapterRegistry implements AdapterRegistry {
           `the fixture records no result for ${adapter}.${op} with these arguments. A replay `
           + 'answers from the recording or not at all',
         call,
+        /* A recording that says nothing about a resource establishes nothing about it. */
+        presence: 'UNREACHABLE',
       });
     }
 

@@ -1004,14 +1004,33 @@ failing admission is overridden and recorded without stopping the run, and that 
 Orchestrator's granted tool set is empty and its envelope went through receipt. With the
 mandate name reverted to `workflow`, all four fail.
 
-### K-2 · `identityResolverFor` collapses reachable-but-absent into `UNAVAILABLE`
+### K-2 · `identityResolverFor` collapsed reachable-but-absent into `UNAVAILABLE` — **fixed**
 
-`core/src/composition/build.ts`'s `identityResolverFor` loses the distinction before the
-kernel sees it, because `AdapterCallOutcome.ERROR` carries only a message. The kernel
+`core/src/composition/build.ts`'s `identityResolverFor` lost the distinction before the
+kernel saw it, because `AdapterCallOutcome.ERROR` carried only a message. The kernel
 distinguishes the two (`admitWorkItem` says different things about a wrong key and an
-unreachable source), and the adapter framework's internal presence check distinguishes them
-too — the information exists at both ends and is discarded in the middle. Surfacing presence
-on the call outcome would close it.
+unreachable source), and the adapter framework's internal presence check distinguished them
+too — the information existed at both ends and was discarded in the middle.
+
+**What the fix is.** `AdapterCallOutcome.ERROR` carries a required `presence` of `ABSENT` or
+`UNREACHABLE`. The handler catch in `AdapterFramework#perform` classifies it with the same
+rule the idempotency re-read already used — `isAbsent(error)`, and nothing else — so an
+explicit `ResourceAbsentError` is the only thing that becomes `ABSENT` and every other
+failure, including an unclassified throw, is the branch that performs no work.
+`identityResolverFor` reads it and returns `ABSENT`, which `admitWorkItem` already handled and
+which the narrative already had different words for.
+
+The field is required rather than optional so that a new call path has to say which silence it
+heard, and the test doubles were widened rather than defaulted: `FakeWorld` grew an `absent`
+set, because a double that reports every failure the same way certifies a path production does
+not take — which is K-1's lesson, applied before it could repeat.
+
+**What holds it.** `adapters/test/adapters.test.ts` "a failed call reports what it established,
+and no more" covers the five shapes at the seam where the distinction is made, and
+`core/test/e2e/scenarios-reality.test.ts` scenario 13 now asserts end to end, through the
+composition root, that a reachable system without the item says *the key is wrong* and an
+unreachable one says *resume when the source returns*. That test previously asserted the
+defect — `doesNotMatch(/The key is wrong/)` — so the inversion is the regression guard.
 
 ### K-3 · Three derivations with no consumer on the live path
 

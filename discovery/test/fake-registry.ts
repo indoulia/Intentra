@@ -66,8 +66,15 @@ export interface FakeWorld {
   readonly responses?: Readonly<Record<string, unknown>>;
   /** `adapter.op` entries the registry does not declare at all. */
   readonly missingOps?: readonly string[];
-  /** `adapter.op` to an error message the call fails with. */
+  /** `adapter.op` to an error message the call fails with. Unreachable unless in `absent`. */
   readonly errors?: Readonly<Record<string, string>>;
+  /**
+   * `adapter.op` entries whose failure is an established absence rather than silence.
+   *
+   * The real framework separates the two and the double has to as well: a double that
+   * reports every failure the same way certifies a path production does not take.
+   */
+  readonly absent?: readonly string[];
   /** `adapter.op` to a refusal kind the adapter answers with. */
   readonly refusals?: Readonly<
     Record<string, 'scope_violation' | 'security_violation' | 'grant_missing' | 'ambiguous_state'>
@@ -201,7 +208,12 @@ export class FakeAdapters implements AdapterRegistry {
     if (error !== undefined) {
       const failed: CallRecord = { ...call, outcome: 'ERROR' };
       this.calls.push(failed);
-      return { outcome: 'ERROR', message: error, call: failed };
+      return {
+        outcome: 'ERROR',
+        message: error,
+        call: failed,
+        presence: (this.world.absent ?? []).includes(key) ? 'ABSENT' : 'UNREACHABLE',
+      };
     }
 
     if (!(key in (this.world.responses ?? {}))) {
@@ -211,6 +223,8 @@ export class FakeAdapters implements AdapterRegistry {
         outcome: 'ERROR',
         message: `the world records no result for ${key}`,
         call: failed,
+        /* A world that says nothing about a resource establishes nothing about it. */
+        presence: 'UNREACHABLE',
       };
     }
 

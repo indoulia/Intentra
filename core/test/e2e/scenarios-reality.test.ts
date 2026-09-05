@@ -584,7 +584,7 @@ describe('scenario 13 — unresolvable external item', () => {
     );
   });
 
-  test('end to end: a reachable source that does not hold the item stops the run too — and the two cases arrive as one', async () => {
+  test('end to end: a reachable source that does not hold the item blocks too, and says the key is wrong', async () => {
     const world = newWorld();
     const outcome = await work({
       world,
@@ -604,25 +604,29 @@ describe('scenario 13 — unresolvable external item', () => {
     );
 
     /*
-     * Here is the gap that remains, as an assertion rather than a comment. The adapter knows
-     * the difference:
-     * `pm.read_issue` threw `ResourceAbsentError`, and `AdapterFramework`'s own presence check
-     * (`adapters/src/framework.ts:768`) reads exactly that distinction for the idempotency
-     * ledger. But `AdapterCallOutcome.ERROR` carries only a message, so `identityResolverFor`
-     * (`core/src/composition/build.ts`) reports both as `UNAVAILABLE` — and says in its own
-     * docstring that it must, because telling an operator their key is wrong when the server
-     * was down is the more damaging mistake. The cost is that the operator is told to wait for
-     * a system that is already up.
+     * K-2, closed. `pm.read_issue` threw `ResourceAbsentError`, the framework carries that as
+     * `presence: 'ABSENT'` on the call outcome, and `identityResolverFor` reports `ABSENT`
+     * rather than flattening it into `UNAVAILABLE`. The operator is no longer told to wait for
+     * a system that is already up. This runs through the composition root, not a double, which
+     * is the only place the collapse could be observed.
      */
-    assert.match(outcome.result.detail, /the source is unreachable/);
+    assert.match(
+      outcome.result.detail,
+      /the source is reachable, and no such item exists/,
+      'the end-to-end path now reports what the adapter established, not what it could not',
+    );
+    assert.match(
+      outcome.result.detail,
+      /The key is wrong, and a human should hear that rather than watch Intentra work on a guess/,
+    );
     assert.doesNotMatch(
       outcome.result.detail,
-      /The key is wrong/,
-      'reachable-but-absent is not distinguished end to end; see the defect report',
+      /the source is unreachable/,
+      'and it does not also claim the source could not be reached: it was',
     );
   });
 
-  test('at the seam: the kernel does distinguish them, and says different things to a human', async () => {
+  test('the kernel distinguishes them, and says different things to a human', async () => {
     const rig = seam({
       adapters: { files: [README] },
       /* Two runs, one resolution dispatch each; a rejected proposal is re-dispatched once, so
@@ -664,8 +668,8 @@ describe('scenario 13 — unresolvable external item', () => {
     assert.notEqual(
       unreachable.detail,
       absent.detail,
-      'the two silences stay apart in the component that computes them; what loses them is the '
-      + 'adapter outcome that cannot carry the difference',
+      'the two silences stay apart in the component that computes them, and — since K-2 — in '
+      + 'the adapter outcome that carries them there',
     );
   });
 });

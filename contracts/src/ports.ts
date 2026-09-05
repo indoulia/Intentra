@@ -129,7 +129,27 @@ export type AdapterCallOutcome =
     readonly message: string;
     readonly call: CallRecord;
   }
-  | { readonly outcome: 'ERROR'; readonly message: string; readonly call: CallRecord };
+  | {
+    readonly outcome: 'ERROR';
+    readonly message: string;
+    readonly call: CallRecord;
+    /**
+     * What the failed call established about the resource, and nothing more.
+     *
+     * `ABSENT` is a fact obtained by looking: the system answered and the thing is not there.
+     * `UNREACHABLE` is silence — a timeout, a refusal, an unclassified throw — and it
+     * establishes nothing at all. The adapter framework already separates the two internally
+     * for the idempotency re-read, where reading silence as absence is how a system opens the
+     * same pull request twice. It is carried here because admission draws the same
+     * distinction: a wrong external key is something a human should hear about, and an
+     * unreachable source is something to block on and resume.
+     *
+     * Required rather than optional, so that a new call path has to say which it saw. Anything
+     * that cannot establish absence says `UNREACHABLE`, which is the branch that performs no
+     * work.
+     */
+    readonly presence: 'ABSENT' | 'UNREACHABLE';
+  };
 
 /**
  * The only path between agents and the world, and the one place every check the kernel

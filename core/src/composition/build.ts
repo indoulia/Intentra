@@ -278,12 +278,12 @@ export async function buildKernel(options: KernelBuildOptions): Promise<BuiltKer
  * `RESOLVED` carries the evidence of the fetch, `ABSENT` says the key is wrong and a human
  * should hear it, and `UNAVAILABLE` says block and resume when the system returns.
  *
- * **`ABSENT` is not produced here, and that is a real limitation.** The adapter framework maps
- * both `ResourceAbsentError` and `ResourceUnreachableError` onto a single `ERROR` outcome, so
- * a failed read cannot be told apart from a missing ticket at this seam. Reporting `ABSENT`
- * on a guess would tell an operator their key is wrong when the server was merely down, which
- * is the more damaging of the two mistakes, so a reachable system that would not answer is
- * `UNAVAILABLE` with the adapter's own message attached.
+ * The distinction between the last two is the adapter's to make and never this seam's to
+ * guess: `AdapterCallOutcome` carries `presence`, which is `ABSENT` only where a handler threw
+ * an explicit `ResourceAbsentError` — the system answered and the item is not there. Every
+ * other failure is `UNREACHABLE` and blocks. Telling an operator their key is wrong when the
+ * server was merely down is the more damaging of the two mistakes, so silence never becomes
+ * absence here either.
  */
 export function identityResolverFor(
   built: BuiltKernel,
@@ -319,15 +319,17 @@ export function identityResolverFor(
       return { outcome: 'RESOLVED', identity, evidence };
     }
 
+    if (call.outcome === 'ERROR' && call.presence === 'ABSENT') {
+      return { outcome: 'ABSENT', identity };
+    }
+
     return {
       outcome: 'UNAVAILABLE',
       identity,
       detail:
         `the project-management adapter answered ${call.outcome} for ${identity}: `
-        + `${call.outcome === 'REFUSED' ? call.message : call.message}. The adapter reports a `
-        + 'failed read and a missing item the same way, so this is recorded as unreachable '
-        + 'rather than as a wrong key: telling an operator their key is wrong when the server '
-        + 'was down is the more damaging of the two mistakes',
+        + `${call.message}. That establishes nothing about whether ${identity} exists, and `
+        + 'unreachable is neither present nor absent',
     };
   };
 }

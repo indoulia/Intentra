@@ -109,7 +109,12 @@ type Performed =
     readonly message: string;
     readonly call: CallRecord;
   }
-  | { readonly kind: 'ERROR'; readonly message: string; readonly call: CallRecord };
+  | {
+    readonly kind: 'ERROR';
+    readonly message: string;
+    readonly call: CallRecord;
+    readonly presence: 'ABSENT' | 'UNREACHABLE';
+  };
 
 type Reread = 'PRESENT' | 'ABSENT' | 'UNREACHABLE';
 
@@ -205,7 +210,12 @@ export class AdapterFramework implements AdapterRegistry {
           call: performed.call,
         };
       default:
-        return { outcome: 'ERROR', message: performed.message, call: performed.call };
+        return {
+          outcome: 'ERROR',
+          message: performed.message,
+          call: performed.call,
+          presence: performed.presence,
+        };
     }
   }
 
@@ -369,6 +379,7 @@ export class AdapterFramework implements AdapterRegistry {
         adapter, op, args, context, startedAt, startedMs, [], [],
         `${where} is not a registered adapter operation. Every operation carries a descriptor, `
         + 'and an operation with no descriptor does not exist rather than being permitted',
+        'UNREACHABLE',
       );
     }
     const descriptor = registration.descriptor;
@@ -378,6 +389,7 @@ export class AdapterFramework implements AdapterRegistry {
       return this.#error(
         adapter, op, args, context, startedAt, startedMs, [], [],
         `${where} was called with arguments its descriptor does not admit: ${argsProblem}`,
+        'UNREACHABLE',
       );
     }
 
@@ -542,9 +554,15 @@ export class AdapterFramework implements AdapterRegistry {
           error.verdict.refusal, error.verdict.record.detail, error.verdict.record,
         );
       }
+      /*
+       * The same rule the idempotency re-read applies: only an explicit absence counts as
+       * absence, and every other failure is unreachable. Collapsing the two here is what
+       * K-2 recorded — the handler knows which it saw and the caller could not find out.
+       */
       return this.#error(
         adapter, op, args, context, startedAt, startedMs, touched, [],
         `${where} failed: ${redactMessage(messageOf(error), where)}`,
+        isAbsent(error) ? 'ABSENT' : 'UNREACHABLE',
       );
     }
 
@@ -877,6 +895,11 @@ export class AdapterFramework implements AdapterRegistry {
     touched: readonly string[],
     _mutations: readonly MutationEvent[],
     message: string,
+    /**
+     * What the caller established. Only an explicit `ResourceAbsentError` is `ABSENT`;
+     * everything else is silence, and silence establishes nothing.
+     */
+    presence: 'ABSENT' | 'UNREACHABLE',
   ): Performed {
     const call = this.#calls.record({
       adapter,
@@ -890,7 +913,7 @@ export class AdapterFramework implements AdapterRegistry {
       startedAt,
       durationMs: Date.now() - startedMs,
     });
-    return { kind: 'ERROR', message: redactMessage(message, `${adapter}.${op}`), call };
+    return { kind: 'ERROR', message: redactMessage(message, `${adapter}.${op}`), call, presence };
   }
 }
 
