@@ -23,7 +23,7 @@ The architecture is frozen. The fourteen normative documents are pinned by hash 
 
 The implementation is being built as a **read-only MVP first**: it discovers, reasons, audits and validates, but performs no production mutations. The implementation sequence is defined in [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
 
-> **Naming note:** The architecture documents retain the historical `Intentra` terminology because they are part of the frozen v0.3 record. The product and implementation are now branded **Intentra**.
+> **Naming note:** The architecture documents retain the historical `AgentOS` terminology because they are part of the frozen v0.3 record. The product and implementation are now branded **Intentra**.
 
 ## Design premise
 

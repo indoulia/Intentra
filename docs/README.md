@@ -2,7 +2,7 @@
 
 Architecture v0.3 — **frozen 2026-09-04**, implementation baseline.
 
-The public product is now branded **Intentra**. The fourteen normative architecture documents below retain their historical `Intentra` terminology and are pinned by hash in [freeze/v0.3.sha256](freeze/v0.3.sha256). Do not edit a frozen document casually: read [ARCHITECTURE_FREEZE.md](ARCHITECTURE_FREEZE.md) section 3 before proposing an amendment.
+The public product is now branded **Intentra**. The fourteen normative architecture documents below retain their historical `AgentOS` terminology and are pinned by hash in [freeze/v0.3.sha256](freeze/v0.3.sha256). Do not edit a frozen document casually: read [ARCHITECTURE_FREEZE.md](ARCHITECTURE_FREEZE.md) section 3 before proposing an amendment.
 
 ## Read in this order
 
@@ -23,6 +23,7 @@ The public product is now branded **Intentra**. The fourteen normative architect
 15. [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md) — phases, readiness, MVP and pilot.
 16. [ARCHITECTURE_FREEZE.md](ARCHITECTURE_FREEZE.md) — what is frozen and the amendment protocol.
 17. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — work packages and the invariant suite for the read-only MVP.
+18. [PILOT_VALIDATION.md](PILOT_VALIDATION.md) — the human procedure that executes the WP-8 pilot and scores it.
 
 ## Product model
 
