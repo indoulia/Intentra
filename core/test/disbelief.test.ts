@@ -4,7 +4,7 @@ import { fixtures as fx, type CallRecord, type MutationEvent, type ReplayResult 
 import { loadPolicies } from '@agentos/policies';
 import { reconcile, blastRadius, hasNonReversibleMutation, globToRegExp } from '../src/reconciliation.js';
 import { verifyEvidence, selectForVerification, normalizeExcerpt, evaluatePredicate } from '../src/evidence-verification.js';
-import { FixtureAdapters, seededRandom, FixedClock } from './doubles.js';
+import { FixtureAdapters, HELD_TOOLS, seededRandom, FixedClock } from './doubles.js';
 
 /**
  * The disbelief machinery: steps 3 and 4 of envelope receipt.
@@ -48,6 +48,7 @@ describe('artifacts_changed is reconciled, in both directions', () => {
       }),
       mutations: [fx.mutationEvent({ op: 'write_file', target: 'src/a.ts' })],
       calls: [call({ paths_touched: ['src/**'] })],
+      grantedTools: HELD_TOOLS,
     });
     assert.deepEqual(result.violations, []);
     assert.deepEqual(result.underReported, []);
@@ -59,6 +60,7 @@ describe('artifacts_changed is reconciled, in both directions', () => {
       envelope: fx.envelope({ artifacts_changed: [] }),
       mutations: [fx.mutationEvent({ op: 'write_file', target: 'src/a.ts' })],
       calls: [call({ paths_touched: ['src/**'] })],
+      grantedTools: HELD_TOOLS,
     });
     assert.equal(result.violations[0]?.code, 'ARTIFACTS_UNDER_REPORTED');
     assert.match(
@@ -77,6 +79,7 @@ describe('artifacts_changed is reconciled, in both directions', () => {
       }),
       mutations: [],
       calls: [call({ paths_touched: ['src/**'] })],
+      grantedTools: HELD_TOOLS,
     });
     assert.equal(result.violations[0]?.code, 'ARTIFACTS_OVER_REPORTED');
     assert.match(
@@ -94,6 +97,7 @@ describe('artifacts_changed is reconciled, in both directions', () => {
       }),
       mutations: [fx.mutationEvent({ op: 'write_file', target: 'src/a.ts' })],
       calls: [call({ paths_touched: ['src/**'] })],
+      grantedTools: HELD_TOOLS,
     });
     assert.deepEqual(result.violations, []);
   });
@@ -125,6 +129,7 @@ describe('coverage is reconciled against the adapter call log', () => {
       }),
       mutations: [],
       calls: [call({ paths_touched: ['src/pricing/rate.ts'] })],
+      grantedTools: HELD_TOOLS,
     });
     assert.equal(result.violations[0]?.code, 'COVERAGE_OVERSTATED');
     assert.match(
@@ -140,6 +145,7 @@ describe('coverage is reconciled against the adapter call log', () => {
       }),
       mutations: [],
       calls: [call({ paths_touched: ['src/pricing/rate.ts'] })],
+      grantedTools: HELD_TOOLS,
     });
     assert.deepEqual(result.violations, []);
   });
@@ -151,6 +157,7 @@ describe('coverage is reconciled against the adapter call log', () => {
       }),
       mutations: [],
       calls: [call({ paths_touched: [], capabilities_touched: ['cap.pricing'] })],
+      grantedTools: HELD_TOOLS,
     });
     assert.deepEqual(result.violations, []);
   });
@@ -165,6 +172,7 @@ describe('coverage is reconciled against the adapter call log', () => {
         call({ paths_touched: ['src/pricing/rate.ts'] }),
         call({ call_id: 'c_002', paths_touched: ['src/pricing/tax.ts'] }),
       ],
+      grantedTools: HELD_TOOLS,
     });
     assert.deepEqual(result.violations, []);
   });

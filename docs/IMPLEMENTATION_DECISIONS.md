@@ -927,43 +927,115 @@ These are defects, not decisions. They are recorded here because the honest plac
 for a known defect is where the next person will look, and because a defect nobody
 wrote down becomes a surprise rather than a task.
 
-### K-1 · The Orchestrator's workflow dispatch never happens
+### K-1 · The Orchestrator's workflow dispatch never happened — **fixed**
 
-`core/src/kernel.ts` looks up `agents.spec('orchestrator', 'workflow')`. The spec's
-mandate is named `orchestration` (`agents/src/roles/specs.ts`). The lookup misses,
-`dispatchOrchestrator` returns `null` before it reaches the registry, and **every run
-silently takes the fallback template**.
+`core/src/kernel.ts` looked up `agents.spec('orchestrator', 'workflow')` and the
+specification is named `orchestration` (`agents/src/roles/specs.ts`). The lookup
+missed, `dispatchOrchestrator` returned `null` before it reached the registry, and
+**every run silently took the fallback template**.
 
-**Why it is not currently visible.** With `execution.mutation_enabled: false` and
+It was invisible because with `execution.mutation_enabled: false` and
 `admissible_risk_classes: ["READ_ONLY"]`, `investigation.readonly` is the only
-admissible template for every work item type, so the fallback and the proposal would
-select the same graph. The outcome of every run in this build is identical either
-way. What is lost is not correctness here but *exercise*: the Orchestrator proposal
-path — template selection, optional-stage exclusion with the kernel evaluating the
-predicate, stage mandates bounded by the work item's scope, and the override record
-when a proposal fails admission — has never run in a live dispatch. Those checks are
-unit-tested against `admitWorkflow` directly and are not reached end to end.
+admissible template for every work item type, so the fallback and a proposal select
+the same graph. What was lost was not correctness but *exercise*: template selection,
+optional-stage exclusion with the kernel evaluating the predicate, stage mandates
+bounded by the work item's scope, and the override record when a proposal fails
+admission had never run in a live dispatch. They were unit-tested against
+`admitWorkflow` and reached end to end by nothing.
 
-**Why it is recorded rather than fixed.** The correction is one word. Turning it on
-adds a dispatch to every run, which invalidates every scripted substrate and every
-recorded envelope fixture: applied, it takes the suite from 1225 passing to 17
-failing, all of them fixtures needing an honest orchestrator envelope. That is the
-same shape and size of work as dispatching the `context` mandate (I-38), and it
-deserves the same care rather than being rushed in alongside it. Rushing it is how
-a fixture gets written to satisfy a reconciliation check instead of to record what
-an agent could honestly have returned.
+**Why the harness could not have caught it.** `core/test/doubles.ts`'s `FixtureAgents`
+answers a mandate lookup that misses by falling back to any specification the role has,
+and it named the mandate `workflow` besides. The kernel-unit tests therefore dispatched
+the Orchestrator throughout; only the composition root, which uses the real
+`MvpAgentCatalog`, could not absorb the miss. That is the whole lesson of the finding:
+a double that is forgiving where the real component is exact certifies a path production
+does not take.
 
-**What to do.** Change the mandate name at the lookup, then give each scripted
-substrate and `core/test/fixtures/typo-readme/` a workflow proposal envelope that an
-Orchestrator could really have produced — a template from the admissible set, no
-invented stage, and any exclusion carrying a claim the kernel is free to evaluate
-against it. The fallback and override paths must keep their own tests: a proposal
-that now succeeds must not remove the coverage of one that fails.
+**What the fix is.**
 
-**Related, and deliberately not fixed here:** `core/src/composition/build.ts`'s
-`identityResolverFor` collapses "reachable but absent" into `UNAVAILABLE` before the
-kernel sees it, because `AdapterCallOutcome.ERROR` carries only a message. The
-kernel distinguishes the two (`admitWorkItem` says different things about a wrong
-key and an unreachable source), and the adapter framework's internal presence check
-distinguishes them too — the information exists at both ends and is discarded in the
-middle. Surfacing presence on the call outcome would close it.
+- The mandate name lives in one constant, `ORCHESTRATOR_WORKFLOW_MANDATE`, and the input
+  package takes `mandate_name` from the specification the lookup returned rather than from
+  a second literal. The two can no longer disagree.
+- The dispatch is no longer a thin exception. It checks the budget, ranks and journals its
+  model selection, builds its granted tool set from the role's permitted adapters — empty,
+  which is the specification and not an omission — journals `tool_surface_conformance` and
+  refuses a surface that is not `CONFORMS`, and puts the envelope through `receiveEnvelope`.
+  It previously cast whatever the substrate returned to `HandoffEnvelope` and read
+  `.proposals.workflow` off it, which a live model returning `{}` would have crashed on.
+- Nothing in it stops the run. A missing mandate, an exhausted budget, no model, a
+  non-conforming surface, a refused envelope and a `BLOCKED` answer all end with no proposal
+  and the fallback applying, each for a reason in the log. That asymmetry is the design:
+  the Orchestrator being wrong costs efficiency, never safety.
+- The accepted envelope joins `priorEnvelopes`, so its cost counts against the run budget
+  and the run's record of what it spent is complete.
+
+**Two things the fix uncovered, both fixed with it.**
+
+*Coverage could not be claimed by a dispatch that holds no adapters.* `Coverage.scope_examined`
+requires at least one entry, and step 3 of receipt refuses any entry no adapter call touched.
+For the Orchestrator — which holds no adapters by design — no value satisfies both, so every
+one of its envelopes would have been rejected for `COVERAGE_OVERSTATED` and every proposal
+lost, silently, in exactly the way K-1 itself was lost. `reconcile` is now told the tool set
+the kernel granted the dispatch: a claim from a dispatch that held tools and called none is
+still over-claiming and still refused, and a claim from a dispatch granted nothing is
+*unreconciled* — neither supported nor overstated — which is the treatment a
+capability-shaped claim nothing could answer already got. It is a kernel fact and never an
+agent claim, so the check is not weakened by knowing it.
+
+*The override said the wrong thing.* The workflow floor's predicate-keyed rules fire on
+`INDETERMINATE` as well as on `TRUE`, by the safer-branch rule, and `architecture.required`
+is `INDETERMINATE` wherever discovery could not read an API map. So
+`contract-boundary-requires-architecture` requires a stage `investigation.readonly` does not
+contain, and `investigation.readonly` is the only template this build admits: **every**
+proposal fails the floor and the kernel selects the identical graph as the fallback. That is
+the designed behaviour — `policies/src/load.ts` says why — but the override's recorded reason
+was "the Orchestrator being wrong costs efficiency, never safety", which would have appeared
+in every v0.3 narrative and blamed the proposer for a template set that cannot satisfy the
+floor. Where the fallback and the proposal name the same template, the reason now says what
+is actually true.
+
+**What holds it.** `core/test/e2e/workflow-dispatch.test.ts`, against the composition root.
+It asserts that the dispatch happens, that the mandate it names is one the real
+`MvpAgentCatalog` provides (compared against the catalogue, not a literal, so renaming either
+side breaks it), that every declared input section was materialized, that the proposal reached
+`admitWorkflow` — established from the checks `admitWorkflow` recorded, because the admitted
+template id is the same either way and that is precisely why K-1 survived — that a proposal
+failing admission is overridden and recorded without stopping the run, and that the
+Orchestrator's granted tool set is empty and its envelope went through receipt. With the
+mandate name reverted to `workflow`, all four fail.
+
+### K-2 · `identityResolverFor` collapses reachable-but-absent into `UNAVAILABLE`
+
+`core/src/composition/build.ts`'s `identityResolverFor` loses the distinction before the
+kernel sees it, because `AdapterCallOutcome.ERROR` carries only a message. The kernel
+distinguishes the two (`admitWorkItem` says different things about a wrong key and an
+unreachable source), and the adapter framework's internal presence check distinguishes them
+too — the information exists at both ends and is discarded in the middle. Surfacing presence
+on the call outcome would close it.
+
+### K-3 · Three derivations with no consumer on the live path
+
+Recorded together because they have K-1's shape and none of them is K-1: a symbol existing is
+not a defect, and the sweep that followed K-1 found only these.
+
+- **`orchestratorChoices` (`agents/src/roles/catalog.ts`)** derives, from the policy set,
+  which proposals the Orchestrator may make in this milestone, so that "three" becomes "four"
+  on the day a mutating stage is registered without anybody remembering the function exists.
+  Nothing reads it. What it derives is stated instead in the `orchestration` specification's
+  objective and hard limits, which *are* rendered into the brief — so the agent is told, and
+  the derivation meant to keep the telling honest is not what tells it.
+- **`proposals.dispatch` and `proposals.arbitration`** are legal for the Orchestrator at every
+  stage (`policies/data/agents.json`) and the kernel reads neither. Arbitration's earlier steps
+  do run — conflicts are detected and rule-resolved inside envelope receipt, and journalled —
+  and it is the step after them, the Orchestrator's own resolution of a conflict no rule
+  settled, that has no dispatch to arrive in. Adding one would be adding a dispatch, which is
+  later work and not a repair.
+- **`gateClassifier` (`core/src/authorization.ts`)** wraps `classifyGates` in a port shape for
+  an adapter framework that has no socket for it. Gates are classified on the live path, by
+  the kernel, from adapter classifications; this wrapper is the unused half of a symmetry with
+  `grantEnforcer`, which *is* wired, through `storeGrantChecker`.
+
+Alongside them a few exported helpers in `core/src` have no caller at all — `allCriteria` and
+`expectedCriteria` in `dod.ts`, `observedCoverage` in `reconciliation.ts`, `pathInScope` in
+`proposals.ts`, and `booleanValue` in `discovery/src/reconciliation.ts`. Those are dead
+exports rather than disconnected mechanisms, and removing them is tidying rather than repair.

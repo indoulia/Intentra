@@ -67,7 +67,7 @@
   },
   {
     "role": "orchestrator",
-    "mandate_name": "workflow",
+    "mandate_name": "orchestration",
     "version": "1.0",
     "objective": "propose a workflow template and its parameterization",
     "required_inputs": [
@@ -75,7 +75,7 @@
       "repository"
     ],
     "required_outputs": [
-      "workflow_proposal"
+      "rationale"
     ],
     "permitted_adapters": [],
     "read_only": true,

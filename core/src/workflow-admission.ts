@@ -449,10 +449,28 @@ export async function admitWorkflow(
     override: {
       proposedTemplate: proposal.template_id,
       selectedTemplate: fallback.template_id,
-      reason:
-        'a failed admission is not negotiated. The kernel selects the most conservative '
-        + 'admissible template and continues; the Orchestrator being wrong costs efficiency, '
-        + 'never safety',
+      /*
+       * Two different facts, and saying the first where the second holds is how a run's account
+       * of itself becomes untrustworthy.
+       *
+       * Where the fallback differs from the proposal, the Orchestrator asked for something this
+       * installation will not run and was overruled. Where it is the *same* template, the
+       * proposal was the one the kernel would have chosen anyway and the failed check is about
+       * the installation rather than the proposer — the workflow floor's predicate-keyed rules
+       * fire on `INDETERMINATE` as well as `TRUE`, so a rule requiring a stage no admissible
+       * template contains refuses every proposal here and the identical graph runs regardless.
+       * That is worth recording and it is not the Orchestrator being wrong, and until the
+       * Orchestrator's dispatch was actually wired (decision K-1) neither sentence was ever
+       * written by a real run.
+       */
+      reason: fallback.template_id === proposal.template_id
+        ? 'the proposal named the template the kernel selects anyway, and it still failed a '
+          + 'check against this installation, so the same graph runs. The failed check is '
+          + 'recorded because it is a fact about what no admissible template here satisfies, '
+          + 'not about the proposal being wrong'
+        : 'a failed admission is not negotiated. The kernel selects the most conservative '
+          + 'admissible template and continues; the Orchestrator being wrong costs efficiency, '
+          + 'never safety',
       failedChecks: failed,
     },
     violations,
