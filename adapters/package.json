@@ -1,5 +1,5 @@
 {
-  "name": "@agentos/adapters",
+  "name": "@intentra/adapters",
   "version": "0.3.0",
   "private": true,
   "type": "module",
@@ -7,7 +7,7 @@
   "types": "./dist/src/index.d.ts",
   "exports": { ".": "./dist/src/index.js" },
   "dependencies": {
-    "@agentos/contracts": "0.3.0",
-    "@agentos/policies": "0.3.0"
+    "@intentra/contracts": "0.3.0",
+    "@intentra/policies": "0.3.0"
   }
 }
