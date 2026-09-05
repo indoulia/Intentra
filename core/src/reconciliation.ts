@@ -4,6 +4,7 @@ import type {
   Coverage,
   HandoffEnvelope,
   MutationEvent,
+  ToolGrant,
   Violation,
 } from '@agentos/contracts';
 
@@ -33,6 +34,20 @@ export interface ReconciliationInput {
   readonly mutations: readonly MutationEvent[];
   /** Adapter calls recorded for this dispatch, reads included. */
   readonly calls: readonly CallRecord[];
+  /**
+   * The adapter operations the kernel exposed to this dispatch.
+   *
+   * A kernel fact, never an agent claim, and it is what separates the two readings of an empty
+   * call log. A dispatch that held tools and called none of them and still claims coverage is
+   * lying, and that is the case this step exists for. A dispatch the kernel granted no tools
+   * at all could not have called anything: its coverage claim is not a lie, it is
+   * unanswerable, and the Orchestrator Agent — which holds no adapters precisely so that the
+   * component judging evidence cannot manufacture it — is dispatched in every run. Rejecting
+   * its envelope for a claim the design guarantees nothing can support would make the empty
+   * adapter set unusable; accepting the claim as supported would make coverage a self-report.
+   * It is reported as unreconciled, which is neither.
+   */
+  readonly grantedTools: readonly ToolGrant[];
 }
 
 export interface ReconciliationResult {
@@ -44,10 +59,11 @@ export interface ReconciliationResult {
   /** Claimed scope no adapter call touched, where the call log could have answered. */
   readonly unsupportedScope: readonly string[];
   /**
-   * Claimed scope the call log **cannot** answer — a capability id, with no call in this
-   * dispatch carrying any `capabilities_touched` to reconcile it against. Not a violation and
-   * not a pass: recorded so the gap is visible rather than either failing every envelope or
-   * silently accepting every capability-shaped coverage claim.
+   * Claimed scope the call log **cannot** answer — a capability id with no call in this
+   * dispatch carrying any `capabilities_touched` to reconcile it against, or any claim at all
+   * from a dispatch the kernel granted no adapter operations. Not a violation and not a pass:
+   * recorded so the gap is visible rather than either failing every envelope or silently
+   * accepting a coverage claim nothing could check.
    */
   readonly unreconciledScope: readonly string[];
 }
@@ -222,11 +238,14 @@ export function reconcile(input: ReconciliationInput): ReconciliationResult {
    * Touched-but-unclaimed is not — an agent that read more than its coverage statement claims
    * has understated its own thoroughness, which costs nothing and is not a lie.
    */
+  const answerable = input.grantedTools.length > 0;
   const unreconciledScope = envelope.coverage.scope_examined.filter(
-    (entry) => !calls.some((call) => callSupports(entry, call)) && !reconcilable(entry, calls),
+    (entry) => !calls.some((call) => callSupports(entry, call))
+      && (!answerable || !reconcilable(entry, calls)),
   );
   const unsupportedScope = envelope.coverage.scope_examined.filter(
-    (entry) => !calls.some((call) => callSupports(entry, call)) && reconcilable(entry, calls),
+    (entry) => !calls.some((call) => callSupports(entry, call))
+      && answerable && reconcilable(entry, calls),
   );
 
   for (const entry of unsupportedScope) {

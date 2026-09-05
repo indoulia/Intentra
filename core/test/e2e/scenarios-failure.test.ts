@@ -25,7 +25,7 @@ import {
   investigationScript,
   work,
 } from './rig.js';
-import { context, fileEvidence, investigationGraph, resolution } from './envelopes.js';
+import { context, fileEvidence, investigationGraph, resolution, workflow } from './envelopes.js';
 
 /**
  * Scenarios 17-20: things going wrong.
@@ -289,6 +289,20 @@ describe('scenario 19 — missing model', () => {
     const failures = eventsOf(outcome.log, 'dispatch_result')
       .filter((event) => event.data.failure_reason === 'NO_MODEL');
     assert.ok(failures.length > 0, 'the dispatch reported NO_MODEL rather than inventing a model');
+
+    /*
+     * The model is withdrawn *after* the prologue, and the prologue's last dispatch is the
+     * Orchestrator's workflow proposal — so this run also states which dispatch lost it.
+     * Asserting only that "some dispatch said NO_MODEL" would pass equally well if the
+     * withdrawal had happened one dispatch earlier and the run had silently taken the
+     * fallback template, which is a different fact about the world.
+     */
+    assert.deepEqual(
+      [...new Set(failures.map((event) => event.stage))],
+      ['AUDIT'],
+      'the graph\'s first stage is where the model went missing, and it is the only stage that '
+      + 'reports it — the prologue, the workflow dispatch included, still had one',
+    );
     assert.match(
       failures[0]?.data.detail ?? '',
       /Proceeding on an inadequate model and reporting the result as normal is a form of dishonesty/,
@@ -615,6 +629,16 @@ async function killedMidDispatch(world: ScratchWorld, request: string): Promise<
         } as never;
       }
 
+      if (input.stage === 'WORKFLOW_SELECTED') {
+        return {
+          outcome: 'ENVELOPE',
+          envelope: answering(workflow()),
+          toolSurface: surface('the workflow dispatch completed before the process died'),
+          cost,
+          model: 'model.scripted',
+        } as never;
+      }
+
       /* Here is the kill: mid-dispatch, inside the graph, with the intent already on disk. */
       return Promise.reject(new Error('the process was killed mid-dispatch'));
     },
@@ -667,16 +691,14 @@ async function killedMidDispatch(world: ScratchWorld, request: string): Promise<
  * real conditions with different consequences.
  *
  * The count is the whole mechanism here, so it is named rather than left as a magic number.
- * The prologue selects a model twice in this build: `context-discovery/resolution` at
- * `RESOLUTION` and `context-discovery/context` at `CONTEXT_DISCOVERY`. `WORKFLOW_SELECTED`
- * makes no third selection, because the kernel looks up the Orchestrator's mandate as
- * `orchestrator/workflow` and `agents/src/roles/specs.ts` names it `orchestration`, so the
- * lookup misses and the dispatch returns before it reaches the registry — the fallback template
- * applies and the run proceeds. That is a real mismatch and it is not this scenario's subject;
- * it is recorded here because the count above depends on it. The third selection is the graph's
- * first stage, and that is the one that finds nothing.
+ * The prologue selects a model three times in this build: `context-discovery/resolution` at
+ * `RESOLUTION`, `context-discovery/context` at `CONTEXT_DISCOVERY`, and
+ * `orchestrator/orchestration` at `WORKFLOW_SELECTED`. It was two until decision K-1 was
+ * corrected — the kernel looked the Orchestrator's mandate up under a name the specification
+ * does not use, so the lookup missed and the dispatch returned before it reached the registry.
+ * The fourth selection is the graph's first stage, and that is the one that finds nothing.
  */
-const PROLOGUE_MODEL_SELECTIONS = 2;
+const PROLOGUE_MODEL_SELECTIONS = 3;
 
 function withdrawingRegistry(): Registries {
   const declared: ModelEntry = {

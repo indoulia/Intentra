@@ -6,6 +6,7 @@ import {
   type ProposedWorkItem,
   type ResolutionAlternative,
   type WorkItemType,
+  type WorkflowProposal,
 } from '@agentos/contracts';
 
 /**
@@ -170,6 +171,50 @@ export function context(input: {
 }
 
 /**
+ * The Orchestrator's workflow proposal, answered at `WORKFLOW_SELECTED`.
+ *
+ * Every run reaches this dispatch, and what it may honestly say is narrow. It holds no
+ * adapters, so it claims no repository coverage and cites no evidence; it may name a template
+ * from the admissible set and nothing else, because a template the installation does not admit
+ * is refused and overridden rather than run. In this build the admissible set for every type
+ * has exactly one member, which is why the proposal below names it — the policy working, not
+ * the fixture agreeing with itself. `exclude_optional` is empty because
+ * `investigation.readonly` marks no stage optional, so there is nothing an exclusion could
+ * legally ask for.
+ *
+ * The kernel is free to disagree with all of it, and the scenarios that make it disagree —
+ * a template that does not exist, one outside the admissible set — override `proposal` here so
+ * that the refusal is exercised against an otherwise honest envelope.
+ */
+export function workflow(input: {
+  readonly proposal?: Partial<WorkflowProposal>;
+  readonly overrides?: Partial<HandoffEnvelope>;
+} = {}): HandoffEnvelope {
+  const proposal: WorkflowProposal = {
+    template_id: 'investigation.readonly',
+    include_optional: [],
+    exclude_optional: [],
+    rationale:
+      'the deliverable is findings over an existing system, nothing in the graph mutates, and '
+      + 'the observed reality gives no reason to prefer a different reading of the work',
+    ...input.proposal,
+  };
+  return fx.envelope({
+    envelope_id: 'env_workflow',
+    agent: 'orchestrator',
+    stage_in: 'WORKFLOW_SELECTED',
+    summary:
+      'one template in the admissible set fits this work item and this observed reality, and '
+      + 'the reasoning for it is stated over the evidence the dispatch was given',
+    outputs: { rationale: 'inline' },
+    coverage: fx.coverage({ scope_examined: ['(no adapters)'], confidence: 'INFERENCE' }),
+    proposals: { workflow: proposal },
+    next_action: null,
+    ...input.overrides,
+  });
+}
+
+/**
  * The AUDIT envelope of `investigation.readonly`, with its three required outputs filled.
  *
  * A stage that reports `COMPLETE` with a required output unfilled is rejected by the
@@ -252,6 +297,8 @@ export function investigationGraph(input: {
   /** The criterion-1 verdict the `context` mandate returns. `MET` unless stated otherwise. */
   readonly contextVerdict?: Partial<CriterionVerdict>;
   readonly contextOverrides?: Partial<HandoffEnvelope>;
+  /** The Orchestrator's proposal, where a scenario wants the kernel to refuse one. */
+  readonly workflowProposal?: Partial<WorkflowProposal>;
   readonly auditOverrides?: Partial<HandoffEnvelope>;
   readonly completionOverrides?: Partial<HandoffEnvelope>;
 }): readonly HandoffEnvelope[] {
@@ -263,6 +310,7 @@ export function investigationGraph(input: {
       ...(input.contextVerdict === undefined ? {} : { verdict: input.contextVerdict }),
       ...(input.contextOverrides === undefined ? {} : { overrides: input.contextOverrides }),
     }),
+    workflow(input.workflowProposal === undefined ? {} : { proposal: input.workflowProposal }),
     audit({
       evidence: [...input.evidence],
       scopeExamined: [...input.paths],

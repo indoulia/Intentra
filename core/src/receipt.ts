@@ -14,6 +14,7 @@ import {
   type MutationEvent,
   type ReceiptStep,
   type Recommendation,
+  type ToolGrant,
   type Violation,
 } from '@agentos/contracts';
 import type { AgentPolicy } from '@agentos/contracts';
@@ -56,6 +57,13 @@ export interface ReceiptInput {
   readonly mutations: readonly MutationEvent[];
   /** Adapter calls recorded for this dispatch, reads included. */
   readonly calls: readonly CallRecord[];
+  /**
+   * The adapter operations the kernel exposed to this dispatch, for step 3.
+   *
+   * An empty set is a dispatch that could not have touched anything, which the coverage
+   * reconciliation has to be able to tell apart from a dispatch that held tools and used none.
+   */
+  readonly grantedTools: readonly ToolGrant[];
   /** Downstream obligations an `unknowns[].blocks` entry may reference. */
   readonly knownObligations: ReadonlySet<string>;
   /** Assertions already in run state, for step 8. */
@@ -159,6 +167,7 @@ export async function receiveEnvelope(input: ReceiptInput): Promise<ReceiptResul
     envelope,
     mutations: input.mutations,
     calls: input.calls,
+    grantedTools: input.grantedTools,
   });
   if (reconciliation.violations.length > 0) {
     steps.push({
@@ -188,9 +197,13 @@ export async function receiveEnvelope(input: ReceiptInput): Promise<ReceiptResul
       + 'account for what was declared, in both directions'
       + (reconciliation.unreconciledScope.length === 0
         ? ''
-        : `. ${reconciliation.unreconciledScope.join(', ')} name capabilities and no call in `
-          + 'this dispatch carried any capabilities_touched to reconcile them against, so they '
-          + 'are unreconciled rather than accepted'),
+        : `. ${reconciliation.unreconciledScope.join(', ')} cannot be answered by the call log `
+          + (input.grantedTools.length === 0
+            ? 'because the kernel granted this dispatch no adapter operation at all, so nothing '
+              + 'it claims to have examined could have been touched'
+            : 'because they name capabilities and no call in this dispatch carried any '
+              + 'capabilities_touched to reconcile them against')
+          + ', so they are unreconciled rather than accepted'),
   });
 
   /* -------------------------------------------------------- 4. verification ---- */

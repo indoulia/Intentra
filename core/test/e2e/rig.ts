@@ -163,23 +163,29 @@ export function reading(
 }
 
 /**
- * The five envelopes of a full run — the prologue's two, then `investigation.readonly` — as a
+ * The six envelopes of a full run — the prologue's three, then `investigation.readonly` — as a
  * script.
  *
  * The context, audit and root-cause envelopes are wrapped in the reads that make their
- * coverage claims true; the resolution and completion envelopes claim no repository coverage
- * and need none. The `context` envelope is second because that is where the dispatch is: the
- * prologue runs `context-discovery/resolution` on tier-1 orientation and
- * `context-discovery/context` after admission, in that order, before any template stage.
+ * coverage claims true; the resolution, workflow and completion envelopes claim no repository
+ * coverage and need none. The order is the order the dispatches happen in, which is what makes
+ * a positional script honest: `context-discovery/resolution` on tier-1 orientation,
+ * `context-discovery/context` after admission, `orchestrator/orchestration` at
+ * `WORKFLOW_SELECTED`, and only then the template's own stages.
+ *
+ * The third position is the one decision K-1 added. Before it was corrected the Orchestrator's
+ * dispatch never fired, every run took the kernel's fallback template, and the proposal path
+ * was reached by no scenario in this suite.
  */
 export function investigationScript(
   envelopes: readonly unknown[],
   paths: readonly string[],
 ): readonly ScriptedResponse[] {
-  const [resolution, context, audit, rootCause, completion] = envelopes;
+  const [resolution, context, workflow, audit, rootCause, completion] = envelopes;
   return [
     { kind: 'ENVELOPE', envelope: resolution },
     reading(paths, context),
+    { kind: 'ENVELOPE', envelope: workflow },
     reading(paths, audit),
     reading(paths, rootCause),
     { kind: 'ENVELOPE', envelope: completion },

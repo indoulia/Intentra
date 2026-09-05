@@ -94,7 +94,7 @@ import { narrate, liveView, workItemView } from './narrative.js';
  * cannot corrupt state, skip a gate, or escape the state machine.
  *
  * Every model-facing edge arrives through a port. The kernel never learns what an agent is
- * internally, which model it used, or how it reasoned — and every kernel function here runs
+ * internally, which model it used, or how it reasoned â€” and every kernel function here runs
  * with no model in the loop, which is why a run with zero available models makes no progress
  * and suffers no corruption.
  */
@@ -268,8 +268,8 @@ interface DispatchOutcome {
 /**
  * What the prologue's `context` dispatch produced.
  *
- * Two cases and no third, because the third — an envelope the kernel did not accept, carried
- * forward anyway — is the one that would let a failed dispatch advance the run. `ACCEPTED`
+ * Two cases and no third, because the third â€” an envelope the kernel did not accept, carried
+ * forward anyway â€” is the one that would let a failed dispatch advance the run. `ACCEPTED`
  * carries an envelope that passed all eight receipt steps; `BLOCKED` ends the run where it
  * stands, with the reason and, where the kernel has a name for it, the blocker kind.
  */
@@ -280,6 +280,32 @@ type ContextDispatchOutcome =
     readonly blockerKind: BlockerKind | null;
     readonly detail: string;
   };
+
+/**
+ * What the Orchestrator's workflow dispatch produced.
+ *
+ * The proposal and the envelope are separate because they fail separately: an envelope that
+ * passed receipt and carried no `workflow` proposal, or carried one the Orchestrator marked
+ * `BLOCKED`, is still a real answer whose cost the run has spent and whose record belongs in
+ * the run. `proposal: null` means the fallback template applies, for whichever of the several
+ * reasons the log names; it never means the dispatch did not happen.
+ */
+interface OrchestratorDispatchOutcome {
+  readonly proposal: WorkflowProposal | null;
+  readonly envelope: HandoffEnvelope | null;
+}
+
+/**
+ * The mandate the Orchestrator Agent answers the workflow decision under.
+ *
+ * One constant, named once, because decision K-1 is what two spellings of it cost: the kernel
+ * asked the catalogue for `workflow`, `agents/src/roles/specs.ts` had specified
+ * `orchestration`, the lookup returned `undefined` on every run, and the dispatch that makes
+ * template selection a judgment rather than a default silently never happened. A catalogue
+ * lookup that misses is indistinguishable from a role that is not installed, which is why it
+ * cost a build to notice.
+ */
+const ORCHESTRATOR_WORKFLOW_MANDATE = 'orchestration';
 
 export class Kernel {
   constructor(private readonly ports: KernelPorts) {}
@@ -415,7 +441,7 @@ export class Kernel {
     /*
      * "Every FACT carries evidence; the evidence replays." The resolution envelope's evidence
      * is replayed through the originating adapters before anything the proposal asserts is
-     * believed — the same disbelief step every other envelope gets, applied to the envelope
+     * believed â€” the same disbelief step every other envelope gets, applied to the envelope
      * that decides what the work *is*.
      */
     const verification = await this.verifyResolution(
@@ -555,7 +581,7 @@ export class Kernel {
    * envelope would be two implementations of the check the whole design rests on.
    *
    * **The replay runs under the proposed scope** (decision I-30). No admitted scope exists
-   * yet — the proposal is what admission is deciding about — so the only bound available is
+   * yet â€” the proposal is what admission is deciding about â€” so the only bound available is
    * the one the proposal is asking for, and `Scope` is defined as the thing that "becomes
    * `mandate.in_scope`". Admission check 5 bounds that scope before anything rests on it: an
    * unbounded scope is refused, so this cannot become a route to unlimited reach. The
@@ -597,7 +623,7 @@ export class Kernel {
    * The capability records this admission can judge a type against.
    *
    * The capability registry is written by the Auditor into a run's `capabilities/`, so a work
-   * item being resolved for the first time has none — and `ContextPackage.capabilities` is a
+   * item being resolved for the first time has none â€” and `ContextPackage.capabilities` is a
    * *reference* into a registry rather than the records, so tier-1 orientation cannot supply
    * them either. Where none is found, `available` is false and the type check records
    * `INDETERMINATE`: an empty registry and an unreadable one are the same array and opposite
@@ -764,7 +790,7 @@ export class Kernel {
     /*
      * What AgentOS decided the work *is*, written to the **work-item** log.
      *
-     * The narrative's v0.3 obligation is to state what AgentOS decided the work was and why —
+     * The narrative's v0.3 obligation is to state what AgentOS decided the work was and why â€”
      * "a run that did the wrong thing correctly is the new failure mode this layer
      * introduces, and it is invisible unless resolution is narrated alongside execution". The
      * `WorkItem` contract carries no `intent` field, so the durable record of it is this
@@ -859,7 +885,7 @@ export class Kernel {
      * Discovery loops spent by this run and this work item.
      *
      * One counter for the ladder's rung 2, the resume sweep's targeted probe and the
-     * re-resolution either can lead to — because they are one loop, and counting them
+     * re-resolution either can lead to â€” because they are one loop, and counting them
      * separately would make three unbounded loops out of one bounded one.
      */
     const discoverySpent = {
@@ -894,7 +920,7 @@ export class Kernel {
     }, { stage: 'CONTEXT_DISCOVERY' });
 
     /*
-     * The `context` mandate, dispatched — the second half of `CONTEXT_DISCOVERY`.
+     * The `context` mandate, dispatched â€” the second half of `CONTEXT_DISCOVERY`.
      *
      * `discovery.deepen()` above is the *probe* half: it is what writes `current_reality`, and
      * it stays the only thing that does. This is the *judgment* half, and the reason it has to
@@ -922,9 +948,9 @@ export class Kernel {
 
     if (contextDispatch.outcome === 'BLOCKED') {
       /*
-       * A failed, malformed or blocked context envelope stops the run here. The alternative —
+       * A failed, malformed or blocked context envelope stops the run here. The alternative â€”
        * proceeding on the probe package alone and letting criterion 1 come out `NOT_VALIDATED`
-       * — would advance the state machine on the strength of a dispatch nothing believed, and
+       * â€” would advance the state machine on the strength of a dispatch nothing believed, and
        * the whole point of the disbelief machinery is that an envelope that did not pass it
        * moves nothing.
        */
@@ -959,7 +985,14 @@ export class Kernel {
         + 'that could also supply the observations it is judging would be judging its own work',
     }, { stage: 'CONTEXT_DISCOVERY' });
 
-    const priorEnvelopes: readonly HandoffEnvelope[] = [contextDispatch.envelope];
+    /*
+     * Envelopes accepted before the graph exists. The `context` mandate's is one; the
+     * Orchestrator's workflow proposal, dispatched below, is the other. Both are appended
+     * rather than dropped because `COMPLETION` collects verdicts from the envelopes this run
+     * accepted and the run's budget is the sum of their costs â€” an accepted envelope the
+     * graph did not produce is still an envelope this run paid for and answered on.
+     */
+    const priorEnvelopes: HandoffEnvelope[] = [contextDispatch.envelope];
 
     const registry = this.capabilityRegistry();
     const capabilities: readonly CapabilityRecord[] = registry.records;
@@ -977,7 +1010,7 @@ export class Kernel {
      * Where this piece of work actually stands, read from what discovery wrote.
      *
      * `current_reality` is written only by probes, so the matrix is computed there and read
-     * here — and read carefully: an absent or unrecognised value is `INDETERMINATE` rather
+     * here â€” and read carefully: an absent or unrecognised value is `INDETERMINATE` rather
      * than a negative, because a discovery run that could not reach the project-management
      * system has established nothing about whether anybody intends this work.
      *
@@ -1023,7 +1056,7 @@ export class Kernel {
     /*
      * **The sufficiency verdict gates progression.** An `INSUFFICIENT` verdict enters the
      * ladder; it does not get logged and stepped over. Which rung answers decides whether the
-     * run proceeds, and rung 5 ends it `BLOCKED` with `AMBIGUOUS_GOAL` — silence is never
+     * run proceeds, and rung 5 ends it `BLOCKED` with `AMBIGUOUS_GOAL` â€” silence is never
      * consent.
      */
     let safePrefix: readonly TemplateStage[] | null = null;
@@ -1120,14 +1153,30 @@ export class Kernel {
       reason: outcomeSatisfied.reason,
     }, { stage: 'UNDERSTOOD' });
 
-    const orchestratorProposal = await this.dispatchOrchestrator(
-      workItem, deepened, journal, runId,
-    );
+    /*
+     * The Orchestrator proposes; the kernel admits. Both halves are live: this dispatch really
+     * happens (decision K-1 is why that has to be said out loud), and `admitWorkflow` below
+     * checks every part of what it returns against the policy set, evaluates each exclusion
+     * predicate itself, and falls back to the most conservative admissible template with the
+     * override recorded when a check fails.
+     */
+    const orchestrator = await this.dispatchOrchestrator({
+      workItem,
+      context: deepened,
+      journal,
+      runId,
+      budget: {
+        run: priorEnvelopes.reduce((c, e) => addCost(c, e.cost), ZERO_BUDGET),
+        workItem: workItem.consumed_budget,
+      },
+      runStartedAt: clock.now().toISOString(),
+    });
+    if (orchestrator.envelope !== null) priorEnvelopes.push(orchestrator.envelope);
 
     const admitted = await admitWorkflow({
       workItem,
       policies,
-      proposal: orchestratorProposal,
+      proposal: orchestrator.proposal,
       evaluator,
       predicateInputs,
       profile: profileChoice.profile,
@@ -1174,7 +1223,7 @@ export class Kernel {
        * A mutating stage whose `satisfied_by` is `INDETERMINATE` is the case where more
        * verification and less irreversible mutation point in opposite directions, and the
        * kernel does not choose: it probes. Without this the arm was dead and every
-       * indeterminate mutating stage went straight to `AMBIGUOUS_STATE` — safe, and wrong,
+       * indeterminate mutating stage went straight to `AMBIGUOUS_STATE` â€” safe, and wrong,
        * because it blocked runs a single re-read would have resumed.
        */
       discover: async (stage, predicate) => this.targetedDiscovery({
@@ -1265,7 +1314,7 @@ export class Kernel {
    * Climbs the ladder, with its two side-effecting rungs bound to real ports.
    *
    * Rung 2 dispatches through `DiscoveryPort.reprobeReality` and is counted against
-   * `budgets.loops.discovery` — the counter nothing previously incremented, which made the
+   * `budgets.loops.discovery` â€” the counter nothing previously incremented, which made the
    * bound on "the kernel discovers rather than choosing" a bound on nothing. Rung 4 asks
    * through `HumanChannel.ask`, once, carrying both readings and what AgentOS would do under
    * each.
@@ -1525,14 +1574,14 @@ export class Kernel {
      * The `context` mandate's envelope is one: it runs at `CONTEXT_DISCOVERY`, before a
      * template exists, and it carries the criterion 1 verdict. `COMPLETION` collects verdicts
      * from the envelopes this run accepted, so an envelope the graph did not produce still has
-     * to be among them or the verdict it supplied is silently lost — which is exactly the
+     * to be among them or the verdict it supplied is silently lost â€” which is exactly the
      * defect I-33 recorded. Its cost counts against the run's budget for the same reason.
      */
     readonly priorEnvelopes: readonly HandoffEnvelope[];
     /**
      * Rung 3's admitted prefix, where the ladder took it.
      *
-     * The run executes the prefix and **re-resolves at its exit** — the ambiguity did not
+     * The run executes the prefix and **re-resolves at its exit** â€” the ambiguity did not
      * matter for the prefix, and it does for whatever comes next. Where the prefix covers the
      * whole graph there is no exit to re-resolve at, which is the read-only case.
      */
@@ -1663,7 +1712,7 @@ export class Kernel {
       /*
        * Gates, classified and recorded, gating nothing.
        *
-       * Nothing in this build mutates, so no gate has anything to stop — and a gate that is
+       * Nothing in this build mutates, so no gate has anything to stop â€” and a gate that is
        * inert is not a gate that is absent. Building mutation first and adding authorization
        * afterwards is how the gate ends up bypassable, so the classifiers run, the firings are
        * recorded, and a prior denial is surfaced, from now.
@@ -1719,7 +1768,7 @@ export class Kernel {
             }, { stage });
           }
           /*
-           * A `PARTIAL` whose unfilled outputs the exit condition did not require proceeds —
+           * A `PARTIAL` whose unfilled outputs the exit condition did not require proceeds â€”
            * **recording the gap as an unknown**. Without this the log of a `PARTIAL` that
            * advanced is indistinguishable from the log of a `COMPLETE`, which is precisely how
            * `PARTIAL` becomes a soft `COMPLETE`.
@@ -1864,12 +1913,12 @@ export class Kernel {
   /* ------------------------------------------------------ structural stages ==== */
 
   /**
-   * `REVIEW_TRIAGE`, `DECOMPOSITION` and `CHILD_COORDINATION` — the three places a run's shape
+   * `REVIEW_TRIAGE`, `DECOMPOSITION` and `CHILD_COORDINATION` â€” the three places a run's shape
    * changes because an agent read something.
    *
    * Returns an action that **overrides** the state machine's where the kernel's own decision
-   * differs — a decomposition exceeding its bound is `BLOCKED` whatever the envelope's status
-   * said — and `null` where the ordinary transition stands.
+   * differs â€” a decomposition exceeding its bound is `BLOCKED` whatever the envelope's status
+   * said â€” and `null` where the ordinary transition stands.
    */
   private async structural(args: {
     readonly stage: TemplateStage;
@@ -1959,7 +2008,7 @@ export class Kernel {
       /*
        * Discovery before creation. The children the project-management adapter already knows
        * about are read **before any are proposed**, and an admitted child whose external
-       * identity already exists is linked rather than recreated — which is what stops a
+       * identity already exists is linked rather than recreated â€” which is what stops a
        * resumed Epic from duplicating its own backlog.
        */
       const existingExternal = externalChildren(state.context.current_reality.children);
@@ -2141,7 +2190,7 @@ export class Kernel {
   /**
    * Classifies and records every gate that fires, and gates nothing.
    *
-   * The MVP mutates nothing, so no gate has anything to stop — and "inert" is not "absent".
+   * The MVP mutates nothing, so no gate has anything to stop â€” and "inert" is not "absent".
    * A gate that fires only when an agent volunteers that it is crossing one is not a gate, so
    * the classifiers run from what the adapter observed on every dispatch, and a gate this
    * work item has already been denied is surfaced rather than quietly re-requested.
@@ -2276,8 +2325,8 @@ export class Kernel {
   /**
    * Step 1 of section 4.5: end the Workflow Run with outcome `RERESOLVED`.
    *
-   * Steps 2 and 3 — re-running `RESOLUTION` with the new evidence and starting a **new** run
-   * against the **same** Work Item — happen in `performReresolution`, after this run's lease
+   * Steps 2 and 3 â€” re-running `RESOLUTION` with the new evidence and starting a **new** run
+   * against the **same** Work Item â€” happen in `performReresolution`, after this run's lease
    * is released. They cannot happen here: the lease is one active run per Work Item, and a
    * new run started while the old one still held it would be refused by the mechanism that
    * exists to refuse exactly that.
@@ -2341,7 +2390,7 @@ export class Kernel {
    * Steps 2 and 3 of section 4.5.
    *
    * Re-runs `RESOLUTION` with the new evidence supplied alongside the original intake and
-   * admits the result **through the ordinary checks** — the corrected type earns no exemption
+   * admits the result **through the ordinary checks** â€” the corrected type earns no exemption
    * from its evidence minimum, which is the whole reason this is a re-resolution rather than a
    * relabelling. Then starts a new Workflow Run against the same Work Item.
    *
@@ -2548,7 +2597,7 @@ export class Kernel {
       /*
        * The cursor has no authority over completion. A skipped stage supplied no verdicts, so
        * its criteria are NOT_VALIDATED, so COMPLETION computes INCOMPLETE and routes back to
-       * the stage that owes them — and **the route-back is executed**, not merely journalled.
+       * the stage that owes them â€” and **the route-back is executed**, not merely journalled.
        * This is the mechanism that makes resumption safe: it is what stops a COMPLETED_PRIOR
        * stage from producing a false COMPLETE, and a route-back the run does not take is a
        * safety property nothing enforces.
@@ -2851,6 +2900,7 @@ export class Kernel {
       adapters: this.ports.adapters,
       callContext: this.callContext(state, dispatchId, mandateScope),
       clock,
+      grantedTools: tools,
       mutations,
       calls,
       knownObligations: this.obligations(state.graph),
@@ -3183,7 +3233,7 @@ export class Kernel {
    *
    * `IMPLEMENTATION_PLAN` WP-5 asks for Context Discovery with **both** mandates: `resolution`
    * on tier-1 orientation, `context` after admission. Only the first was ever dispatched, and
-   * the consequence was not cosmetic — `context-discovery/context` is the sole owner of
+   * the consequence was not cosmetic â€” `context-discovery/context` is the sole owner of
    * Definition-of-Done criterion 1, a verdict reaches `computeDod` only inside an accepted
    * envelope, so criterion 1 was `NOT_VALIDATED` in every run of every template and five of the
    * seven profiles could never complete. Decision I-33 made it non-critical everywhere and said
@@ -3234,7 +3284,7 @@ export class Kernel {
     if (spec === undefined) {
       /*
        * Fail closed. The mandate that owns criterion 1 is not registered, so nothing in this
-       * run could ever supply it — and a run that proceeds to compute a Definition of Done it
+       * run could ever supply it â€” and a run that proceeds to compute a Definition of Done it
        * knows in advance has no owner for one of its criteria is a run manufacturing a
        * `NOT_VALIDATED` it could have named as a configuration fault instead.
        */
@@ -3279,7 +3329,7 @@ export class Kernel {
     if (model === null) {
       /*
        * Invariant 16's second case, at the stage before the graph exists. A run *does* exist
-       * here — the lease is held and the log is open — so this blocks with the external
+       * here â€” the lease is held and the log is open â€” so this blocks with the external
        * dependency named rather than refusing the way the pre-admission prologue does.
        */
       journal.run('dispatch_result', {
@@ -3467,6 +3517,7 @@ export class Kernel {
       adapters: this.ports.adapters,
       callContext,
       clock,
+      grantedTools: tools,
       mutations: this.mutationsFor(journal, runId, workItem.work_item_id, dispatchId),
       calls: this.callsFor(journal, runId, workItem.work_item_id, dispatchId),
       knownObligations: new Set(),
@@ -3575,7 +3626,7 @@ export class Kernel {
       const kind: BlockerKind = first?.kind ?? 'EXTERNAL_DEPENDENCY';
       return blocked(
         kind,
-        `${kind}: the context mandate returned ${persisted.status} — `
+        `${kind}: the context mandate returned ${persisted.status} â€” `
         + `${first?.description ?? persisted.summary}. Criterion 1 has no other owner, so the `
         + 'run stops here rather than proceeding on a package its own author reported it could '
         + 'not build',
@@ -3585,40 +3636,136 @@ export class Kernel {
     return { outcome: 'ACCEPTED', envelope: persisted };
   }
 
-  private async dispatchOrchestrator(
-    workItem: WorkItem,
-    context: ContextPackage,
-    journal: Journal,
-    runId: string,
-  ): Promise<WorkflowProposal | null> {
-    const spec = this.ports.agents.spec('orchestrator', 'workflow');
-    if (spec === undefined) return null;
+  /**
+   * The Orchestrator Agent's workflow proposal â€” a real dispatch, not a lookup that misses.
+   *
+   * This is the decision point AGENT_ROLES role 1 reserves for judgment: which admissible
+   * template fits this work item and this observed reality, and which optional stages the
+   * evidence says are not needed. Everything it returns is a proposal. `admitWorkflow` checks
+   * it against the policy set, evaluates every exclusion predicate itself, and overrides it
+   * with the most conservative admissible template when a check fails â€” so the Orchestrator
+   * being wrong costs efficiency and never safety. That asymmetry is why nothing here stops
+   * the run: a missing mandate, an exhausted budget, no model, a non-conforming tool surface,
+   * a refused envelope and a `BLOCKED` answer all end the same way, with no proposal and the
+   * fallback applying, each for a reason written to the log.
+   *
+   * It was disconnected until decision K-1 was corrected. The lookup asked for a mandate named
+   * `workflow` and the specification is named `orchestration`, so `spec` was always
+   * `undefined`, the dispatch returned before it reached the substrate, and every run took the
+   * fallback while template selection, kernel-evaluated exclusion, stage mandates and the
+   * override record were exercised only by unit tests against `admitWorkflow`. The mandate
+   * name now lives in one constant and the input package takes its name from the specification
+   * the lookup found, so the two cannot disagree again; `wiring.test.ts` drives the composed
+   * runtime and fails if this dispatch stops happening.
+   *
+   * It is not a privileged dispatch. The budget is checked before it, the model is ranked and
+   * the selection journalled, the granted tool set is built from the role's permitted adapters
+   * â€” empty, because the component that judges evidence must not also manufacture it â€” the
+   * substrate's effective surface must equal that empty set, and the envelope goes through the
+   * same receipt as every other. An unvalidated envelope reaching `admitWorkflow` would be the
+   * kernel trusting a model's JSON to have the shape it happened to expect.
+   */
+  private async dispatchOrchestrator(args: {
+    readonly workItem: WorkItem;
+    readonly context: ContextPackage;
+    readonly journal: Journal;
+    readonly runId: string;
+    readonly budget: {
+      readonly run: WorkItem['consumed_budget'];
+      readonly workItem: WorkItem['consumed_budget'];
+    };
+    readonly runStartedAt: string;
+  }): Promise<OrchestratorDispatchOutcome> {
+    const { policies, clock, store } = this.ports;
+    const { journal, runId, workItem } = args;
+    const stage: Stage = 'WORKFLOW_SELECTED';
+    const role: AgentRole = 'orchestrator';
+    const dispatchId = 'd_wf';
+    const fallback: OrchestratorDispatchOutcome = { proposal: null, envelope: null };
 
-    const model = await this.chooseModelWithoutJournal(spec);
+    const spec = this.ports.agents.spec(role, ORCHESTRATOR_WORKFLOW_MANDATE);
+    if (spec === undefined) {
+      journal.run('dispatch_result', {
+        outcome: 'FAILED',
+        envelope_id: null,
+        failure_reason: 'NO_MODEL',
+        detail:
+          `no orchestrator ${ORCHESTRATOR_WORKFLOW_MANDATE} mandate is registered, so nothing `
+          + 'proposes a template and the most conservative admissible one applies',
+        cost: { input_tokens: 0, output_tokens: 0 },
+      }, { stage, dispatchId, agent: role });
+      return fallback;
+    }
+
+    const verdict = checkDispatchBudget(
+      { run: args.budget.run, workItem: args.budget.workItem, runStartedAt: args.runStartedAt },
+      policies.budgets,
+      clock.now(),
+    );
+    if (!verdict.within) {
+      journal.run('budget', {
+        kind: 'EXCEEDED',
+        counter: verdict.counter,
+        scope: verdict.scope,
+        value: verdict.value,
+        cap: verdict.cap,
+        tried: verdict.report,
+      }, { stage, dispatchId, agent: role });
+      journal.run('dispatch_result', {
+        outcome: 'ABORTED',
+        envelope_id: null,
+        failure_reason: 'BUDGET_EXCEEDED',
+        detail:
+          `${verdict.counter} exhausted per ${verdict.scope} before the workflow proposal could `
+          + `be dispatched: ${verdict.report.join('; ')}. The fallback template applies`,
+        cost: { input_tokens: 0, output_tokens: 0 },
+      }, { stage, dispatchId, agent: role });
+      return fallback;
+    }
+
+    const model = await this.chooseModel(spec, journal, stage, false, null);
     if (model === null) {
       journal.run('dispatch_result', {
         outcome: 'FAILED',
         envelope_id: null,
         failure_reason: 'NO_MODEL',
-        detail: 'no model for the workflow selection dispatch; the fallback template applies',
+        detail:
+          'no reachable model meets the workflow selection dispatch declared requirement; the '
+          + 'fallback template applies',
         cost: { input_tokens: 0, output_tokens: 0 },
-      }, { stage: 'WORKFLOW_SELECTED', agent: 'orchestrator' });
-      return null;
+      }, { stage, dispatchId, agent: role });
+      return fallback;
     }
 
-    const dispatchId = 'd_wf';
+    /*
+     * Built from the role's permitted adapters rather than written as `[]`, so that the empty
+     * surface is the policy speaking and not this function agreeing with it. `agents.json`
+     * gives the Orchestrator no adapters; were it ever to gain one, this dispatch would grant
+     * it and the conformance check below would compare against it.
+     */
+    const tools = await this.grantToolsForSpec(spec);
+    const callContext: AdapterCallContext = {
+      workItemId: workItem.work_item_id,
+      runId,
+      dispatchId,
+      mandate: { in_scope: workItem.scope.paths, out_of_scope: [] },
+      grantsHeld: [],
+      stageMutating: false,
+    };
+
     const inputPackage: InputPackage = {
       work_item_id: workItem.work_item_id,
       run_id: runId,
       dispatch_id: dispatchId,
-      agent: 'orchestrator',
-      mandate_name: 'workflow',
-      stage: 'WORKFLOW_SELECTED',
+      agent: role,
+      /* From the specification the lookup found. A literal here is how K-1 happened. */
+      mandate_name: spec.mandate_name,
+      stage,
       work_item_ref: '../work-item.json',
       intake_ref: null,
       workflow: null,
       context_package_ref: 'context/v1.json',
-      context_sections: this.materialize(context, spec.required_inputs),
+      context_sections: this.materialize(args.context, spec.required_inputs),
       capability_registry_ref: null,
       prior_envelopes: [],
       mandate: {
@@ -3626,66 +3773,198 @@ export class Kernel {
         in_scope: workItem.scope.paths,
         out_of_scope: [],
         capabilities: workItem.scope.capabilities,
-        advisory_notes: '',
+        advisory_notes:
+          'select among the admissible templates and include or exclude only stages a template '
+          + 'marks optional. An exclusion carries a claim the kernel evaluates for itself, and '
+          + 'a stage that is not in the template cannot be added.',
       },
       required_inputs: spec.required_inputs,
       required_outputs: spec.required_outputs,
       dod_profile_ref: null,
-      dod_criteria_owed: [],
+      dod_criteria_owed: spec.dod_criteria_owned,
       constraints: workItem.constraints,
       authorization_scope: { autonomous: [], gated: [], grants_held: [] },
-      /* The Orchestrator Agent holds no adapters. The component that judges evidence must
-       * not also manufacture it, so its granted tool set is empty. */
-      tools_granted: [],
+      tools_granted: tools,
       skills_available: [],
       model,
-      budget: dispatchBudget(this.ports.policies.budgets),
+      budget: dispatchBudget(policies.budgets),
     };
 
     journal.run('dispatch_intent', {
       input_package: inputPackage, attempt: 1,
-    }, { stage: 'WORKFLOW_SELECTED', dispatchId, agent: 'orchestrator' });
+    }, { stage, dispatchId, agent: role });
 
     const result = await this.ports.substrate.dispatch(inputPackage, {
-      invoke: () => Promise.resolve({
-        outcome: 'REFUSED' as const,
-        refusal: 'unknown_tool',
-        message:
-          'the Orchestrator Agent holds no adapters. The component that judges evidence must '
-          + 'not also manufacture it',
-        abortDispatch: true,
-      }),
+      invoke: async (toolName, toolArgs) => {
+        const grant = tools.find((t) => t.tool_name === toolName);
+        if (grant === undefined) {
+          return {
+            outcome: 'REFUSED',
+            refusal: 'unknown_tool',
+            message:
+              `${toolName} is not in this dispatch's granted tool set. The Orchestrator Agent `
+              + 'holds no adapters: the component that judges evidence must not also '
+              + 'manufacture it, so its effective tool surface is the empty set',
+            abortDispatch: true,
+          };
+        }
+        const call = await this.ports.adapters.call(grant.adapter, grant.op, toolArgs, callContext);
+        journal.run('adapter_call', call.call, { stage, dispatchId, agent: role });
+        if (call.outcome === 'OK') return { outcome: 'OK', value: call.value };
+        if (call.outcome === 'REFUSED') {
+          return {
+            outcome: 'REFUSED',
+            refusal: call.refusal,
+            message: call.message,
+            abortDispatch: call.refusal === 'security_violation',
+          };
+        }
+        return { outcome: 'ERROR', message: call.message };
+      },
     });
+
+    journal.run('tool_surface_conformance', {
+      substrate: this.ports.substrate.name,
+      verdict: result.toolSurface?.verdict ?? 'UNVERIFIABLE',
+      expected: result.toolSurface?.expected ?? tools.map((t) => t.tool_name),
+      effective: result.toolSurface?.effective ?? [],
+      unexpected: result.toolSurface?.unexpected ?? [],
+      missing: result.toolSurface?.missing ?? [],
+      detail: result.toolSurface?.detail
+        ?? 'the substrate reported no tool surface, so conformance is unverifiable and the '
+          + 'dispatch fails closed',
+    }, { stage, dispatchId, agent: role });
 
     if (result.outcome === 'FAILED') {
       journal.run('dispatch_result', {
         outcome: 'FAILED',
         envelope_id: null,
         failure_reason: result.failure,
-        detail: result.detail,
+        detail: `${result.detail}. No proposal was made, so the fallback template applies`,
         cost: {
           input_tokens: result.cost.input_tokens,
           output_tokens: result.cost.output_tokens,
           usd: result.cost.usd,
         },
-      }, { stage: 'WORKFLOW_SELECTED', dispatchId, agent: 'orchestrator' });
-      return null;
+      }, { stage, dispatchId, agent: role });
+      return fallback;
     }
 
-    const envelope = result.envelope as HandoffEnvelope | null;
+    if (result.toolSurface.verdict !== 'CONFORMS') {
+      /*
+       * D-2, on the one dispatch whose granted set is empty. A substrate that offers the
+       * Orchestrator any reach at all has broken the separation the role exists for, and the
+       * proposal is discarded rather than admitted from a session that could have gone and
+       * found the evidence it wanted.
+       */
+      journal.run('dispatch_result', {
+        outcome: 'ABORTED',
+        envelope_id: null,
+        failure_reason: 'TOOL_SURFACE_VIOLATION',
+        detail:
+          `${result.toolSurface.detail}. The proposal is discarded and the fallback applies`,
+        cost: {
+          input_tokens: result.cost.input_tokens,
+          output_tokens: result.cost.output_tokens,
+          usd: result.cost.usd,
+        },
+      }, { stage, dispatchId, agent: role });
+      return fallback;
+    }
+
+    const receipt = await receiveEnvelope({
+      raw: result.envelope,
+      expectation: {
+        dispatchId,
+        stage,
+        agent: role,
+        requiredOutputs: spec.required_outputs,
+        dodCriteriaOwed: spec.dod_criteria_owned,
+        /* No graph is frozen yet â€” selecting one is what this dispatch is for. */
+        graphStages: [],
+      },
+      agents: policies.agents,
+      evidencePolicy: policies.evidence,
+      adapters: this.ports.adapters,
+      callContext,
+      clock,
+      grantedTools: tools,
+      mutations: this.mutationsFor(journal, runId, workItem.work_item_id, dispatchId),
+      calls: this.callsFor(journal, runId, workItem.work_item_id, dispatchId),
+      knownObligations: new Set(),
+      existingAssertions: new Map(),
+      incomingAssertions: new Map(),
+      sampler: this.ports.random,
+    });
+
+    if (receipt.outcome === 'REJECTED') {
+      journal.run('envelope_rejected', {
+        envelope_id: null,
+        step: receipt.step,
+        violations: receipt.violations,
+      }, { stage, dispatchId, agent: role });
+      journal.run('dispatch_result', {
+        outcome: receipt.handleAs === 'FAILED' ? 'FAILED' : 'ABORTED',
+        envelope_id: null,
+        failure_reason: receipt.handleAs === 'FAILED' ? 'MALFORMED_ENVELOPE' : null,
+        detail:
+          `${receipt.violations.map((v) => `${v.code}: ${v.message}`).join('; ')}. A refused `
+          + 'envelope carries no proposal, so the fallback template applies',
+        cost: {
+          input_tokens: result.cost.input_tokens,
+          output_tokens: result.cost.output_tokens,
+          usd: result.cost.usd,
+        },
+      }, { stage, dispatchId, agent: role });
+      return fallback;
+    }
+
+    const persisted = withVerification(
+      receipt.envelope, receipt.verification, clock.now().toISOString(),
+    );
+    store.putEnvelope(workItem.work_item_id, runId, persisted);
+
+    journal.run('envelope_received', {
+      envelope_id: persisted.envelope_id,
+      status: persisted.status,
+      steps: receipt.steps,
+    }, { stage, dispatchId, agent: role });
+    journal.run('evidence_verification', {
+      envelope_id: persisted.envelope_id,
+      results: receipt.verification.outcomes.map((o) => ({
+        evidence_id: o.evidence_id,
+        status: o.status,
+        selected_because: o.selected_because,
+        detail: o.detail,
+      })),
+      mismatch_count: receipt.verification.mismatchCount,
+    }, { stage, dispatchId, agent: role });
+
     journal.run('dispatch_result', {
       outcome: 'ENVELOPE',
-      envelope_id: envelope?.envelope_id ?? null,
+      envelope_id: persisted.envelope_id,
       failure_reason: null,
-      detail: '',
+      detail: persisted.proposals.workflow === undefined
+        ? 'the envelope carried no workflow proposal, so the fallback template applies'
+        : '',
       cost: {
         input_tokens: result.cost.input_tokens,
         output_tokens: result.cost.output_tokens,
         usd: result.cost.usd,
       },
-    }, { stage: 'WORKFLOW_SELECTED', dispatchId, agent: 'orchestrator' });
+    }, { stage, dispatchId, agent: role });
 
-    return envelope?.proposals.workflow ?? null;
+    /*
+     * A `BLOCKED` or `FAILED` envelope is an honest answer and is not a proposal. Unlike the
+     * context mandate it does not stop the run: nothing downstream depends on the Orchestrator
+     * having chosen, and the kernel's own fallback is the safer of the two answers anyway. The
+     * envelope is kept so that its cost counts and the run can account for what was asked.
+     */
+    if (persisted.status === 'BLOCKED' || persisted.status === 'FAILED') {
+      return { proposal: null, envelope: persisted };
+    }
+
+    return { proposal: persisted.proposals.workflow ?? null, envelope: persisted };
   }
 
   /* ---------------------------------------------------------------- support ==== */
@@ -3720,8 +3999,8 @@ export class Kernel {
      * and reasons comes from `@agentos/registries`, which is where the criteria live as
      * data-driven scoring; the kernel applies its policy filters to that list, picks, and
      * records the choice. Building the list here with `score: 0` made selection "the first
-     * candidate that passes the filters" and left every ranking criterion — capability match,
-     * specificity, cost, reliability, safety — with no effect at all.
+     * candidate that passes the filters" and left every ranking criterion â€” capability match,
+     * specificity, cost, reliability, safety â€” with no effect at all.
      */
     const ranked = rankModels(entries, spec.model_requirement);
     const selection = selectModel({
@@ -3843,14 +4122,14 @@ export class Kernel {
   /**
    * The stage cursor as the log says it stands right now.
    *
-   * Rebuilt by `project()` — the same function recovery and `run.json` use — rather than by a
+   * Rebuilt by `project()` â€” the same function recovery and `run.json` use â€” rather than by a
    * second cursor carried in the loop. Two notions of "which stages are done" would drift the
    * moment one of them learned something the other did not, and the one that would drift is
    * the in-memory one: the log is what survives a crash. So the input package's
    * `stages_remaining` is derived from the same projection a recovering kernel would rebuild,
    * and an agent's read-only view of the workflow agrees with the run record by construction.
    *
-   * It was `stagesRemaining([], graph)` — a hard-coded empty cursor, which filters nothing, so
+   * It was `stagesRemaining([], graph)` â€” a hard-coded empty cursor, which filters nothing, so
    * every dispatch was told every stage was still outstanding: stages this run had already
    * completed, stages the resume sweep had marked COMPLETED_PRIOR, all of them.
    */
@@ -3959,7 +4238,7 @@ export class Kernel {
    * says the request cannot be admitted and a fresh attempt at the same request will fail the
    * same way; a block says nothing is wrong with the request and the run resumes when the
    * dependency returns. No Work Item was admitted and no run was started, so there is no run
-   * log to end — but the outcome and its blocker kind still travel to the caller, which is
+   * log to end â€” but the outcome and its blocker kind still travel to the caller, which is
    * what keeps "the ticket system is down" from reaching a script as "your request was
    * inadmissible".
    */
@@ -4019,7 +4298,7 @@ export class Kernel {
 
   /* ---------------------------------------------------------- observability ==== */
 
-  /** `agentos status` — the live view, a projection over the log. */
+  /** `agentos status` â€” the live view, a projection over the log. */
   status(workItemId: string, runId?: string): readonly string[] {
     const { store } = this.ports;
     const workItem = store.getWorkItem(workItemId);
@@ -4038,7 +4317,7 @@ export class Kernel {
     ];
   }
 
-  /** `agentos narrate` — the run narrative, generated from the event log. */
+  /** `agentos narrate` â€” the run narrative, generated from the event log. */
   narrate(workItemId: string, runId?: string): string {
     const { store } = this.ports;
     const workItem = store.getWorkItem(workItemId);

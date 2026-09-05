@@ -563,11 +563,12 @@ export function defaultSpecs(): readonly AgentSpecView[] {
     },
     {
       role: 'orchestrator',
-      mandate_name: 'workflow',
+      /* The name the real catalogue uses. Two spellings of it is decision K-1. */
+      mandate_name: 'orchestration',
       version: '1.0',
       objective: 'propose a workflow template and its parameterization',
       required_inputs: ['current_reality', 'repository'],
-      required_outputs: ['workflow_proposal'],
+      required_outputs: ['rationale'],
       permitted_adapters: [],
       read_only: true,
       dod_criteria_owned: [],
@@ -641,6 +642,29 @@ export function defaultSpecs(): readonly AgentSpecView[] {
     },
   ];
 }
+
+/**
+ * A granted tool set for the tests whose subject is a reconciliation rule rather than a grant.
+ *
+ * `reconcile` is told what the kernel exposed to the dispatch, because that is what separates
+ * the two readings of an empty call log: a dispatch that held tools, called none of them and
+ * still claims coverage is over-claiming, and that is the case step 3 exists for; a dispatch
+ * the kernel granted nothing could not have touched anything, so its claim is unanswerable
+ * rather than false. Every reconciliation below is about the first case, so the fact that
+ * tools were held is stated once, here.
+ */
+export const HELD_TOOLS: readonly ToolGrant[] = Object.freeze([{
+  adapter: 'repo',
+  op: 'read_file',
+  tool_name: 'repo__read_file',
+  description: 'read a file inside the worktree',
+  args_schema: {
+    type: 'object',
+    properties: { path: { type: 'string' } },
+    required: ['path'],
+    additionalProperties: false,
+  },
+}]);
 
 /* ----------------------------------------------------------------- substrate ---- */
 
@@ -730,6 +754,29 @@ export class ScriptedSubstrate implements AgentSubstrate {
       return {
         outcome: 'ENVELOPE',
         envelope: stamp(unrecordedContextEnvelope(input, examined), input),
+        toolSurface: conforming,
+        cost,
+        model: input.model,
+      };
+    }
+
+    /*
+     * The Orchestrator's workflow dispatch, where the script does not answer it.
+     *
+     * Same rule and the same reason as the context mandate above: `WORKFLOW_SELECTED`
+     * dispatches `orchestrator/orchestration` in every run that reaches it (decision K-1 is
+     * why that sentence is new), and a recording made before it fired has no response for it.
+     * The double answers it **without consuming a scripted response** so positions still line
+     * up, and answers honestly — `PARTIAL`, no `workflow` proposal, the gap enumerated. The
+     * kernel then falls back to the most conservative admissible template, which is precisely
+     * what a run whose Orchestrator said nothing should do. A double that proposed a template
+     * here would be manufacturing the judgment the dispatch exists to obtain, and would hide
+     * the fallback path from every scenario that does not script one.
+     */
+    if (input.stage === 'WORKFLOW_SELECTED' && !answersWorkflow(this.script[this.#index])) {
+      return {
+        outcome: 'ENVELOPE',
+        envelope: stamp(unrecordedWorkflowEnvelope(), input),
         toolSurface: conforming,
         cost,
         model: input.model,
@@ -843,13 +890,28 @@ export class ScriptedSubstrate implements AgentSubstrate {
  */
 /** Whether a scripted response declares itself the answer to the context mandate. */
 function answersContext(response: ScriptedResponse | undefined): boolean {
+  return answersStage(response, 'CONTEXT_DISCOVERY');
+}
+
+function answersWorkflow(response: ScriptedResponse | undefined): boolean {
+  return answersStage(response, 'WORKFLOW_SELECTED');
+}
+
+/**
+ * Whether the next scripted response was recorded for this stage.
+ *
+ * An explicit `stage` settles it — that is what the field is for, and it is the only way a
+ * `FAILED` or `NON_CONFORMING` response can say which dispatch it belongs to, since neither
+ * carries an envelope to read a `stage_in` off. Otherwise the envelope's own `stage_in` says.
+ */
+function answersStage(response: ScriptedResponse | undefined, stage: Stage): boolean {
   if (response === undefined) return false;
-  if (response.stage !== undefined) return response.stage === 'CONTEXT_DISCOVERY';
+  if (response.stage !== undefined) return response.stage === stage;
   const raw = response.kind === 'ENVELOPE'
     ? response.envelope
     : response.kind === 'CALLS_THEN_ENVELOPE' ? response.envelope([]) : null;
   if (raw === null || typeof raw !== 'object') return false;
-  return (raw as Record<string, unknown>)['stage_in'] === 'CONTEXT_DISCOVERY';
+  return (raw as Record<string, unknown>)['stage_in'] === stage;
 }
 
 /**
@@ -943,6 +1005,39 @@ function unrecordedContextEnvelope(
         + 'that answered MET would be manufacturing the verdict the dispatch exists to obtain',
       evidence: [],
     })),
+    next_action: null,
+  });
+}
+
+/**
+ * What the double says when it was never given a recording for the workflow dispatch.
+ *
+ * It proposes nothing, and the point of it is that proposing nothing is a real answer: the
+ * kernel selects the most conservative admissible template, records that no proposal was made,
+ * and continues. `PARTIAL` with the gap enumerated is the honest status — the dispatch
+ * happened and the judgment nobody recorded is named rather than invented. The Orchestrator
+ * holds no adapters, so there is no coverage to claim and none is claimed.
+ */
+function unrecordedWorkflowEnvelope(): HandoffEnvelope {
+  return fx.envelope({
+    envelope_id: 'env_workflow_unrecorded',
+    agent: 'orchestrator',
+    stage_in: 'WORKFLOW_SELECTED',
+    status: 'PARTIAL',
+    summary:
+      'the scripted substrate holds no recording for the workflow mandate of this dispatch, so '
+      + 'no template is proposed and the kernel\'s own fallback applies',
+    coverage: fx.coverage({ scope_examined: ['(no adapters)'], confidence: 'INFERENCE' }),
+    outputs: {},
+    unknowns: [fx.unknownRecord({
+      id: 'U-workflow',
+      subject: 'which admissible template fits this work item',
+      reason: 'UNAVAILABLE',
+      attempted: 'the scripted substrate, which holds no recording for this dispatch',
+      recoverable_by: 'record a WORKFLOW_SELECTED envelope at this position in the script',
+      blocks: [],
+    })],
+    dod_verdicts: [],
     next_action: null,
   });
 }
@@ -1180,15 +1275,23 @@ export function resolutionEnvelope(
   });
 }
 
-/** The Orchestrator's workflow proposal. */
+/**
+ * The Orchestrator's workflow proposal.
+ *
+ * `outputs` names `rationale` because that is what the `orchestration` mandate declares it
+ * owes, and the dispatch now puts the envelope through the same receipt as every other one:
+ * an output the dispatch did not ask for is refused, and the proposal inside a refused
+ * envelope never reaches admission.
+ */
 export function workflowEnvelope(
   proposal: Partial<WorkflowProposal> = {},
+  overrides: Partial<HandoffEnvelope> = {},
 ): HandoffEnvelope {
   return fx.envelope({
     envelope_id: 'env_workflow',
     agent: 'orchestrator',
     stage_in: 'WORKFLOW_SELECTED',
-    outputs: { workflow_proposal: 'inline' },
+    outputs: { rationale: 'inline' },
     coverage: fx.coverage({ scope_examined: ['(no adapters)'], confidence: 'INFERENCE' }),
     proposals: {
       workflow: {
@@ -1199,6 +1302,7 @@ export function workflowEnvelope(
         ...proposal,
       },
     },
+    ...overrides,
   });
 }
 

@@ -67,6 +67,7 @@ import {
   FixedClock,
   FixtureAdapters,
   FixtureDiscovery,
+  HELD_TOOLS,
   OPERATOR_HOST,
   README_CONTENT,
   auditEnvelope,
@@ -235,6 +236,7 @@ async function receive(
     clock: new FixedClock(),
     mutations: [],
     calls: [callRecord()],
+    grantedTools: HELD_TOOLS,
     knownObligations: new Set(['capability_graph', 'audit']),
     existingAssertions: new Map(),
     incomingAssertions: new Map(),
@@ -886,6 +888,7 @@ describe('the invariant suite', () => {
       envelope: overstated,
       mutations: [],
       calls: [callRecord({ paths_touched: ['README.md'] })],
+      grantedTools: HELD_TOOLS,
     });
     assert.equal(direct.violations[0]?.code, 'COVERAGE_OVERSTATED');
     assert.deepEqual(direct.unsupportedScope, ['src/audit/**']);
@@ -908,6 +911,7 @@ describe('the invariant suite', () => {
         callRecord({ paths_touched: ['README.md'] }),
         callRecord({ call_id: 'c_002', paths_touched: ['src/pricing/tax.ts'] }),
       ],
+      grantedTools: HELD_TOOLS,
     });
     assert.deepEqual(understated.violations, []);
   });
@@ -948,6 +952,7 @@ describe('the invariant suite', () => {
       }),
       mutations: [fx.mutationEvent({ op: 'write_file', target: 'src/a.ts' })],
       calls: [callRecord()],
+      grantedTools: HELD_TOOLS,
     });
     assert.deepEqual(matched.violations, []);
   });
@@ -1647,7 +1652,12 @@ describe('the invariant suite', () => {
     }), []);
 
     assert.deepEqual(
-      reconcile({ envelope: auditBaseline(), mutations: [], calls: [callRecord()] }).violations,
+      reconcile({
+        envelope: auditBaseline(),
+        mutations: [],
+        calls: [callRecord()],
+        grantedTools: HELD_TOOLS,
+      }).violations,
       [],
     );
 

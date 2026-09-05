@@ -20,6 +20,7 @@ import { discoveryLoopAllowed } from '../src/budgets.js';
 import { classifyDispatch } from '../src/selection.js';
 import {
   AnsweringHuman,
+  HELD_TOOLS,
   README_CONTENT,
   auditEnvelope,
   completionEnvelope,
@@ -831,6 +832,7 @@ describe('C13 — coverage reconciliation with no capability registry to reconci
       }),
       mutations: [],
       calls: [call()],
+      grantedTools: HELD_TOOLS,
     });
     assert.deepEqual([...result.unreconciledScope], ['cap.namespace-restore']);
     assert.deepEqual(result.unsupportedScope, []);
@@ -844,6 +846,7 @@ describe('C13 — coverage reconciliation with no capability registry to reconci
       }),
       mutations: [],
       calls: [call({ capabilities_touched: ['cap.something-else'] })],
+      grantedTools: HELD_TOOLS,
     });
     assert.deepEqual([...result.unsupportedScope], ['cap.namespace-restore']);
     assert.deepEqual(result.unreconciledScope, []);
@@ -857,6 +860,7 @@ describe('C13 — coverage reconciliation with no capability registry to reconci
       }),
       mutations: [],
       calls: [call({ capabilities_touched: ['cap.namespace-restore'] })],
+      grantedTools: HELD_TOOLS,
     });
     assert.deepEqual(result.unsupportedScope, []);
     assert.deepEqual(result.unreconciledScope, []);
@@ -867,6 +871,7 @@ describe('C13 — coverage reconciliation with no capability registry to reconci
       envelope: fx.envelope({ coverage: fx.coverage({ scope_examined: ['README.md'] }) }),
       mutations: [],
       calls: [call()],
+      grantedTools: HELD_TOOLS,
     });
     assert.deepEqual(supported.unsupportedScope, []);
 
@@ -874,6 +879,7 @@ describe('C13 — coverage reconciliation with no capability registry to reconci
       envelope: fx.envelope({ coverage: fx.coverage({ scope_examined: ['src/**'] }) }),
       mutations: [],
       calls: [call()],
+      grantedTools: HELD_TOOLS,
     });
     assert.deepEqual(
       [...overstated.unsupportedScope],
