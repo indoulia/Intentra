@@ -27,6 +27,14 @@ The gate is freeze → codegen → build → typecheck → lint → tests → aj
 delete-core → conformance, and the first failure stops it. A pilot run mounted on a red gate
 measures nothing.
 
+One known flake, on Windows only: `core/test/composition.test.ts` builds real git repositories
+under the system temp directory, and `node --test` runs test files in parallel, so its `after()`
+teardown can hit `EBUSY: rmdir` while Windows still holds a handle on `<temp>/repo`. Every
+assertion in the file passes; the failure is in cleanup. Observed once in three consecutive gate
+runs (the other two, and the file run in isolation, are clean). If the gate fails this way,
+re-run it and record that you did — do not treat a teardown `EBUSY` as a green gate without a
+clean run to point at.
+
 **A model must be declared or the run cannot dispatch.** With none, every dispatch reports
 `NO_MODEL` and the run blocks with `EXTERNAL_DEPENDENCY` having advanced nothing — invariant 16
 as the default behaviour of an unconfigured host. See step D for the declaration.
