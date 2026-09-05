@@ -1,5 +1,5 @@
 {
-  "name": "@agentos/registries",
+  "name": "@intentra/registries",
   "version": "0.3.0",
   "private": true,
   "type": "module",
@@ -7,6 +7,6 @@
   "types": "./dist/src/index.d.ts",
   "exports": { ".": "./dist/src/index.js" },
   "dependencies": {
-    "@agentos/contracts": "0.3.0"
+    "@intentra/contracts": "0.3.0"
   }
 }
