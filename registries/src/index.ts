@@ -6,19 +6,19 @@ import type {
   Registries,
   SkillEntry,
   SkillRegistry,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 import { rankModels, type ModelRankingOptions } from './models.js';
 import { rankSkills, type SkillRequest } from './skills.js';
 
 /**
- * `@agentos/registries` — representation, indexing, query and **ranking**.
+ * `@intentra/registries` — representation, indexing, query and **ranking**.
  *
  * Registries rank; they do not select. Selection and its recording are the kernel's
  * (KERNEL_BOUNDARY 7), and keeping the two apart is what stops business logic accumulating
  * here: the ranking rules are data-driven scoring, not kernel branches, and the kernel
  * applies policy to an ordered list rather than reimplementing why the list is ordered.
  *
- * The package depends on `@agentos/contracts` and nothing else. It therefore cannot reach a
+ * The package depends on `@intentra/contracts` and nothing else. It therefore cannot reach a
  * host, and does not try: **the host adapter enumerates, and the registry ranks what it is
  * handed.** That is not a limitation worked around — it is the boundary doing its job, and it
  * is why this package has no I/O exception in the conformance check and needs none.

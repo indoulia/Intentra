@@ -1,5 +1,5 @@
 /**
- * `@agentos/discovery` — the probes that fill the Context Package.
+ * `@intentra/discovery` — the probes that fill the Context Package.
  *
  * Each probe answers one narrow question, declares its own availability, mutates nothing, and
  * degrades to `UNKNOWN` rather than guessing. Two rules hold across the whole package and are

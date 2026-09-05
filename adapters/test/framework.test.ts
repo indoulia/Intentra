@@ -1,8 +1,8 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import type { AdapterCallOutcome, Locator } from '@agentos/contracts';
-import { validators, workItemIdempotencyKey } from '@agentos/contracts';
+import type { AdapterCallOutcome, Locator } from '@intentra/contracts';
+import { validators, workItemIdempotencyKey } from '@intentra/contracts';
 import {
   AdapterFramework,
   DescriptorRegistry,

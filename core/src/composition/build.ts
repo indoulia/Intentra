@@ -15,8 +15,8 @@ import type {
   Registries,
   SkillEntry,
   HumanChannel,
-} from '@agentos/contracts';
-import { validators } from '@agentos/contracts';
+} from '@intentra/contracts';
+import { validators } from '@intentra/contracts';
 import {
   createAdapterSuite,
   hostHome,
@@ -28,12 +28,12 @@ import {
   type DescriptorRegistry,
   type HostInventory,
   type ProcessRunner,
-} from '@agentos/adapters';
-import { loadPolicies, type PolicySet } from '@agentos/policies';
-import { EnumeratedRegistries } from '@agentos/registries';
-import { RunStore } from '@agentos/state';
-import { DiscoveryService } from '@agentos/discovery';
-import { ClaudeAgentSdkSubstrate, MvpAgentCatalog, type DispatchTransport } from '@agentos/agents';
+} from '@intentra/adapters';
+import { loadPolicies, type PolicySet } from '@intentra/policies';
+import { EnumeratedRegistries } from '@intentra/registries';
+import { RunStore } from '@intentra/state';
+import { DiscoveryService } from '@intentra/discovery';
+import { ClaudeAgentSdkSubstrate, MvpAgentCatalog, type DispatchTransport } from '@intentra/agents';
 import { Kernel, type KernelPorts } from '../kernel.js';
 import type { IdentityResolution } from '../admission.js';
 import {
@@ -60,8 +60,8 @@ import {
  * The composition root: the one place the kernel is wired to real ports.
  *
  * Decision I-8 and the dependency-cruiser rule `kernel-reaches-agents-only-through-composition`
- * put this here and nowhere else. `core/src` may name `@agentos/agents` and
- * `@agentos/discovery` only from `core/src/composition/`, because the kernel's relationship
+ * put this here and nowhere else. `core/src` may name `@intentra/agents` and
+ * `@intentra/discovery` only from `core/src/composition/`, because the kernel's relationship
  * with an agent is one interface — dispatch a typed input, receive a typed envelope — and a
  * second file that could reach past it would make that a convention rather than a boundary.
  *
@@ -442,7 +442,7 @@ export function authenticatedPrincipal(): string | null {
   }
 }
 
-/** The AgentOS installation, which path confinement denies every agent access to. */
+/** The Intentra installation, which path confinement denies every agent access to. */
 export function installationRoot(): string {
   return resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 }

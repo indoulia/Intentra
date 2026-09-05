@@ -4,7 +4,7 @@ The executable version of [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md)
 against the frozen [Architecture v0.3](ARCHITECTURE_FREEZE.md). The roadmap says why the
 order is what it is; this says what gets built, in what order, and how each piece is proven.
 
-One milestone ships: **a read-only AgentOS that discovers and audits and mutates nothing.**
+One milestone ships: **a read-only Intentra that discovers and audits and mutates nothing.**
 Everything else is sketched deliberately at low resolution, because the pilot at the end of
 milestone 1 should inform it and a detailed plan written now would be fiction.
 
@@ -26,7 +26,7 @@ property of this layer and all of them are testable without an agent.
 discovery (WP-6) before audit (WP-7), because each is the input to the next and because the
 adapters are where the kernel's disbelief machinery actually touches the world.
 
-**Then the pilot** (WP-8), which is where AgentOS either earns trust or does not.
+**Then the pilot** (WP-8), which is where Intentra either earns trust or does not.
 
 Three checkpoints, each independently demonstrable:
 
@@ -80,18 +80,18 @@ The nine directories stand unchanged. Each becomes an npm workspace package, whi
 dependency rule from a convention into a fact a manifest states:
 
 ```
-contracts/    @agentos/contracts     deps: none
-policies/     @agentos/policies      deps: contracts
-registries/   @agentos/registries    deps: contracts
-adapters/     @agentos/adapters      deps: contracts, policies
-discovery/    @agentos/discovery     deps: contracts, adapters
-agents/       @agentos/agents        deps: contracts, policies, registries, adapters
-core/         @agentos/core          deps: contracts, policies, registries, adapters, state
-state/        @agentos/state         deps: contracts
+contracts/    @intentra/contracts     deps: none
+policies/     @intentra/policies      deps: contracts
+registries/   @intentra/registries    deps: contracts
+adapters/     @intentra/adapters      deps: contracts, policies
+discovery/    @intentra/discovery     deps: contracts, adapters
+agents/       @intentra/agents        deps: contracts, policies, registries, adapters
+core/         @intentra/core          deps: contracts, policies, registries, adapters, state
+state/        @intentra/state         deps: contracts
 tools/        build-time only: schema codegen, fixture runner, boundary checks
 ```
 
-`@agentos/agents` cannot import `@agentos/core` because it does not declare it. Three checks
+`@intentra/agents` cannot import `@intentra/core` because it does not declare it. Three checks
 back that up in CI:
 
 - **`dependency-cruiser`** for the forbidden-edge rules, including the ones a manifest cannot
@@ -109,13 +109,13 @@ invariant suite (section 5), then the live runs.
 ## 4. Milestone 1 — the read-only MVP
 
 ```
-agentos work --repo <path> "<anything>"
+intentra work --repo <path> "<anything>"
 ```
 
 Accepts any intake source and resolves it. Every admissible template for it is read-only —
 `investigation.readonly` and the audit path — because nothing mutates yet. That is the point
 rather than a limitation: **the whole resolution and workflow-selection layer can be exercised
-and judged before AgentOS can write anything.** Whether it correctly identifies what a request
+and judged before Intentra can write anything.** Whether it correctly identifies what a request
 is, and where that work already stands, is testable at zero risk to any repository.
 
 Produces: a Context Package with honest confidence classification; a capability registry and
@@ -164,7 +164,7 @@ test is for.
 
 **Exit test.** Every worked example in the fourteen frozen documents validates. Every
 control-flow-bearing enum value has a valid fixture. Every cross-field rule has an invalid
-fixture. `@agentos/contracts` has zero dependencies. Generated types match their schemas.
+fixture. `@intentra/contracts` has zero dependencies. Generated types match their schemas.
 
 **Must not.** Contain a kernel type, a default that invents a value, or a field an agent may
 write that the kernel is supposed to own.
@@ -252,9 +252,9 @@ cannot corrupt its state.
   changed means disclosed with the diff, not chased.
 - **Conflict detection and arbitration's kernel half.** Mechanical incompatibility detection and
   the confidence-class rule; escalation for what remains.
-- **CLI and projections.** `agentos work`, `agentos status`, `agentos narrate`, and
-  `agentos replay <fixture-dir>` which drives the whole kernel from recorded envelopes. **The
-  narrative must state what AgentOS decided the work was and why** — this is not a later
+- **CLI and projections.** `intentra work`, `intentra status`, `intentra narrate`, and
+  `intentra replay <fixture-dir>` which drives the whole kernel from recorded envelopes. **The
+  narrative must state what Intentra decided the work was and why** — this is not a later
   nicety, it is the mitigation for v0.3's stated residual risk, and a run that did the wrong
   thing correctly is invisible without it.
 
@@ -382,7 +382,7 @@ into a prompt, or let `advisory_notes` reach an adapter.
 
 ### WP-6 — Discovery · NEEDS CONTRACT (`ContextPackage`, `Assertion`) · L
 
-**Goal.** The riskiest assumption in AgentOS, tested: that automated discovery can produce a
+**Goal.** The riskiest assumption in Intentra, tested: that automated discovery can produce a
 Context Package good enough to reason from.
 
 **Deliverables.** The repository and git probe sets; the project-management and runtime probes
@@ -445,7 +445,7 @@ Protocol, scoring and pass criteria are IMPLEMENTATION_ROADMAP section 12 and ar
 here. Three points bear repeating because they are the ones under pressure when results
 arrive:
 
-- **Ground truth is frozen and sealed before AgentOS runs.** Writing it down afterwards is not
+- **Ground truth is frozen and sealed before Intentra runs.** Writing it down afterwards is not
   a test.
 - **Zero confidence violations is non-negotiable.** A single `UNKNOWN` presented as `FACT`
   fails the pilot regardless of every other score, because a system that confidently invents
@@ -545,7 +545,7 @@ Two things gate it rather than time:
   right response is to fix the evidence model, not to start writing code with it.
 - **The two decisions the freeze leaves open inside those phases** — the human interaction
   channel and UX evidence acquisition — which are better decided after people have used a
-  read-only AgentOS than before.
+  read-only Intentra than before.
 
 The exit test for the first mutating milestone is already written and is worth keeping in view
 because it is the one that proves the system can say no: **a run that correctly fails.** The

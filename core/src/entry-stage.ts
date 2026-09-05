@@ -3,9 +3,9 @@ import type {
   Stage,
   StageCursorEntry,
   TemplateStage,
-} from '@agentos/contracts';
-import type { PolicySet } from '@agentos/policies';
-import { incoming } from '@agentos/policies';
+} from '@intentra/contracts';
+import type { PolicySet } from '@intentra/policies';
+import { incoming } from '@intentra/policies';
 import type { PredicateEvaluator, PredicateEvaluation, PredicateInputs } from './predicates.js';
 import { saferBranch } from './state-machine.js';
 
@@ -294,7 +294,7 @@ export async function computeEntryStage(
       `${step.reason}, while ${later} is observably already done`,
       `${step.stage} mutates and its mutation observably has not happened, yet the later `
       + `stage ${later} observably has. That is a contradiction between two observations `
-      + 'rather than a resumable state, and AgentOS does not resolve it by preferring '
+      + 'rather than a resumable state, and Intentra does not resolve it by preferring '
       + 'whichever observation is more convenient',
     );
   }
@@ -326,7 +326,7 @@ export async function computeEntryStage(
       `${step.reason}. Re-executing a non-reversible operation on the strength of an `
       + 'INDETERMINATE is precisely how a system opens the same PR twice',
       `whether ${step.stage} has already happened is INDETERMINATE, the stage mutates, and `
-      + `the run would have to pass over it to start at ${entryStage}. AgentOS never `
+      + `the run would have to pass over it to start at ${entryStage}. Intentra never `
       + 're-executes a non-reversible operation on the strength of an INDETERMINATE, and it '
       + 'does not silently drop one either',
     );

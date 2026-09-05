@@ -2,7 +2,7 @@ import {
   SchemaRegistry,
   dispatchIdempotencyKey,
   workItemIdempotencyKey,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 import type {
   AdapterAvailability,
   AdapterCallContext,
@@ -23,7 +23,7 @@ import type {
   PathPolicy,
   PathRefusal,
   ReplayResult,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 import { CallLog, RefusalLog } from './call-log.js';
 import {
   classify as classifyObservation,

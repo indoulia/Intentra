@@ -45,9 +45,9 @@ import {
   type Violation,
   type WorkItem,
   type WorkflowProposal,
-} from '@agentos/contracts';
-import type { PolicySet } from '@agentos/policies';
-import type { RunStore } from '@agentos/state';
+} from '@intentra/contracts';
+import type { PolicySet } from '@intentra/policies';
+import type { RunStore } from '@intentra/state';
 import { Journal } from './journal.js';
 import { admitWorkItem, type IdentityResolution } from './admission.js';
 import { computeUnderstood, type UnderstoodVerdict } from './understood.js';
@@ -81,7 +81,7 @@ import {
 } from './orchestration.js';
 import { readReconciliation } from './work-item-reconciliation.js';
 import { classifyDispatch, selectModel, selectSkills } from './selection.js';
-import { rankModels, rankSkills } from '@agentos/registries';
+import { rankModels, rankSkills } from '@intentra/registries';
 import { narrate, liveView, workItemView } from './narrative.js';
 
 /**
@@ -206,7 +206,7 @@ function realityElementFor(subject: string): RealityElement | null {
   return REALITY_ELEMENT_NAMES.find((element) => text.includes(element)) ?? null;
 }
 
-/** What AgentOS decided the work was, and why, in one line for the log and the narrative. */
+/** What Intentra decided the work was, and why, in one line for the log and the narrative. */
 function intentNote(
   intent: Assertion,
   workItem: WorkItem,
@@ -220,7 +220,7 @@ function intentNote(
     : ` Alternatives considered: ${alternatives.map(
       (a) => `${a.type} (${a.reading}) rejected because ${a.why_rejected}`,
     ).join('; ')}.`;
-  return `AgentOS decided this work is ${value} (${intent.confidence}, from ${intent.probe}), `
+  return `Intentra decided this work is ${value} (${intent.confidence}, from ${intent.probe}), `
     + `admitted as type ${workItem.type}`
     + (workItem.claimed_type === null ? '' : ` after downgrading a claimed ${workItem.claimed_type}`)
     + `, with the outcome "${workItem.desired_outcome}". The resolver's own confidence was `
@@ -788,9 +788,9 @@ export class Kernel {
     }, { stage: 'RESOLUTION' });
 
     /*
-     * What AgentOS decided the work *is*, written to the **work-item** log.
+     * What Intentra decided the work *is*, written to the **work-item** log.
      *
-     * The narrative's v0.3 obligation is to state what AgentOS decided the work was and why â€”
+     * The narrative's v0.3 obligation is to state what Intentra decided the work was and why â€”
      * "a run that did the wrong thing correctly is the new failure mode this layer
      * introduces, and it is invisible unless resolution is narrated alongside execution". The
      * `WorkItem` contract carries no `intent` field, so the durable record of it is this
@@ -1316,7 +1316,7 @@ export class Kernel {
    * Rung 2 dispatches through `DiscoveryPort.reprobeReality` and is counted against
    * `budgets.loops.discovery` â€” the counter nothing previously incremented, which made the
    * bound on "the kernel discovers rather than choosing" a bound on nothing. Rung 4 asks
-   * through `HumanChannel.ask`, once, carrying both readings and what AgentOS would do under
+   * through `HumanChannel.ask`, once, carrying both readings and what Intentra would do under
    * each.
    */
   private async climb(args: {
@@ -3996,7 +3996,7 @@ export class Kernel {
     const entries = await this.ports.registries.models();
     /*
      * **The registries rank; the kernel selects.** The ordered candidate list with its scores
-     * and reasons comes from `@agentos/registries`, which is where the criteria live as
+     * and reasons comes from `@intentra/registries`, which is where the criteria live as
      * data-driven scoring; the kernel applies its policy filters to that list, picks, and
      * records the choice. Building the list here with `score: 0` made selection "the first
      * candidate that passes the filters" and left every ranking criterion â€” capability match,
@@ -4298,7 +4298,7 @@ export class Kernel {
 
   /* ---------------------------------------------------------- observability ==== */
 
-  /** `agentos status` â€” the live view, a projection over the log. */
+  /** `intentra status` â€” the live view, a projection over the log. */
   status(workItemId: string, runId?: string): readonly string[] {
     const { store } = this.ports;
     const workItem = store.getWorkItem(workItemId);
@@ -4317,7 +4317,7 @@ export class Kernel {
     ];
   }
 
-  /** `agentos narrate` â€” the run narrative, generated from the event log. */
+  /** `intentra narrate` â€” the run narrative, generated from the event log. */
   narrate(workItemId: string, runId?: string): string {
     const { store } = this.ports;
     const workItem = store.getWorkItem(workItemId);

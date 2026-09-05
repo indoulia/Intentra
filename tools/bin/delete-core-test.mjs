@@ -31,7 +31,7 @@ const COPIED = [
   'agents',
 ];
 
-const work = mkdtempSync(join(tmpdir(), 'agentos-delete-core-'));
+const work = mkdtempSync(join(tmpdir(), 'intentra-delete-core-'));
 try {
   for (const entry of COPIED) {
     const from = join(ROOT, entry);
@@ -71,8 +71,8 @@ try {
     if (!existsSync(manifestPath)) continue;
     const { readFileSync } = await import('node:fs');
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-    if (manifest.dependencies !== undefined && '@agentos/core' in manifest.dependencies) {
-      throw new Error(`${pkg}/package.json declares @agentos/core, which the rule forbids`);
+    if (manifest.dependencies !== undefined && '@intentra/core' in manifest.dependencies) {
+      throw new Error(`${pkg}/package.json declares @intentra/core, which the rule forbids`);
     }
   }
 

@@ -43,9 +43,9 @@ import {
   type ToolSurfaceReport,
   type WorkItem,
   type WorkflowProposal,
-} from '@agentos/contracts';
-import { loadPolicies, type PolicySet } from '@agentos/policies';
-import { RunStore } from '@agentos/state';
+} from '@intentra/contracts';
+import { loadPolicies, type PolicySet } from '@intentra/policies';
+import { RunStore } from '@intentra/state';
 import type { KernelPorts } from '../src/kernel.js';
 
 /**
@@ -94,7 +94,7 @@ export class FixedClock implements Clock {
  * which is what enabling milestone 2 will be.
  */
 export function policiesAllowingMutation(): PolicySet {
-  const work = mkdtempSync(join(tmpdir(), 'agentos-policies-'));
+  const work = mkdtempSync(join(tmpdir(), 'intentra-policies-'));
   cpSync(policyDataRoot(), work, { recursive: true });
   const file = join(work, 'execution.json');
   const execution = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
@@ -696,7 +696,7 @@ export type ScriptedResponse =
 /**
  * A substrate that returns recorded envelopes.
  *
- * This is what `agentos replay <fixture-dir>` drives the kernel with: no model, and every
+ * This is what `intentra replay <fixture-dir>` drives the kernel with: no model, and every
  * envelope exactly as recorded — including the malformed, the over-claiming and the
  * fabricated, because those are the cases the disbelief machinery exists for.
  */
@@ -1115,7 +1115,7 @@ export const UNAUTHENTICATED_HOST: HostIdentity = {
  *
  * The counterpart to `SilentHuman`, and needed for exactly one thing: the ladder's rung 4 is
  * only distinguishable from rung 5 by whether an answer arrives, and a suite with no answering
- * channel can only ever assert that AgentOS blocks.
+ * channel can only ever assert that Intentra blocks.
  */
 export class AnsweringHuman implements HumanChannel {
   readonly questions: { question: string; readings: readonly { reading: string; would_do: string }[] }[] = [];
@@ -1179,7 +1179,7 @@ export interface HarnessOptions {
 }
 
 export function harness(options: HarnessOptions = {}): Harness {
-  const root = mkdtempSync(join(tmpdir(), 'agentos-kernel-'));
+  const root = mkdtempSync(join(tmpdir(), 'intentra-kernel-'));
   const store = new RunStore(root);
   const policies = options.policies ?? loadPolicies();
   const clock = new FixedClock();
@@ -1229,7 +1229,7 @@ export function harness(options: HarnessOptions = {}): Harness {
  * verification would be asserting on whatever the downgrade path happened to do rather than on
  * the behaviour under test.
  */
-export const README_CONTENT = 'AgentOs is an operating system for agents.';
+export const README_CONTENT = 'Intentra is an operating system for agents.';
 
 /** The resolution envelope: a proposed Work Item the kernel then disbelieves. */
 export function resolutionEnvelope(

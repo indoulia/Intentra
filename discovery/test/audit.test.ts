@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { fixtures as fx } from '@agentos/contracts';
+import { fixtures as fx } from '@intentra/contracts';
 import { auditFacts, excerptOf, inlineEvidence, MASK, redact } from '../src/index.js';
 import { FakeAdapters, callContext, TestClock, WINDOWS } from './fake-registry.js';
 import { DiscoveryService } from '../src/index.js';

@@ -1,7 +1,7 @@
 import { test, describe, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { fixtures as fx, type Assertion, type ContextPackage, type Evidence, type Scope } from '@agentos/contracts';
-import { loadPolicies } from '@agentos/policies';
+import { fixtures as fx, type Assertion, type ContextPackage, type Evidence, type Scope } from '@intentra/contracts';
+import { loadPolicies } from '@intentra/policies';
 import { checkTypeEvidence } from '../../src/admission.js';
 import { PredicateEvaluator } from '../../src/predicates.js';
 import { decomposeEnvelope, triageEnvelope } from '../../src/orchestration.js';
@@ -19,14 +19,14 @@ import {
 import { fileEvidence, investigationGraph, resolution, ticketEvidence } from './envelopes.js';
 
 /**
- * Scenarios 1-9: what AgentOS decided the work was.
+ * Scenarios 1-9: what Intentra decided the work was.
  *
  * Every end-to-end test here drives the composition root — `buildKernel` wiring the real
  * adapter framework against a real scratch git repository, the real discovery service, the
  * real registries, the real agent catalogue and the real run store, and `admitIntake`
  * dereferencing the intake source exactly as the CLI does — with the substrate, and only the
- * substrate, replaced by a recording. `agentos status` and `agentos narrate` then read the run
- * back through `main()`. That is `agentos work` with the model swapped for a script and
+ * substrate, replaced by a recording. `intentra status` and `intentra narrate` then read the run
+ * back through `main()`. That is `intentra work` with the model swapped for a script and
  * nothing else swapped.
  *
  * ## Two things a reader needs before the first assertion
@@ -141,10 +141,10 @@ describe('scenario 1 — simple task ("Fix typo in README.")', () => {
 
     const { narrative } = await assertReadOnlyAndDurable(world, outcome);
 
-    /* The decided intent survives into `agentos narrate`, not only into the in-memory result.
+    /* The decided intent survives into `intentra narrate`, not only into the in-memory result.
      * This is the frozen mitigation for v0.3's residual risk and it is checked on the CLI's
      * output, because a narrative only the test can see mitigates nothing. */
-    assert.match(narrative.out, /AgentOS decided this is a/);
+    assert.match(narrative.out, /Intentra decided this is a/);
     assert.match(narrative.out, /Fix typo in README/);
     assert.match(narrative.out, /the misspelling in README\.md is corrected/);
 
@@ -160,7 +160,7 @@ describe('scenario 1 — simple task ("Fix typo in README.")', () => {
      * survives, `named_path_exists` is satisfied, and `TASK` is admitted — the frozen scenario
      * A outcome. Nothing is downgraded, so the narrative prints no downgrade.
      */
-    assert.match(narrative.out, /\*\*AgentOS decided this is a TASK\*\*/);
+    assert.match(narrative.out, /\*\*Intentra decided this is a TASK\*\*/);
     assert.doesNotMatch(narrative.out, /the kernel admitted UNKNOWN/);
     assert.equal(
       outcome.built.store.getWorkItem(outcome.result.workItemId ?? '')?.claimed_type,
@@ -272,7 +272,7 @@ describe('scenario 2 — natural-language defect ("Users are getting logged out 
     const { narrative, status } = await assertReadOnlyAndDurable(world, outcome);
 
     assert.doesNotMatch(status.out, /INCIDENT/, 'a user report is not a runtime observation');
-    assert.match(narrative.out, /AgentOS decided this is a/);
+    assert.match(narrative.out, /Intentra decided this is a/);
     assert.match(narrative.out, /sessions persist for their configured lifetime/);
 
     /*
@@ -380,7 +380,7 @@ describe('scenario 3 — existing story ("Work on STORY-123.")', () => {
      * replay D2 breaks.
      */
     assert.equal(outcome.result.workItemId, 'wi_STORY-123');
-    assert.match(narrative.out, /\*\*AgentOS decided this is a STORY\*\*/);
+    assert.match(narrative.out, /\*\*Intentra decided this is a STORY\*\*/);
     assert.match(
       narrative.out,
       /STORY-123 was fetched through the adapter, not accepted from the claim/,
@@ -434,7 +434,7 @@ describe('scenario 4 — feature ("Add GitHub issue synchronization.")', () => {
             intent: 'ADD_CAPABILITY',
             title: 'GitHub issue synchronization',
             desiredOutcome:
-              'issues in the configured GitHub repository appear as work items in AgentOS '
+              'issues in the configured GitHub repository appear as work items in Intentra '
               + 'within the configured interval, demonstrated end to end with a real issue',
             scopePaths: ['README.md'],
             evidence: [evidence],
@@ -451,7 +451,7 @@ describe('scenario 4 — feature ("Add GitHub issue synchronization.")', () => {
     const { narrative } = await assertReadOnlyAndDurable(world, outcome);
     assert.match(
       narrative.out,
-      /issues in the configured GitHub repository appear as work items in AgentOS/,
+      /issues in the configured GitHub repository appear as work items in Intentra/,
       'the admitted outcome names something observable, which is what lets a DoD criterion '
       + 'bind to it at all',
     );
@@ -548,7 +548,7 @@ describe('scenario 5 — epic ("Implement autonomous repository synchronization.
     const { narrative, status } = await assertReadOnlyAndDurable(world, outcome);
 
     assert.equal(outcome.result.workItemId, 'wi_EPIC-9');
-    assert.match(narrative.out, /\*\*AgentOS decided this is a EPIC\*\*/);
+    assert.match(narrative.out, /\*\*Intentra decided this is a EPIC\*\*/);
     assert.match(status.out, /wi_EPIC-9: EPIC/);
 
     assert.match(

@@ -26,7 +26,7 @@ const SUPPORTED = new Set([
  * refusing the keyword is cheaper than auditing for it.
  */
 const FORBIDDEN = new Map<string, string>([
-  ['default', 'a schema default invents a value; AgentOS contracts state absence explicitly'],
+  ['default', 'a schema default invents a value; Intentra contracts state absence explicitly'],
   ['$dynamicRef', 'dynamic references are not supported'],
   ['$dynamicAnchor', 'dynamic anchors are not supported'],
   ['$anchor', 'plain-name anchors are not supported; use $defs pointers'],

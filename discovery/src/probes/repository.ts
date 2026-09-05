@@ -1,4 +1,4 @@
-import type { Assertion, ContextSectionName, Evidence } from '@agentos/contracts';
+import type { Assertion, ContextSectionName, Evidence } from '@intentra/contracts';
 import type { FreshnessClass } from '../assertions.js';
 import { OPS, ADAPTERS } from '../ops.js';
 import type {
@@ -28,7 +28,7 @@ import { attachmentOutput, listedPaths, observe } from './observation.js';
  * The distinction is not pedantry: it is what stops "the test command is `npm test`" from
  * being cited as evidence that tests run.
  *
- * **A repository with no AgentOS-specific files must work fully.** `.agent/` is read where it
+ * **A repository with no Intentra-specific files must work fully.** `.agent/` is read where it
  * exists and its absence records nothing as missing, because any code path that requires it
  * is a bug.
  */
@@ -816,7 +816,7 @@ export const manifestsProbe: SectionProbe = catalogueProbe({
       ctx.probe,
       'the manifests were located and no advisory source was consulted, so nothing is known '
       + 'about vulnerabilities in them. An empty list here would be a fabricated default',
-      'give AgentOS an advisory source, or run the ecosystem audit command and record its '
+      'give Intentra an advisory source, or run the ecosystem audit command and record its '
       + 'output as evidence',
       ctx.observedAt,
     ),
@@ -881,7 +881,7 @@ export const schemaProbe: SectionProbe = catalogueProbe({
       ctx.probe,
       'migration files were located in the repository; which of them a database has applied is '
       + 'a runtime fact and is not answerable from the repository',
-      'give AgentOS runtime access to the database and re-probe applied-versus-pending state',
+      'give Intentra runtime access to the database and re-probe applied-versus-pending state',
       ctx.observedAt,
     ),
   }),

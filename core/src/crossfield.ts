@@ -8,8 +8,8 @@ import {
   type TemplateStage,
   type Violation,
   type ViolationCode,
-} from '@agentos/contracts';
-import type { AgentPolicy, EvidencePolicy } from '@agentos/contracts';
+} from '@intentra/contracts';
+import type { AgentPolicy, EvidencePolicy } from '@intentra/contracts';
 
 /**
  * The cross-field consistency rules.

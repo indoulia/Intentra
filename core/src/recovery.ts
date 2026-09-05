@@ -13,8 +13,8 @@ import {
   type Stage,
   type StageCursorEntry,
   type TemplateStage,
-} from '@agentos/contracts';
-import type { RunStore } from '@agentos/state';
+} from '@intentra/contracts';
+import type { RunStore } from '@intentra/state';
 import { ZERO_BUDGET } from './budgets.js';
 import { blastRadius, hasNonReversibleMutation } from './reconciliation.js';
 
@@ -478,9 +478,9 @@ export function interruptedBlastRadius(
 /**
  * Builds the `run.json` projection.
  *
- * A projection, and the log is authoritative. It exists so that "what is AgentOS doing right
+ * A projection, and the log is authoritative. It exists so that "what is Intentra doing right
  * now" is answerable without replaying anything — and so that a human can read it while
- * AgentOS is not running.
+ * Intentra is not running.
  */
 export function runRecord(
   workItemId: string,

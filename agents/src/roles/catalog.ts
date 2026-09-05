@@ -6,8 +6,8 @@ import {
   type DodCriterionId,
   type Stage,
   type TemplateStage,
-} from '@agentos/contracts';
-import { loadPolicies, type PolicySet } from '@agentos/policies';
+} from '@intentra/contracts';
+import { loadPolicies, type PolicySet } from '@intentra/policies';
 import { MVP_ROLE_SPECS, type ProposalKey, type RoleSpec } from './specs.js';
 
 /**

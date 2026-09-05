@@ -13,8 +13,8 @@ import type {
   ModelEntry,
   PathPolicy,
   SkillEntry,
-} from '@agentos/contracts';
-import { loadPolicies } from '@agentos/policies';
+} from '@intentra/contracts';
+import { loadPolicies } from '@intentra/policies';
 import {
   DescriptorRegistry,
   ResourceAbsentError,
@@ -85,7 +85,7 @@ export interface Scratch {
 }
 
 export function scratch(): Scratch {
-  const root = mkdtempSync(join(tmpdir(), 'agentos-adapters-'));
+  const root = mkdtempSync(join(tmpdir(), 'intentra-adapters-'));
   const worktree = join(root, 'worktree');
   const outside = join(root, 'outside');
   mkdirSync(worktree, { recursive: true });

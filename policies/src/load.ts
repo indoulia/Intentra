@@ -8,7 +8,7 @@ import {
   WORK_ITEM_TYPES,
   formatErrors,
   validators,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 import type {
   AgentPolicy,
   BudgetPolicy,
@@ -29,7 +29,7 @@ import type {
   WorkflowEdge,
   WorkflowFloor,
   WorkflowTemplate,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 import { PolicyDataSource } from './data-source.js';
 import {
   checkWellFormed,
@@ -596,7 +596,7 @@ export function loadPolicies(root?: string): PolicySet {
     }
   }
 
-  /* The absolute deny-list must cover the AgentOS-owned areas. Rule 3 of path confinement is
+  /* The absolute deny-list must cover the Intentra-owned areas. Rule 3 of path confinement is
    * the backstop that holds when the worktree root or the mandate scope is computed wrongly,
    * so an incomplete deny-list removes the backstop. */
   const denyPatterns = paths.deny.flatMap((entry) => entry.patterns);

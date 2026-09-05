@@ -10,8 +10,8 @@ import type {
   WorkItem,
   WorkflowProposal,
   WorkflowTemplate,
-} from '@agentos/contracts';
-import { checkFloor, checkWellFormed, withoutStages, type PolicySet } from '@agentos/policies';
+} from '@intentra/contracts';
+import { checkFloor, checkWellFormed, withoutStages, type PolicySet } from '@intentra/policies';
 
 import { pathMatches } from './predicates.js';
 import type { PredicateEvaluator, PredicateEvaluation, PredicateInputs } from './predicates.js';
@@ -86,7 +86,7 @@ export function deriveRiskClass(
   if (mutating.length === 0) {
     return {
       riskClass: 'READ_ONLY',
-      reason: 'no stage in the graph mutates authoritative state outside AgentOS\'s own ledger',
+      reason: 'no stage in the graph mutates authoritative state outside Intentra\'s own ledger',
     };
   }
   const irreversible = stages.filter(

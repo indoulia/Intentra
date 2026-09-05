@@ -7,8 +7,8 @@ import {
   type WorkItem,
   type WorkItemType,
   type WorkflowTemplate,
-} from '@agentos/contracts';
-import type { PolicySet } from '@agentos/policies';
+} from '@intentra/contracts';
+import type { PolicySet } from '@intentra/policies';
 import type { UnderstoodVerdict } from './understood.js';
 
 /**
@@ -19,7 +19,7 @@ import type { UnderstoodVerdict } from './understood.js';
  * 1 Proceed              type admissible on its evidence, reality determinate
  * 2 Discover             something nameable would settle it: dispatch that probe
  * 3 Common safe prefix   the candidates share a non-mutating prefix: run it, re-resolve after
- * 4 Ask                  one question, both readings, and what AgentOS would do under each
+ * 4 Ask                  one question, both readings, and what Intentra would do under each
  * 5 Block                no answer inside the window: BLOCKED with AMBIGUOUS_GOAL
  * ```
  *
@@ -29,7 +29,7 @@ import type { UnderstoodVerdict } from './understood.js';
  *   *and* per work item, and the rung ends when the budget does.
  * - **Rung 4 is a discrimination, never a briefing.** The question is built from
  *   `alternatives[].reading` and `.would_do`, so a human is asked to choose between readings
- *   AgentOS has already evidenced — not to supply context AgentOS could discover, which would
+ *   Intentra has already evidenced — not to supply context Intentra could discover, which would
  *   violate principle 1. A proposal carrying no alternatives cannot produce a question, and
  *   the ladder falls to rung 5 rather than inventing one.
  * - **Silence is never consent.** No answer inside `budgets.question_window_ms` is `BLOCKED`
@@ -127,7 +127,7 @@ export type LadderResult =
   }
   | {
     /**
-     * Rung 3. The run executes this prefix and re-resolves at its exit — which is how AgentOS
+     * Rung 3. The run executes this prefix and re-resolves at its exit — which is how Intentra
      * acts under uncertainty without guessing: it does the part that is the same whichever
      * answer is right.
      */
@@ -262,7 +262,7 @@ export function commonSafePrefix(
           + 'ambiguity'
       : `${prefix.join(' -> ')} is shared by all ${templates.length} candidates and every `
         + 'stage in it is declared non-mutating, so the ambiguity does not yet matter: '
-        + 'AgentOS does the part that is the same whichever answer is right',
+        + 'Intentra does the part that is the same whichever answer is right',
   };
 }
 
@@ -273,7 +273,7 @@ export function commonSafePrefix(
  *
  * The admitted reading is one of the candidates — a question offering only the rejected ones
  * would be a question with no right answer — and every reading carries its evidence and what
- * AgentOS would do under it. `why_rejected` alone cannot be turned into that question, which
+ * Intentra would do under it. `why_rejected` alone cannot be turned into that question, which
  * is why `alternatives[]` carries `reading` and `would_do`.
  */
 export function discriminatingQuestion(
@@ -300,20 +300,20 @@ export function discriminatingQuestion(
   ];
 
   const question = [
-    `AgentOS resolved "${workItem.title}" as ${workItem.type} and cannot discriminate between `
+    `Intentra resolved "${workItem.title}" as ${workItem.type} and cannot discriminate between `
     + `${readings.length} readings on the evidence it has.`,
     undetermined.length === 0
       ? ''
       : ` Undetermined: ${undetermined.join(', ')}.`,
-    ' Which reading is right? Under each, AgentOS would do what is stated beside it. This is a '
-    + 'discrimination between readings AgentOS has already evidenced, not a request for '
-    + 'context AgentOS could discover.',
+    ' Which reading is right? Under each, Intentra would do what is stated beside it. This is a '
+    + 'discrimination between readings Intentra has already evidenced, not a request for '
+    + 'context Intentra could discover.',
   ].join('');
 
   return { question, readings };
 }
 
-/** The template a reading would select, which is what AgentOS would do under it. */
+/** The template a reading would select, which is what Intentra would do under it. */
 function wouldDo(type: WorkItemType, policies: PolicySet): string {
   const admissible = policies.admissibleTemplates(type);
   const template = admissible[0];
@@ -485,7 +485,7 @@ async function ask(
       detail:
         'the proposal carries no alternative readings, so there is no discrimination to ask '
         + 'for. The kernel does not invent one: a question with a single reading is a request '
-        + 'for a briefing, and asking a human to supply context AgentOS could discover '
+        + 'for a briefing, and asking a human to supply context Intentra could discover '
         + 'violates principle 1',
     });
     return {

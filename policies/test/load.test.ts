@@ -12,7 +12,7 @@ import {
   TEMPLATE_STAGES,
   WORK_ITEM_TYPES,
   AGENT_ROLES,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 import { loadPolicies, PolicyLoadError, checkWellFormed, dominates, postDominates } from '../src/index.js';
 
 /**
@@ -44,7 +44,7 @@ const DATA_ROOT = (() => {
 
 /** Copies the policy set, applies a mutation, and returns the temporary root. */
 function withBrokenPolicy(mutate: (root: string) => void): string {
-  const work = mkdtempSync(join(tmpdir(), 'agentos-policy-'));
+  const work = mkdtempSync(join(tmpdir(), 'intentra-policy-'));
   cpSync(DATA_ROOT, work, { recursive: true });
   mutate(work);
   return work;

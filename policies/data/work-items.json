@@ -110,7 +110,7 @@
     },
     {
       "type": "CHANGE_REQUEST",
-      "description": "A proposed change already exists and the outcome is that it lands. An orphan PR - one serving no work item AgentOS knows about - resolves here.",
+      "description": "A proposed change already exists and the outcome is that it lands. An orphan PR - one serving no work item Intentra knows about - resolves here.",
       "minimum_evidence": [
         {
           "requirement": "existing_change_proposal",

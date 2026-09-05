@@ -1,9 +1,9 @@
 /**
  * A minimal, dependency-free JSON Schema 2020-12 validator.
  *
- * `@agentos/contracts` has zero dependencies by design (IMPLEMENTATION_PLAN section 2), so
+ * `@intentra/contracts` has zero dependencies by design (IMPLEMENTATION_PLAN section 2), so
  * the validator that compiles the schemas ships with them rather than being pulled in. The
- * supported keyword set is exactly what the AgentOS schemas use; an unsupported keyword is a
+ * supported keyword set is exactly what the Intentra schemas use; an unsupported keyword is a
  * load-time error rather than a silently ignored constraint, because a constraint nobody
  * enforces is worse than one nobody wrote.
  */

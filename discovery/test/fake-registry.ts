@@ -1,4 +1,4 @@
-import { fixtures as fx } from '@agentos/contracts';
+import { fixtures as fx } from '@intentra/contracts';
 import type {
   AdapterAvailability,
   AdapterCallContext,
@@ -11,7 +11,7 @@ import type {
   Locator,
   MutationEvent,
   ReplayResult,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 import { OPS } from '../src/ops.js';
 
 /**

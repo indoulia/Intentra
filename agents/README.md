@@ -53,7 +53,7 @@ the kernel selects and records; a model id compiled in here would be the hard-co
 ## D-2's binding condition
 
 The Agent SDK is the Claude Code harness as a library, so it arrives with built-in file,
-shell, search and web tools and with subagent spawning. Making it satisfy AgentOS's posture is
+shell, search and web tools and with subagent spawning. Making it satisfy Intentra's posture is
 a **subtraction** problem, and subtraction fails open. So:
 
 - **The tool surface is an allowlist.** Every built-in tool is absent rather than forbidden,

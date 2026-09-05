@@ -1,4 +1,4 @@
-import type { ToolGrant, ToolSurfaceReport } from '@agentos/contracts';
+import type { ToolGrant, ToolSurfaceReport } from '@intentra/contracts';
 import { isSpawningToolName } from '../dispatch/tool-grants.js';
 
 /**

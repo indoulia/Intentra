@@ -2,8 +2,8 @@ import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Assertion } from '@agentos/contracts';
-import { validators } from '@agentos/contracts';
+import type { Assertion } from '@intentra/contracts';
+import { validators } from '@intentra/contracts';
 import { createAdapterSuite, type AdapterSuite } from '../src/index.js';
 import {
   BUDGETS,

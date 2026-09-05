@@ -19,7 +19,7 @@ import { join, resolve } from 'node:path';
  *     artifacts/        diffs, reports, screenshots, traces
  * ```
  *
- * Runs are addressable and inspectable without AgentOS running, which is the reason the
+ * Runs are addressable and inspectable without Intentra running, which is the reason the
  * store is files (freeze D-3): every recovery property is "replay the log", and a log a
  * human can read with `cat` during an incident is worth more than one that needs a client.
  *

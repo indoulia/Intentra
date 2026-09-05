@@ -1,4 +1,4 @@
-import type { Assertion } from '@agentos/contracts';
+import type { Assertion } from '@intentra/contracts';
 import { ADAPTERS, OPS } from '../ops.js';
 import type { SectionProbe } from '../probe.js';
 import { asString, records } from '../probe.js';
@@ -7,7 +7,7 @@ import { observe } from './observation.js';
 /**
  * Agent and model capability probes, and the authorization surface they imply.
  *
- * What AgentOS itself can reach is part of the answer to "what is actually true", because a
+ * What Intentra itself can reach is part of the answer to "what is actually true", because a
  * plan that assumes a connector nobody has is a plan that fails late. The rule that matters
  * here is one sentence in [CONTEXT_MODEL.md](../../../docs/CONTEXT_MODEL.md) section 3:
  *
@@ -35,7 +35,7 @@ export const agentCapabilitiesProbe: SectionProbe = {
         'host.agent_capabilities',
         availability,
         ['adapter.availability'],
-        'the host adapter reports its own availability. Without it AgentOS does not know what '
+        'the host adapter reports its own availability. Without it Intentra does not know what '
         + 'it can reach, which is a limitation on the run rather than an empty capability set',
         'agentos',
         observedAt,

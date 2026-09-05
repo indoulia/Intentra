@@ -1,4 +1,4 @@
-import type { Classification, ConfidenceClass } from '@agentos/contracts';
+import type { Classification, ConfidenceClass } from '@intentra/contracts';
 
 /**
  * Fail-closed classification.
@@ -80,7 +80,7 @@ export function classify(
       probe_detail:
         `${observation.detail}. The probe could not establish it, so the conservative value `
         + `${DANGEROUS_VALUE[kind]} is taken. Where this bites incorrectly the fix is to give `
-        + 'AgentOS the access it needs to classify, or to declare the topology, not to relax '
+        + 'Intentra the access it needs to classify, or to declare the topology, not to relax '
         + 'the rule',
     };
   }

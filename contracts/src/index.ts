@@ -1,5 +1,5 @@
 /**
- * `@agentos/contracts` — the stable surface of AgentOS.
+ * `@intentra/contracts` — the stable surface of Intentra.
  *
  * Every shape in the system, defined once. JSON Schema in `contracts/schema/` is the source
  * of truth; the TypeScript types are generated from it and the validators are compiled from

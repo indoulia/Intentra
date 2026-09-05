@@ -201,7 +201,7 @@ describe('schema set integrity', () => {
     assert.ok(SCHEMAS.ids().length >= 17, 'expected at least the seventeen schema documents');
   });
 
-  test('every registered schema declares an absolute $id under the AgentOS namespace', () => {
+  test('every registered schema declares an absolute $id under the Intentra namespace', () => {
     for (const id of SCHEMAS.ids()) {
       assert.match(id, /^https:\/\/agentos\.dev\/schema\/[a-z-]+\.json(\?def=[a-zA-Z]+)?$/, id);
     }

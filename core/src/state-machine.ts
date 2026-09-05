@@ -10,9 +10,9 @@ import {
   type TemplateStage,
   type Violation,
   type WorkflowEdge,
-} from '@agentos/contracts';
-import type { BudgetPolicy } from '@agentos/contracts';
-import { outgoing } from '@agentos/policies';
+} from '@intentra/contracts';
+import type { BudgetPolicy } from '@intentra/contracts';
+import { outgoing } from '@intentra/policies';
 import type { PredicateEvaluation } from './predicates.js';
 
 /**
@@ -460,7 +460,7 @@ async function advance(
         blockerKind: 'AMBIGUOUS_STATE',
         reason:
           `no edge out of ${currentStage} evaluates TRUE and `
-          + `${indeterminate.length} evaluate INDETERMINATE. AgentOS does not choose a branch `
+          + `${indeterminate.length} evaluate INDETERMINATE. Intentra does not choose a branch `
           + 'on the strength of an INDETERMINATE',
         preBlockStage: currentStage,
         report: [
@@ -568,7 +568,7 @@ export function saferBranch(
   return {
     decision: 'BLOCK_AMBIGUOUS_STATE',
     reason:
-      'INDETERMINATE after discovery, and the stage mutates. AgentOS never re-executes a '
+      'INDETERMINATE after discovery, and the stage mutates. Intentra never re-executes a '
       + 'non-reversible operation on the strength of an INDETERMINATE',
   };
 }

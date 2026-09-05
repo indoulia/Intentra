@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { validators } from '@agentos/contracts';
-import type { AdapterAvailability, RankedCandidate, SkillEntry } from '@agentos/contracts';
+import { validators } from '@intentra/contracts';
+import type { AdapterAvailability, RankedCandidate, SkillEntry } from '@intentra/contracts';
 import { EnumeratedRegistries, coverage, rankSkills, type SkillRequest } from '../src/index.js';
 
 /**

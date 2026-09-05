@@ -1,4 +1,4 @@
-import type { TemplateStage, Stage, WorkflowEdge } from '@agentos/contracts';
+import type { TemplateStage, Stage, WorkflowEdge } from '@intentra/contracts';
 
 /**
  * Graph arithmetic over a workflow template or a frozen run graph.

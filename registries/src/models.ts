@@ -1,4 +1,4 @@
-import type { ModelEntry, ModelRequirement, RankedCandidate } from '@agentos/contracts';
+import type { ModelEntry, ModelRequirement, RankedCandidate } from '@intentra/contracts';
 import { order, type Scored } from './ranking.js';
 
 /**

@@ -5,8 +5,8 @@ import {
   type Event,
   type FrozenGraph,
   type MutationEvent,
-} from '@agentos/contracts';
-import { loadPolicies } from '@agentos/policies';
+} from '@intentra/contracts';
+import { loadPolicies } from '@intentra/policies';
 import {
   applyReversals,
   decideRetry,

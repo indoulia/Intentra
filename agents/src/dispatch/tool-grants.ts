@@ -2,7 +2,7 @@ import type {
   AdapterOperationDescriptor,
   AgentSpecView,
   ToolGrant,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 
 /**
  * Turning permitted adapter operations into the dispatch's tool surface.

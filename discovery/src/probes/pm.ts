@@ -1,4 +1,4 @@
-import type { Assertion } from '@agentos/contracts';
+import type { Assertion } from '@intentra/contracts';
 import { INTENT_KEYS } from '../intent-keys.js';
 import { ADAPTERS, OPS } from '../ops.js';
 import type { SectionProbe } from '../probe.js';
@@ -39,7 +39,7 @@ export function claimsCompletion(status: string | null): boolean {
 /**
  * Tier-1 orientation: is there project-management access at all?
  *
- * Orientation needs this and not the tickets themselves. Whether AgentOS can see intent
+ * Orientation needs this and not the tickets themselves. Whether Intentra can see intent
  * changes what resolution may conclude, and it is cheap; reading the backlog is tier 2's job
  * and needs a scope to be worth anything.
  */

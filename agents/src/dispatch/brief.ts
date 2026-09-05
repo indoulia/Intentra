@@ -1,4 +1,4 @@
-import type { InputPackage } from '@agentos/contracts';
+import type { InputPackage } from '@intentra/contracts';
 import type { RoleSpec } from '../roles/specs.js';
 
 /**
@@ -72,10 +72,10 @@ export function renderSystemSpecification(
 ): string {
   const lines: string[] = [];
   lines.push(
-    `You are one dispatch of the ${input.agent} role of AgentOS, running the `
+    `You are one dispatch of the ${input.agent} role of Intentra, running the `
     + `${input.mandate_name} mandate at stage ${input.stage}.`,
     '',
-    'AgentOS is a kernel that does not trust what you say. Everything you report is a claim '
+    'Intentra is a kernel that does not trust what you say. Everything you report is a claim '
     + 'until a mechanical check passes it, and the checks are described below so that you can '
     + 'write an envelope that survives them rather than one that reads well. Nothing you '
     + 'write becomes kernel state on your say-so, and that is the design working, not an '

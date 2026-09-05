@@ -3,9 +3,9 @@ import type {
   Event,
   EventKind,
   Stage,
-} from '@agentos/contracts';
-import type { Clock } from '@agentos/contracts';
-import type { RunStore } from '@agentos/state';
+} from '@intentra/contracts';
+import type { Clock } from '@intentra/contracts';
+import type { RunStore } from '@intentra/state';
 
 /**
  * The kernel's writer onto the event log.

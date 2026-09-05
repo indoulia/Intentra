@@ -1,5 +1,5 @@
-import { digest } from '@agentos/contracts';
-import type { AbsenceReason, Assertion, Evidence, EvidenceKind, Locator } from '@agentos/contracts';
+import { digest } from '@intentra/contracts';
+import type { AbsenceReason, Assertion, Evidence, EvidenceKind, Locator } from '@intentra/contracts';
 
 /**
  * Assertion construction, so that "every output of the attachment sequence is an assertion

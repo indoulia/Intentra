@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { fixtures as fx, type CallRecord, type MutationEvent, type ReplayResult } from '@agentos/contracts';
-import { loadPolicies } from '@agentos/policies';
+import { fixtures as fx, type CallRecord, type MutationEvent, type ReplayResult } from '@intentra/contracts';
+import { loadPolicies } from '@intentra/policies';
 import { reconcile, blastRadius, hasNonReversibleMutation, globToRegExp } from '../src/reconciliation.js';
 import { verifyEvidence, selectForVerification, normalizeExcerpt, evaluatePredicate } from '../src/evidence-verification.js';
 import { FixtureAdapters, HELD_TOOLS, seededRandom, FixedClock } from './doubles.js';

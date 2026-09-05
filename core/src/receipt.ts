@@ -16,8 +16,8 @@ import {
   type Recommendation,
   type ToolGrant,
   type Violation,
-} from '@agentos/contracts';
-import type { AgentPolicy } from '@agentos/contracts';
+} from '@intentra/contracts';
+import type { AgentPolicy } from '@intentra/contracts';
 import { checkCrossFields, type CrossFieldContext, type DispatchExpectation } from './crossfield.js';
 import { reconcile } from './reconciliation.js';
 import { verifyEvidence, type VerificationReport } from './evidence-verification.js';

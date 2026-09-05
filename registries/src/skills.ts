@@ -1,4 +1,4 @@
-import type { RankedCandidate, SkillEntry } from '@agentos/contracts';
+import type { RankedCandidate, SkillEntry } from '@intentra/contracts';
 import { coverage, order, type Scored } from './ranking.js';
 
 /**
@@ -24,7 +24,7 @@ import { coverage, order, type Scored } from './ranking.js';
  * is configured and the server failed to connect" lead to different decisions and only the
  * second is worth waking someone for.
  *
- * No product name appears here or anywhere in this package. AgentOS ranks what the host
+ * No product name appears here or anywhere in this package. Intentra ranks what the host
  * enumerated; it has never been told what to expect to find.
  */
 

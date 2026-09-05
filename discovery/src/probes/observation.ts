@@ -1,5 +1,5 @@
-import { validators } from '@agentos/contracts';
-import type { Assertion } from '@agentos/contracts';
+import { validators } from '@intentra/contracts';
+import type { Assertion } from '@intentra/contracts';
 import type { Observation, ObserveRequest, ProbeSession } from '../session.js';
 
 /**

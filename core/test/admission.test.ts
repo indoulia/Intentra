@@ -8,8 +8,8 @@ import {
   type Scope,
   type WorkItem,
   type WorkflowProposal,
-} from '@agentos/contracts';
-import { loadPolicies } from '@agentos/policies';
+} from '@intentra/contracts';
+import { loadPolicies } from '@intentra/policies';
 import {
   admitWorkItem,
   checkOutcomeBindable,

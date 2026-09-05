@@ -1,6 +1,6 @@
 # registries
 
-Representation, indexing, query and **ranking** for what AgentOS can invoke: skills and
+Representation, indexing, query and **ranking** for what Intentra can invoke: skills and
 models.
 
 **The registries rank; the kernel selects.** This package produces an ordered candidate list
@@ -17,7 +17,7 @@ src/
   index.ts     EnumeratedRegistries: the Registries port over what the host enumerated
 ```
 
-`@agentos/registries` depends on `@agentos/contracts` and nothing else. It therefore cannot
+`@intentra/registries` depends on `@intentra/contracts` and nothing else. It therefore cannot
 reach a host, and does not try: **the host adapter enumerates, and the registry ranks what it
 is handed.** That is the boundary doing its job, and it is why this package needs no I/O
 exception in the conformance check.
@@ -34,8 +34,8 @@ Three rules the ranking holds, each of them a frozen requirement rather than a p
   deep-reasoning requirement and an unknown precision class does not meet a high-precision
   one. Selection degrades sensibly rather than assuming the best case.
 
-No product-specific identifier appears anywhere in this package. AgentOS finds a skill
-because a host exposes it, never because AgentOS was told to expect it.
+No product-specific identifier appears anywhere in this package. Intentra finds a skill
+because a host exposes it, never because Intentra was told to expect it.
 
 The capability registry — what the *target system* can do — is a later work package
 (CAPABILITY_MODEL.md); nothing here models it yet.

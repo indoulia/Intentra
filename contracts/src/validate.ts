@@ -126,7 +126,7 @@ function wrapperId(file: keyof typeof SCHEMA_ID, pointer: string): string {
 
 /**
  * The one compiled schema set. Sealed at module load, so a dangling `$ref` or an
- * unsupported keyword fails the moment `@agentos/contracts` is imported rather than on the
+ * unsupported keyword fails the moment `@intentra/contracts` is imported rather than on the
  * first instance that happens to reach it.
  */
 export const SCHEMAS: SchemaRegistry = (() => {

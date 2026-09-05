@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { SchemaRegistry, fixtures as fx } from '@agentos/contracts';
+import { SchemaRegistry, fixtures as fx } from '@intentra/contracts';
 import type {
   AdapterCallContext,
   AdapterOperationDescriptor,
@@ -13,7 +13,7 @@ import type {
   PathPolicy,
   RealityElement,
   WorkItem,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 import {
   DescriptorRegistry,
   NO_PROCESS_RUNNER,
@@ -28,7 +28,7 @@ import {
   type OperationRegistration,
   type ProcessResult,
   type ProcessRunner,
-} from '@agentos/adapters';
+} from '@intentra/adapters';
 import { DiscoveryService, REALITY_ELEMENTS } from '../src/index.js';
 import { ADAPTERS, OPS } from '../src/ops.js';
 import { ALL_SECTION_PROBES } from '../src/service.js';
@@ -330,7 +330,7 @@ const CALL_CONTEXT: AdapterCallContext = {
  */
 function realAnswers(worktreeRoot: string, home: string): Readonly<Record<string, Responder>> {
   const confinement = new PathConfinement({
-    worktreeRoot, installationRoot: join(home, 'agentos'), home, paths: PATHS,
+    worktreeRoot, installationRoot: join(home, 'intentra'), home, paths: PATHS,
   });
   const registrations: readonly OperationRegistration[] = [
     ...repositoryOperations({ worktreeRoot, paths: PATHS }),
@@ -408,7 +408,7 @@ let schemas: SchemaRegistry;
 let calls: readonly ProbeRequest[];
 
 before(async () => {
-  scratch = mkdtempSync(join(tmpdir(), 'agentos-conformance-'));
+  scratch = mkdtempSync(join(tmpdir(), 'intentra-conformance-'));
   mkdirSync(join(scratch, 'worktree'), { recursive: true });
   realRoot = join(scratch, 'real');
   realHome = join(scratch, 'home');
@@ -589,7 +589,7 @@ describe('what the adapters answer, the probes can read', () => {
    */
   test('an UNKNOWN answer is not an observation, and never becomes a value', async () => {
     const { observe } = await import('../src/probes/observation.js');
-    const { unknown } = await import('@agentos/adapters');
+    const { unknown } = await import('@intentra/adapters');
     const adapters = new FakeAdapters(withResponses(healthyWorld(), {
       'git.list_branches': unknown(
         'git.list_branches', fx.T1, 'UNAVAILABLE',
@@ -616,7 +616,7 @@ describe('what the adapters answer, the probes can read', () => {
   });
 
   test('a FACT answer arrives as its value, not as the assertion around it', async () => {
-    const { fact, selfEvidence } = await import('@agentos/adapters');
+    const { fact, selfEvidence } = await import('@intentra/adapters');
     const adapters = new FakeAdapters(withResponses(healthyWorld(), {
       'git.list_tags': fact(
         [{ name: 'v9.9.9', release: true }], 'git.list_tags', fx.T1,

@@ -1,7 +1,7 @@
 import { test, describe, after } from 'node:test';
 import assert from 'node:assert/strict';
-import type { CheckOutcome, Event, WorkflowProposal } from '@agentos/contracts';
-import { MvpAgentCatalog } from '@agentos/agents';
+import type { CheckOutcome, Event, WorkflowProposal } from '@intentra/contracts';
+import { MvpAgentCatalog } from '@intentra/agents';
 import { README_CONTENT } from '../doubles.js';
 import { scratchWorld, type ScratchWorld } from './world.js';
 import {

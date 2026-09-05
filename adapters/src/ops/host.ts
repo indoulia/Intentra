@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { EOL, homedir, platform, tmpdir, type } from 'node:os';
 import { sep, join } from 'node:path';
-import { sha256 } from '@agentos/contracts';
+import { sha256 } from '@intentra/contracts';
 import type {
   AdapterAvailability,
   HostIdentity,
@@ -10,7 +10,7 @@ import type {
   ModelEntry,
   SkillEntry,
   TrustClass,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 import { fact, selfEvidence, unavailable, unknown } from '../assertions.js';
 import { OPTIONAL_STRING_ARG, STRING_ARG, readOnlyOperation } from '../define.js';
 import type { OperationRegistration } from '../descriptors.js';
@@ -20,7 +20,7 @@ import type { AvailabilityProbe, RunLedgerReader } from '../ports.js';
 import type { ClassificationObservation, ClassificationProbe } from '../classification.js';
 
 /**
- * The host adapter: who invoked AgentOS, on what, with what available.
+ * The host adapter: who invoked Intentra, on what, with what available.
  *
  * It owns three things nothing else may:
  *
@@ -88,7 +88,7 @@ export interface HostOptions {
   /** What the operator typed, where this invocation came from the command line. */
   readonly intake?: CliIntake | null;
   /**
-   * Read-only access to AgentOS's own run ledger, supplied by the composition root.
+   * Read-only access to Intentra's own run ledger, supplied by the composition root.
    *
    * `state/` is the kernel's to write and neither this package nor `discovery/` may reach it,
    * so the ledger arrives as a port and leaves as an ordinary observation with a replayable
@@ -150,7 +150,7 @@ export function hostOperations(options: HostOptions): readonly OperationRegistra
       adapter: ADAPTER,
       op: 'identity',
       description:
-        'Who invoked AgentOS, and how far that assertion goes. The trust class comes from '
+        'Who invoked Intentra, and how far that assertion goes. The trust class comes from '
         + 'authenticated context and never from content.',
       evidenceKind: 'command',
       observationSafe: true,
@@ -339,7 +339,7 @@ export function hostOperations(options: HostOptions): readonly OperationRegistra
       adapter: ADAPTER,
       op: 'read_run_history',
       description:
-        "Prior AgentOS runs against one work item, from AgentOS's own ledger. The only "
+        "Prior Intentra runs against one work item, from Intentra's own ledger. The only "
         + 'honest observation that an analysis stage actually ran.',
       args: { work_item_id: STRING_ARG },
       required: ['work_item_id'],
@@ -359,7 +359,7 @@ export function hostOperations(options: HostOptions): readonly OperationRegistra
           return Promise.resolve({
             value: unknown(
               'host.read_run_history', at, 'UNAVAILABLE',
-              "wire AgentOS's run ledger into the adapter framework. Until then whether a "
+              "wire Intentra's run ledger into the adapter framework. Until then whether a "
               + 'stage completed in a previous run is unknown, and an unknown is not the same '
               + 'as a no',
               'no run-ledger reader is available to this adapter framework',
@@ -375,7 +375,7 @@ export function hostOperations(options: HostOptions): readonly OperationRegistra
           return Promise.resolve({
             value: unavailable(
               'host.read_run_history', at,
-              "restore access to AgentOS's own state directory",
+              "restore access to Intentra's own state directory",
               messageOf(error),
             ),
             excerpt: 'run history: unavailable',
@@ -393,7 +393,7 @@ export function hostOperations(options: HostOptions): readonly OperationRegistra
             op: 'read_run_history',
             args: { work_item_id: workItemId },
             kind: 'document',
-            ref: `AgentOS run ledger for ${workItemId}`,
+            ref: `Intentra run ledger for ${workItemId}`,
             excerpt,
             observedAt: at,
           })),
@@ -406,7 +406,7 @@ export function hostOperations(options: HostOptions): readonly OperationRegistra
       adapter: ADAPTER,
       op: 'read_child_work_items',
       description:
-        'Child work items AgentOS itself recorded, with their lifecycle states. Unioned by '
+        'Child work items Intentra itself recorded, with their lifecycle states. Unioned by '
         + "discovery with the project-management system's own children.",
       args: { work_item_id: STRING_ARG },
       required: ['work_item_id'],
@@ -420,7 +420,7 @@ export function hostOperations(options: HostOptions): readonly OperationRegistra
           return Promise.resolve({
             value: unknown(
               'host.read_child_work_items', at, 'UNAVAILABLE',
-              "wire AgentOS's run ledger into the adapter framework. An empty list would read "
+              "wire Intentra's run ledger into the adapter framework. An empty list would read "
               + 'as "this work item has no children", which is a different claim from "we '
               + 'could not look"',
               'no run-ledger reader is available to this adapter framework',
@@ -436,7 +436,7 @@ export function hostOperations(options: HostOptions): readonly OperationRegistra
           return Promise.resolve({
             value: unavailable(
               'host.read_child_work_items', at,
-              "restore access to AgentOS's own state directory",
+              "restore access to Intentra's own state directory",
               messageOf(error),
             ),
             excerpt: 'child work items: unavailable',
@@ -455,7 +455,7 @@ export function hostOperations(options: HostOptions): readonly OperationRegistra
               op: 'read_child_work_items',
               args: { work_item_id: workItemId },
               kind: 'document',
-              ref: `AgentOS child work items of ${workItemId}`,
+              ref: `Intentra child work items of ${workItemId}`,
               excerpt,
               observedAt: at,
             }),
@@ -480,7 +480,7 @@ export function hostOperations(options: HostOptions): readonly OperationRegistra
           return Promise.resolve({
             value: unknown(
               'host.read_intake', invocation.now.toISOString(), 'NOT_APPLICABLE',
-              'invoke AgentOS through a host that carries an intake. This framework was built '
+              'invoke Intentra through a host that carries an intake. This framework was built '
               + 'without one, so there is nothing to normalize',
             ),
             excerpt: 'intake: none',
@@ -519,7 +519,7 @@ export function hostOperations(options: HostOptions): readonly OperationRegistra
   ];
 }
 
-/** The host adapter is available whenever AgentOS is running, because it is the host. */
+/** The host adapter is available whenever Intentra is running, because it is the host. */
 export function hostAvailability(options: HostOptions): AvailabilityProbe {
   return {
     adapter: ADAPTER,
@@ -534,7 +534,7 @@ export function hostAvailability(options: HostOptions): AvailabilityProbe {
             ? '. This host cannot assert a principal, so its intake classifies EXTERNAL'
             : `, principal asserted as ${identity.principal.id}`)
           + (options.ledger === undefined || options.ledger === null
-            ? ". No run ledger is wired in, so AgentOS's own history of this work item is "
+            ? ". No run ledger is wired in, so Intentra's own history of this work item is "
               + 'UNAVAILABLE rather than empty'
             : ''),
       });

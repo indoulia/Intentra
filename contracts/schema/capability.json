@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agentos.dev/schema/capability.json",
   "title": "Capability record, chain stage record and capability graph",
-  "description": "The capability is AgentOS's unit of truth. The registry's purpose is blunt: make disconnected architecture visible.",
+  "description": "The capability is Intentra's unit of truth. The registry's purpose is blunt: make disconnected architecture visible.",
   "$defs": {
     "chainStageRecord": {
       "description": "`implemented` without `connected` is an orphan. `connected` without `exercised` is a capability that exists only on paper.",

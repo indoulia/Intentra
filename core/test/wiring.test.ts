@@ -9,8 +9,8 @@ import {
   type HandoffEnvelope,
   type SkillEntry,
   type StageDescriptor,
-} from '@agentos/contracts';
-import { loadPolicies } from '@agentos/policies';
+} from '@intentra/contracts';
+import { loadPolicies } from '@intentra/policies';
 import { Kernel, type StartInput } from '../src/kernel.js';
 import { classifyGates, grantEnforcer, type ClassifierInput } from '../src/authorization.js';
 import { resolveByRule, sourceAuthority, subjectAuthority, type Conflict } from '../src/arbitration.js';
@@ -719,12 +719,12 @@ describe('C9 — the external system wins on its own state, and the discrepancy 
     };
   }
 
-  test('the AgentOS log loses to the git host on the git host\'s own subject', () => {
+  test('the Intentra log loses to the git host on the git host\'s own subject', () => {
     /*
      * The regression. `resolveByRule` ranked only by confidence class, so a `FACT` from
-     * AgentOS's own ledger beat an `INFERENCE` from the source that actually speaks for the
+     * Intentra's own ledger beat an `INFERENCE` from the source that actually speaks for the
      * subject — the exact inversion section 5.1 exists to prevent. The ledger is authoritative
-     * about what AgentOS *did* and says nothing about whether it still holds.
+     * about what Intentra *did* and says nothing about whether it still holds.
      */
     const resolution = resolveByRule(conflict());
     assert.equal(resolution.phase, 'RESOLVED_BY_RULE');
@@ -1076,7 +1076,7 @@ describe('the adversarial cases the wiring exists for', () => {
     assert.equal(drift?.data.state, 'CHANGED');
   });
 
-  test('the narrative states what AgentOS decided the work was, from the durable record', async () => {
+  test('the narrative states what Intentra decided the work was, from the durable record', async () => {
     /*
      * The `WorkItem` contract has no `intent` field, so the intent lives in the work-item event
      * log. A narrative obligation nothing durable can discharge is a narrative obligation
@@ -1096,7 +1096,7 @@ describe('the adversarial cases the wiring exists for', () => {
     const workItemLog = h.store.readWorkItemLog(result.workItemId).records;
     const intent = notes(workItemLog, 'intent');
     assert.equal(intent.length, 1);
-    assert.match(intent[0] ?? '', /AgentOS decided this work is MODIFY_ARTIFACT/);
+    assert.match(intent[0] ?? '', /Intentra decided this work is MODIFY_ARTIFACT/);
     assert.match(intent[0] ?? '', /never the reason anything is believed/);
   });
 

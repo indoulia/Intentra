@@ -4,7 +4,7 @@ import type {
   EvidencePolicy,
   ExecutionPolicy,
   PathPolicy,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 import { DescriptorRegistry } from '../descriptors.js';
 import { AdapterFramework } from '../framework.js';
 import type { ClassificationProbe } from '../classification.js';
@@ -64,7 +64,7 @@ export interface AdapterSuiteOptions {
   readonly inventory?: HostInventory;
   readonly intake?: CliIntake | null;
   /**
-   * Read-only access to AgentOS's own run ledger, for `host.read_run_history` and
+   * Read-only access to Intentra's own run ledger, for `host.read_run_history` and
    * `host.read_child_work_items`. Absent, both report UNAVAILABLE rather than empty.
    */
   readonly ledger?: RunLedgerReader | null;

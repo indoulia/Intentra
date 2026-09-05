@@ -1,7 +1,7 @@
 {
   "template_id": "change_request.land",
   "version": "1.0",
-  "description": "A proposed change already exists and the outcome is that it lands. Entry is computed from Current Reality rather than fixed. Approval routes through VALIDATION before AUTHORIZATION rather than straight to it: the floor requires VALIDATION before MERGE, and a graph where an approved PR could reach MERGE without AgentOS having validated anything would satisfy the floor on paper and not in fact. STRUCTURAL_REAUDIT is present because DoD criterion 17 - the change introduced no new orphan - is owned by the Auditor's second pass, and a template that cannot supply a critical criterion of its own DoD profile is a template that can never complete.",
+  "description": "A proposed change already exists and the outcome is that it lands. Entry is computed from Current Reality rather than fixed. Approval routes through VALIDATION before AUTHORIZATION rather than straight to it: the floor requires VALIDATION before MERGE, and a graph where an approved PR could reach MERGE without Intentra having validated anything would satisfy the floor on paper and not in fact. STRUCTURAL_REAUDIT is present because DoD criterion 17 - the change introduced no new orphan - is owned by the Auditor's second pass, and a template that cannot supply a critical criterion of its own DoD profile is a template that can never complete.",
   "applies_to": {
     "types": [
       "CHANGE_REQUEST"

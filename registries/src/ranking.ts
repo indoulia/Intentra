@@ -1,4 +1,4 @@
-import type { RankedCandidate } from '@agentos/contracts';
+import type { RankedCandidate } from '@intentra/contracts';
 
 /**
  * The shared machinery of ranking.

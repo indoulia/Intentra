@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { createInterface } from 'node:readline/promises';
 import { join, resolve } from 'node:path';
-import { RunStore } from '@agentos/state';
-import { loadPolicies, PolicyLoadError } from '@agentos/policies';
-import { ContractViolationError, type IntakeSource, type Locator, type ModelEntry } from '@agentos/contracts';
+import { RunStore } from '@intentra/state';
+import { loadPolicies, PolicyLoadError } from '@intentra/policies';
+import { ContractViolationError, type IntakeSource, type Locator, type ModelEntry } from '@intentra/contracts';
 import { Kernel, type RunResult } from '../kernel.js';
 import { FixtureError } from '../replay/fixture.js';
 import { replayFixture } from '../replay/run.js';
@@ -29,7 +29,7 @@ import {
 } from '../composition/index.js';
 
 /**
- * The AgentOS command line.
+ * The Intentra command line.
  *
  * Four commands, and the one that matters most is `narrate`. **A run that did the wrong thing
  * correctly is invisible without it**, which is why the narrative obligation is a deliverable
@@ -38,10 +38,10 @@ import {
  * why. `work` therefore prints the narrative on every path, including the ones that refuse.
  *
  * ```
- * agentos work    --repo <path> [--source <s>] "<request>"   start a run
- * agentos status  [<work-item-id>] [<run-id>]                where a run is, from the projection
- * agentos narrate <work-item-id> [<run-id>]                  what AgentOS decided and why
- * agentos replay  <fixture-dir>                              drive the kernel from recorded envelopes
+ * intentra work    --repo <path> [--source <s>] "<request>"   start a run
+ * intentra status  [<work-item-id>] [<run-id>]                where a run is, from the projection
+ * intentra narrate <work-item-id> [<run-id>]                  what Intentra decided and why
+ * intentra replay  <fixture-dir>                              drive the kernel from recorded envelopes
  * ```
  *
  * Decision I-19 said `work` would be added "when the last port it needs exists", and it now
@@ -88,12 +88,12 @@ export const EXIT = Object.freeze({
 });
 
 const USAGE = [
-  'usage: agentos <command> [arguments]',
+  'usage: intentra <command> [arguments]',
   '',
   '  work    --repo <path> [--source <source>] "<request>"',
   '                                        resolve the request against the repository and run it',
   '  status  [<work-item-id>] [<run-id>]   where a run is, read from the projection',
-  '  narrate <work-item-id> [<run-id>]     what AgentOS decided the work was, and why',
+  '  narrate <work-item-id> [<run-id>]     what Intentra decided the work was, and why',
   '  replay  <fixture-dir>                 drive the kernel from recorded envelopes',
   '',
   'work sources: NATURAL_LANGUAGE (default), PROJECT_MANAGEMENT, VCS, DOCUMENT, EVENT,',
@@ -172,7 +172,7 @@ function status(args: readonly string[], io: CliIo): number {
 function narrate(args: readonly string[], io: CliIo): number {
   const [workItemId, runId] = args;
   if (workItemId === undefined) {
-    io.err('narrate needs a work item id. `agentos status` lists them.');
+    io.err('narrate needs a work item id. `intentra status` lists them.');
     return 2;
   }
   const kernel = kernelForReading(io);
@@ -270,7 +270,7 @@ type ArgumentParse =
 /**
  * `--repo` is required rather than defaulting to the working directory.
  *
- * A default would make the most likely accident — running AgentOS against its own
+ * A default would make the most likely accident — running Intentra against its own
  * installation, where the path deny-list refuses every read — look like a broken repository
  * rather than like a missing argument.
  */
@@ -308,7 +308,7 @@ export function parseWorkArguments(args: readonly string[]): ArgumentParse {
     return {
       ok: false,
       detail:
-        'work needs the request itself. AgentOS resolves what the work is; it cannot resolve '
+        'work needs the request itself. Intentra resolves what the work is; it cannot resolve '
         + 'nothing',
     };
   }
@@ -410,7 +410,7 @@ function reportBuild(built: BuiltKernel, io: CliIo): void {
  * The outcome, and the narrative, and the exit code that tells them apart.
  *
  * The narrative is printed on every path — including a refusal, where it is the only account
- * of what AgentOS made of the request before it stopped. A run that refused silently would be
+ * of what Intentra made of the request before it stopped. A run that refused silently would be
  * a run nobody could argue with.
  */
 function reportRun(result: RunResult, models: readonly ModelEntry[], io: CliIo): number {
@@ -443,7 +443,7 @@ function reportRun(result: RunResult, models: readonly ModelEntry[], io: CliIo):
  * run to block and refuses instead — there is nothing yet to attach a blocker to. The
  * condition is nevertheless an external dependency and not a judgment about the request, and
  * reporting it as a plain refusal would tell an operator their request was inadmissible when
- * the truth is that AgentOS could not reach a model. Every kernel function still ran, no work
+ * the truth is that Intentra could not reach a model. Every kernel function still ran, no work
  * item was admitted and no run was started, so nothing advanced.
  *
  * The kernel's own `detail` is the evidence rather than a guess about it: `work()` returns the
@@ -467,7 +467,7 @@ function externalDependency(result: RunResult, models: readonly ModelEntry[]): s
  * A question asked into a pipe would sit unanswered until the policy window closed, so a
  * non-interactive invocation does not ask at all and the ladder records a rung it could not
  * climb. Both paths return `null` for "no answer", and neither ever supplies one: an answer
- * AgentOS invented would be the single input the design says a model may never provide.
+ * Intentra invented would be the single input the design says a model may never provide.
  */
 export function terminalOperator(): OperatorPrompt {
   if (!process.stdin.isTTY) return UNATTENDED_OPERATOR;

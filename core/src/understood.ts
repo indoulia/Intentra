@@ -7,10 +7,10 @@ import {
   type UnknownRecord,
   type WorkItem,
   type WorkflowTemplate,
-} from '@agentos/contracts';
-import type { PolicySet } from '@agentos/policies';
-import { predicateOf } from '@agentos/policies';
-import type { CheckOutcome } from '@agentos/contracts';
+} from '@intentra/contracts';
+import type { PolicySet } from '@intentra/policies';
+import { predicateOf } from '@intentra/policies';
+import type { CheckOutcome } from '@intentra/contracts';
 import type { PredicateEvaluator, PredicateInputs } from './predicates.js';
 
 /**

@@ -4,8 +4,8 @@ import {
   fixtures as fx,
   type HandoffEnvelope,
   type ViolationCode,
-} from '@agentos/contracts';
-import { loadPolicies } from '@agentos/policies';
+} from '@intentra/contracts';
+import { loadPolicies } from '@intentra/policies';
 import { checkCrossFields, type CrossFieldContext } from '../src/crossfield.js';
 
 /**

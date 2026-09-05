@@ -8,8 +8,8 @@ import type {
   SkillOffer,
   StageDescriptor,
   Violation,
-} from '@agentos/contracts';
-import type { SkillRequest } from '@agentos/registries';
+} from '@intentra/contracts';
+import type { SkillRequest } from '@intentra/registries';
 
 /**
  * Selection and recording.
@@ -305,7 +305,7 @@ export function meetsRequirement(
  * ranking comes from the registry; the choice and its recording are the kernel's. Escalation
  * is bounded at one per dispatch and is recorded with its trigger.
  *
- * Degradation is explicit: if the preferred model is unavailable, AgentOS may proceed on a
+ * Degradation is explicit: if the preferred model is unavailable, Intentra may proceed on a
  * lesser one **only** for work whose precision requirement it still meets. Otherwise the run
  * blocks — proceeding on an inadequate model and reporting the result as normal is a form of
  * dishonesty the evidence model exists to prevent.

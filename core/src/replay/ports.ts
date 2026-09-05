@@ -32,14 +32,14 @@ import {
   type ToolGrant,
   type ToolSurfaceReport,
   type WorkItem,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 import { argsKey, recordedCall, type ReplayFixture } from './fixture.js';
 
 /**
  * The ports a replay runs over.
  *
  * Every one of them answers from what was recorded and reaches nothing. That is the whole
- * point of `agentos replay`: the kernel's behaviour is a function of the envelopes it was
+ * point of `intentra replay`: the kernel's behaviour is a function of the envelopes it was
  * given, and a replay proves it by removing every other input. A recorded port that cannot
  * answer says so — it does not invent an answer, because an invented answer would make the
  * replay agree with the kernel for the wrong reason.

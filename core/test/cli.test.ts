@@ -9,7 +9,7 @@ import { FixtureError, loadFixture } from '../src/replay/fixture.js';
 import { replayFixture } from '../src/replay/run.js';
 
 /**
- * The CLI, and `agentos replay` under it.
+ * The CLI, and `intentra replay` under it.
  *
  * `replay` drives the entire kernel from recorded envelopes, which is what makes it the
  * driver for the end-to-end scenarios and the way a run is re-examined after it happened.
@@ -31,7 +31,7 @@ after(() => {
 });
 
 function tempRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), 'agentos-cli-'));
+  const root = mkdtempSync(join(tmpdir(), 'intentra-cli-'));
   roots.push(root);
   return root;
 }
@@ -164,7 +164,7 @@ describe('a replay fixture is untrusted input', () => {
 
 /* ================================================================== the replay ==== */
 
-describe('agentos replay drives the whole kernel from recorded envelopes', () => {
+describe('intentra replay drives the whole kernel from recorded envelopes', () => {
   test('the recorded run reaches COMPLETION and the DoD judges it', async () => {
     const outcome = await replayFixture(FIXTURE, { stateRoot: tempRoot() });
     assert.deepEqual(
@@ -212,7 +212,7 @@ describe('agentos replay drives the whole kernel from recorded envelopes', () =>
 
     const narrated = capture(root);
     assert.equal(await main(['narrate', outcome.result.workItemId], narrated.io), 0);
-    assert.match(narrated.out.join('\n'), /What AgentOS decided the work was, and why/);
+    assert.match(narrated.out.join('\n'), /What Intentra decided the work was, and why/);
   });
 
   test('an envelope answering a stale dispatch is not what a replay tests', async () => {
@@ -278,7 +278,7 @@ describe('the command line', () => {
   test('no command prints usage and fails, so a bare invocation is not a no-op', async () => {
     const cli = capture();
     assert.equal(await main([], cli.io), 1);
-    assert.match(cli.out.join('\n'), /usage: agentos <command>/);
+    assert.match(cli.out.join('\n'), /usage: intentra <command>/);
   });
 
   test('help succeeds and lists every command that exists', async () => {
@@ -323,7 +323,7 @@ describe('the command line', () => {
   test('narrate with no work item id is refused with what to do instead', async () => {
     const cli = capture();
     assert.equal(await main(['narrate'], cli.io), 2);
-    assert.match(cli.err.join('\n'), /agentos status/);
+    assert.match(cli.err.join('\n'), /intentra status/);
   });
 
   test('status on a work item that does not exist says that, and does not invent one', async () => {
@@ -345,6 +345,6 @@ describe('the command line', () => {
     assert.equal(code, 1, 'the exit code follows the run outcome, so a script can branch on it');
     assert.match(text, /outcome\s+BLOCKED/);
     assert.match(text, /envelopes\s+01-resolution\.json/);
-    assert.match(text, /What AgentOS decided the work was, and why/);
+    assert.match(text, /What Intentra decided the work was, and why/);
   });
 });

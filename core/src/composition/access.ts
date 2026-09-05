@@ -1,4 +1,4 @@
-import type { AdapterAvailability, Classification } from '@agentos/contracts';
+import type { AdapterAvailability, Classification } from '@intentra/contracts';
 
 /**
  * The access classes a run holds, derived from what the adapters were observed to reach.
@@ -28,7 +28,7 @@ export type AccessClass = 'repository' | 'git' | 'project_management' | 'runtime
 /**
  * Which adapter family establishes which access class.
  *
- * `host` is deliberately absent. The host adapter is available whenever AgentOS is running —
+ * `host` is deliberately absent. The host adapter is available whenever Intentra is running —
  * it is the host — so mapping it to an access class would put a member in the set that says
  * nothing about what this run can reach.
  */

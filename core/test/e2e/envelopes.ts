@@ -7,7 +7,7 @@ import {
   type ResolutionAlternative,
   type WorkItemType,
   type WorkflowProposal,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 
 /**
  * The envelopes the scripted substrate hands back, built for a *real* repository.

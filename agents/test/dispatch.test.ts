@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { fixtures as fx, type ContextSectionName, type InputPackage } from '@agentos/contracts';
-import { loadPolicies } from '@agentos/policies';
+import { fixtures as fx, type ContextSectionName, type InputPackage } from '@intentra/contracts';
+import { loadPolicies } from '@intentra/policies';
 import {
   buildInputPackage,
   materializeSections,

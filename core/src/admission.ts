@@ -15,9 +15,9 @@ import {
   type WorkItem,
   type WorkItemPolicy,
   type WorkItemType,
-} from '@agentos/contracts';
-import type { CheckOutcome } from '@agentos/contracts';
-import type { PolicySet } from '@agentos/policies';
+} from '@intentra/contracts';
+import type { CheckOutcome } from '@intentra/contracts';
+import type { PolicySet } from '@intentra/policies';
 import { pathMatches, scopesIntersect } from './predicates.js';
 import type { VerificationReport } from './evidence-verification.js';
 
@@ -40,7 +40,7 @@ import type { VerificationReport } from './evidence-verification.js';
  * `work_item_admitted`, `understood_computed` and `workflow_admitted` events carry, so a
  * second definition here would be a second definition of a logged shape.
  */
-export type { CheckOutcome } from '@agentos/contracts';
+export type { CheckOutcome } from '@intentra/contracts';
 
 /** How the external identity resolved, through the adapter and not from the claim. */
 export type IdentityResolution =
@@ -111,7 +111,7 @@ export type AdmissionResult =
      * What resolution decided the work *is*, carried out of admission because the `WorkItem`
      * contract has no field for it.
      *
-     * The narrative's v0.3 obligation is to state what AgentOS decided the work was and why
+     * The narrative's v0.3 obligation is to state what Intentra decided the work was and why
      * ([WORKFLOW_STATE_MACHINE.md](../../docs/WORKFLOW_STATE_MACHINE.md) section 8), and an
      * intent nothing durable records is an obligation nothing can discharge. It is written to
      * the work-item event log instead. **This is a contract gap**, reported rather than fixed
@@ -702,7 +702,7 @@ export function admitWorkItem(input: AdmissionInput): AdmissionResult {
         reason:
           `the intake named ${input.identity.identity}, the source is reachable, and no such `
           + 'item exists. The key is wrong, and a human should hear that rather than watch '
-          + 'AgentOS work on a guess',
+          + 'Intentra work on a guess',
         checks,
       };
     default:

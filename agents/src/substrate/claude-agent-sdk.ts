@@ -18,7 +18,7 @@ import {
   type ToolGrant,
   type ToolInvoker,
   type ToolSurfaceReport,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 import { renderDispatchBrief, renderSystemSpecification } from '../dispatch/brief.js';
 import { parseEnvelope } from '../dispatch/envelope.js';
 import { isSpawningToolName } from '../dispatch/tool-grants.js';
@@ -39,7 +39,7 @@ import type {
  *
  * ARCHITECTURE_FREEZE D-2 selects the Claude Agent SDK and attaches a binding condition,
  * because the SDK is the Claude Code harness as a library: it arrives with built-in file,
- * shell, search and web tools and with subagent spawning, and AgentOS requires the opposite
+ * shell, search and web tools and with subagent spawning, and Intentra requires the opposite
  * posture. Making it satisfy that is a *subtraction* problem, and subtraction fails open — a
  * future SDK version that adds a built-in tool silently widens every agent's reach unless the
  * kernel is configured to allow rather than to deny. So the condition, stated as three rules
@@ -492,7 +492,7 @@ export function permitTool(
   return {
     behavior: 'deny',
     message:
-      `${toolName} is not one of the operations this dispatch was granted. AgentOS exposes an `
+      `${toolName} is not one of the operations this dispatch was granted. Intentra exposes an `
       + 'allowlist, and everything outside it is refused.',
     interrupt: true,
   };
@@ -565,7 +565,7 @@ class ClaudeCodeSession implements TransportSession {
      * configuration home is per-dispatch so that no session state can outlive the dispatch
      * that produced it even if a future SDK wrote some despite `persistSession: false`.
      */
-    const sandbox = await mkdtemp(join(tmpdir(), 'agentos-dispatch-'));
+    const sandbox = await mkdtemp(join(tmpdir(), 'intentra-dispatch-'));
     this.#sandbox = sandbox;
     const cwd = join(sandbox, 'cwd');
     const configHome = join(sandbox, 'config');
@@ -620,7 +620,7 @@ class ClaudeCodeSession implements TransportSession {
           /*
            * The server instance is this file's own. `createSdkMcpServer` and `tool()` take a
            * Zod raw shape for `inputSchema`, and `ToolGrant.args_schema` is JSON Schema —
-           * the source of truth for every shape in AgentOS. Converting it would need a Zod
+           * the source of truth for every shape in Intentra. Converting it would need a Zod
            * dependency this package does not have and may not add, and declaring the tools
            * with an empty shape would drop the arguments entirely, because an empty Zod
            * object strips unknown keys. `McpServerConfig` admits an instance directly, so

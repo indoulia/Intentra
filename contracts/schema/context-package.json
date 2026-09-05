@@ -36,7 +36,7 @@
     "constraints": { "$ref": "#/$defs/section" },
     "authorization": { "$ref": "#/$defs/section" },
     "gaps": {
-      "description": "A first-class section, not a footnote. What AgentOS does not know is as operationally important as what it does.",
+      "description": "A first-class section, not a footnote. What Intentra does not know is as operationally important as what it does.",
       "type": "array",
       "items": { "$ref": "finding.json#/$defs/unknown" }
     }

@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { fixtures as fx } from '@agentos/contracts';
-import type { Assertion, CapabilityRecord, ReconciliationState } from '@agentos/contracts';
+import { fixtures as fx } from '@intentra/contracts';
+import type { Assertion, CapabilityRecord, ReconciliationState } from '@intentra/contracts';
 import {
   buildCapabilityMatrix,
   INTENT_KEYS,
@@ -30,7 +30,7 @@ import {
  * The second thing under test is the authority rule. Each source is authoritative about its own
  * subject and nothing else, and where two disagree the rule selects the value **and the
  * disagreement is still recorded**. A reconciliation that took git's answer and moved on would
- * throw away the only sign that AgentOS believes something the world does not.
+ * throw away the only sign that Intentra believes something the world does not.
  */
 
 function session(): ProbeSession {
@@ -112,7 +112,7 @@ describe('the work-item reconciliation reaches every state it needs to', () => {
       intent: intent({ claims_completion: known(true) }),
       workItem: null,
     })],
-    ['CONFLICTING', 'AgentOS logged a pull request git does not have', () => reconcileWorkItem({
+    ['CONFLICTING', 'Intentra logged a pull request git does not have', () => reconcileWorkItem({
       reality: reality({
         agentos_history: known([{ run_id: 'r1', stages_completed: ['PR_PREPARATION'] }]),
       }),
@@ -437,7 +437,7 @@ describe('the ticket claim survives the whole way from the probe to the verdict'
    * End to end through the real project-management probe, deliberately. The reconciler keys
    * CLAIMED_DONE_UNPROVEN on one assertion the probe writes, and a disagreement about that key
    * would not fail loudly: the verdict would quietly become INTENT_ONLY, and the most valuable
-   * finding AgentOS produces would stop being computed with nobody noticing. Driving it through
+   * finding Intentra produces would stop being computed with nobody noticing. Driving it through
    * the probe is what stops the two drifting apart.
    */
   async function verdictFor(world: Parameters<typeof serviceOver>[0]) {

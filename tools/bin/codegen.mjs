@@ -219,7 +219,7 @@ for (const [base, schema] of schemas) {
 const generated = `${out.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()}\n`;
 
 /*
- * The schema documents are embedded rather than read from disk. `@agentos/contracts` does no
+ * The schema documents are embedded rather than read from disk. `@intentra/contracts` does no
  * I/O — all outside-world access goes through adapters, and a package that reads its own
  * schema files off the filesystem would be a second, quieter exception to that rule.
  */
@@ -228,7 +228,7 @@ schemaOut.push('/*');
 schemaOut.push(' * GENERATED FILE - DO NOT EDIT.');
 schemaOut.push(' *');
 schemaOut.push(' * The schema documents from contracts/schema/*.json, embedded so that');
-schemaOut.push(' * `@agentos/contracts` needs neither a filesystem nor a dependency to validate.');
+schemaOut.push(' * `@intentra/contracts` needs neither a filesystem nor a dependency to validate.');
 schemaOut.push(' * Produced by `npm run codegen`.');
 schemaOut.push(' */');
 schemaOut.push('');

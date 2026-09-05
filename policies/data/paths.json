@@ -3,7 +3,7 @@
   "deny": [
     {
       "id": "agentos_installation",
-      "description": "The AgentOS installation directory. An agent that can edit the kernel can bypass every check in it.",
+      "description": "The Intentra installation directory. An agent that can edit the kernel can bypass every check in it.",
       "kind": "installation_relative",
       "patterns": ["**"]
     },

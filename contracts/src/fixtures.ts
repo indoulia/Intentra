@@ -475,7 +475,7 @@ export function mutationEvent(overrides: Partial<MutationEvent> = {}): MutationE
     dispatch_id: 'd_001',
     adapter: 'git',
     op: 'commit',
-    target: 'worktree/agentos-run-000001',
+    target: 'worktree/intentra-run-000001',
     before: { head: '9f2c1ab' },
     after: { head: '4de0117' },
     reversal: { op: 'reset_hard', args: { to: '9f2c1ab' } },

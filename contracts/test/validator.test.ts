@@ -6,7 +6,7 @@ import type { JsonSchemaObject } from '../src/validator/types.js';
 /**
  * Tests for the validator itself.
  *
- * Everything else in AgentOS rests on this: if the validator accepts something a schema
+ * Everything else in Intentra rests on this: if the validator accepts something a schema
  * forbids, every check built on the schema is decorative. So each supported keyword is
  * tested in both directions, and the keywords the validator refuses to support are tested
  * to be refused at load rather than ignored at validation — a constraint nobody enforces is

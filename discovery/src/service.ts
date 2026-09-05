@@ -13,7 +13,7 @@ import type {
   RealityElement,
   Scope,
   WorkItem,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 import type { FreshnessWindows, Promotion } from './assertions.js';
 import { inlineEvidence } from './assertions.js';
 import { assemble, ASSERTION_SECTIONS, REALITY_ELEMENTS } from './package.js';

@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { fixtures as fx } from '@agentos/contracts';
-import type { ContextPackage } from '@agentos/contracts';
+import { fixtures as fx } from '@intentra/contracts';
+import type { ContextPackage } from '@intentra/contracts';
 import { DiscoveryService, REALITY_ELEMENTS, realityProbeFor } from '../src/index.js';
 import { assertValidPackage, reasonOf, serviceOver } from './helpers.js';
 import {
@@ -120,7 +120,7 @@ describe('the reality set is written only by probes', () => {
     assert.equal(context.current_reality.tests_present.value, false);
   });
 
-  test("agentos_history is read from AgentOS's ledger and carries the completed stages", async () => {
+  test("agentos_history is read from Intentra's ledger and carries the completed stages", async () => {
     const context = await deepenOver();
     const runs = context.current_reality.agentos_history.value as ReadonlyArray<Record<string, unknown>>;
     assert.equal(context.current_reality.agentos_history.confidence, 'FACT');
@@ -138,7 +138,7 @@ describe('the reality set is written only by probes', () => {
     assert.equal(
       children[0]?.['lifecycle'],
       'UNKNOWN',
-      "a ticket's own status is not an AgentOS lifecycle",
+      "a ticket's own status is not an Intentra lifecycle",
     );
   });
 });

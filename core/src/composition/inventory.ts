@@ -4,8 +4,8 @@ import {
   type SkillEntry,
   type ValidationError,
   type ValidationResult,
-} from '@agentos/contracts';
-import type { HostInventory } from '@agentos/adapters';
+} from '@intentra/contracts';
+import type { HostInventory } from '@intentra/adapters';
 
 /**
  * What this host offers beyond the worktree: models, global skills, built-in tools.

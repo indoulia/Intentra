@@ -5,7 +5,7 @@ import type {
   RealityElement,
   Scope,
   WorkItem,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 import type { FreshnessClass } from './assertions.js';
 import type { ProbeSession } from './session.js';
 

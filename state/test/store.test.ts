@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fixtures as fx, validators, type Event } from '@agentos/contracts';
+import { fixtures as fx, validators, type Event } from '@intentra/contracts';
 import { NdjsonLog, RunStore, StoreError, LogError } from '../src/index.js';
 
 /**
@@ -18,7 +18,7 @@ let root: string;
 let store: RunStore;
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), 'agentos-state-'));
+  root = mkdtempSync(join(tmpdir(), 'intentra-state-'));
   store = new RunStore(root);
 });
 

@@ -7,8 +7,8 @@ import {
   type Evidence,
   type ProposedWorkItem,
   type Scope,
-} from '@agentos/contracts';
-import { loadPolicies } from '@agentos/policies';
+} from '@intentra/contracts';
+import { loadPolicies } from '@intentra/policies';
 import {
   admitWorkItem,
   checkTypeEvidence,
@@ -425,11 +425,11 @@ describe('the proposal\'s dependencies and parent reach the admitted record', ()
 
 /* ================================================ A7: the intent is recorded ==== */
 
-describe('what AgentOS decided the work was is carried out of admission', () => {
+describe('what Intentra decided the work was is carried out of admission', () => {
   test('the intent assertion and the resolver\'s confidence survive admission', async () => {
     /*
      * The `WorkItem` contract carries no `intent` field — a contract gap, reported rather than
-     * fixed by widening `contracts/`. The narrative's v0.3 obligation is to state what AgentOS
+     * fixed by widening `contracts/`. The narrative's v0.3 obligation is to state what Intentra
      * decided the work was and why, and an intent that never leaves admission is an obligation
      * nothing can discharge. It leaves here and is written to the work-item event log.
      */

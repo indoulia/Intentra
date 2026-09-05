@@ -1,8 +1,8 @@
 /**
  * The dependency rule, enforced.
  *
- * Package manifests already state most of it — `@agentos/agents` cannot import
- * `@agentos/core` because it does not declare it. These rules cover what a manifest cannot
+ * Package manifests already state most of it — `@intentra/agents` cannot import
+ * `@intentra/core` because it does not declare it. These rules cover what a manifest cannot
  * express: `contracts -> anything`, and `core -> agents` anywhere but the composition root.
  *
  * KERNEL_BOUNDARY section 2 is the source. A change that breaks one of these is a change to

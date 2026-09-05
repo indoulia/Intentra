@@ -1,8 +1,8 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { validators } from '@agentos/contracts';
-import type { Classification, GateDefinition } from '@agentos/contracts';
+import { validators } from '@intentra/contracts';
+import type { Classification, GateDefinition } from '@intentra/contracts';
 import {
   AdapterFramework,
   DANGEROUS_VALUE,

@@ -124,7 +124,7 @@ export const SCHEMA_IDS: readonly string[] = Object.freeze(
 /**
  * The stages a template may contain that do not mutate authoritative state.
  *
- * At stage granularity `mutating` means authoritative state *outside AgentOS's own ledger*
+ * At stage granularity `mutating` means authoritative state *outside Intentra's own ledger*
  * (WORKFLOW_STATE_MACHINE 2.3, amendment A-12): every stage writes run state, so a flag that
  * counted the ledger would be true for all twenty and would gate nothing. `COMPLETION`
  * writes the outcome record and the work item lifecycle and touches nothing else.

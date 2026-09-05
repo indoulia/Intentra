@@ -11,8 +11,8 @@ import type {
   Stage,
   TrustClass,
   Violation,
-} from '@agentos/contracts';
-import type { PolicySet } from '@agentos/policies';
+} from '@intentra/contracts';
+import type { PolicySet } from '@intentra/policies';
 import { globToRegExp } from './reconciliation.js';
 
 /**
@@ -370,7 +370,7 @@ export interface RequestInput {
  * A human cannot authorize what they cannot evaluate, so the draft's every field survives
  * into the record: what will happen, why, the blast radius, the reversibility and whether it
  * has been verified, the evidence *including what was not validated*, the unknowns that bear
- * on the decision, the alternatives including doing nothing, and AgentOS's own
+ * on the decision, the alternatives including doing nothing, and Intentra's own
  * recommendation stated plainly.
  *
  * A request that oversells its confidence to get a yes has broken the only mechanism
@@ -549,7 +549,7 @@ export function gateClassifier(policies: PolicySet): GateClassifierPort {
 /**
  * Has this gate already been denied for this work item?
  *
- * Denial moves the run to `BLOCKED` with the denial recorded, and AgentOS does not re-request
+ * Denial moves the run to `BLOCKED` with the denial recorded, and Intentra does not re-request
  * the same gate without new information — **nor in a later run against the same Work Item**.
  * Denials are recorded at the work item level precisely so that starting a fresh Workflow Run
  * is not a way to ask again. A denial is cleared by new information or by a human revisiting

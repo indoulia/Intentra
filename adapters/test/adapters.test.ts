@@ -2,8 +2,8 @@ import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { validators } from '@agentos/contracts';
-import type { AdapterAvailability, Assertion } from '@agentos/contracts';
+import { validators } from '@intentra/contracts';
+import type { AdapterAvailability, Assertion } from '@intentra/contracts';
 import {
   ResourceAbsentError,
   createAdapterSuite,
@@ -533,7 +533,7 @@ describe('the degradation matrix', () => {
     const entry = framework.availability().find((a) => a.adapter === 'runtime');
     assert.match(
       entry?.detail ?? '', /at most PARTIAL, never PROVEN/,
-      'reduced access reduces the strength of claims AgentOS is allowed to make, and the '
+      'reduced access reduces the strength of claims Intentra is allowed to make, and the '
       + 'availability record is where that is stated',
     );
   });

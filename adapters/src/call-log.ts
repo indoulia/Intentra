@@ -1,5 +1,5 @@
-import { digest } from '@agentos/contracts';
-import type { BudgetPolicy, CallRecord, PathRefusal } from '@agentos/contracts';
+import { digest } from '@intentra/contracts';
+import type { BudgetPolicy, CallRecord, PathRefusal } from '@intentra/contracts';
 
 /**
  * The call log: every adapter call, reads included.

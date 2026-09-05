@@ -5,8 +5,8 @@ import {
   type ResolutionAlternative,
   type UnknownRecord,
   type WorkflowTemplate,
-} from '@agentos/contracts';
-import { loadPolicies, type PolicySet } from '@agentos/policies';
+} from '@intentra/contracts';
+import { loadPolicies, type PolicySet } from '@intentra/policies';
 import {
   climbLadder,
   commonSafePrefix,
@@ -252,7 +252,7 @@ describe('rung 3 — proceed along the common safe prefix', () => {
       alternatives: [alternative()],
     });
     assert.equal(result.rung, 'SAFE_PREFIX');
-    assert.deepEqual(recorded.asked, [], 'AgentOS proceeds without knowing the answer');
+    assert.deepEqual(recorded.asked, [], 'Intentra proceeds without knowing the answer');
     if (result.rung !== 'SAFE_PREFIX') throw new Error('unreachable');
     assert.ok(result.prefix.length > 0);
   });
@@ -260,7 +260,7 @@ describe('rung 3 — proceed along the common safe prefix', () => {
 
 /* ================================================================= rung 4: ask ==== */
 
-describe('rung 4 — one question, both readings, and what AgentOS would do under each', () => {
+describe('rung 4 — one question, both readings, and what Intentra would do under each', () => {
   test('the question is built from alternatives[].reading and .would_do', () => {
     /*
      * `alternatives[]` was never consulted anywhere, so rung 4's question could not be built —
@@ -276,13 +276,13 @@ describe('rung 4 — one question, both readings, and what AgentOS would do unde
     assert.ok(built !== null);
     assert.equal(built.readings.length, 2, 'the admitted reading is one of the candidates');
     for (const reading of built.readings) {
-      assert.ok(reading.would_do.length > 0, 'what AgentOS would do under each');
+      assert.ok(reading.would_do.length > 0, 'what Intentra would do under each');
     }
     assert.match(built.question, /Which reading is right\?/);
     assert.match(
       built.question,
-      /not a request for context AgentOS could discover/,
-      'the human discriminates; they are never asked to supply context AgentOS could discover',
+      /not a request for context Intentra could discover/,
+      'the human discriminates; they are never asked to supply context Intentra could discover',
     );
   });
 

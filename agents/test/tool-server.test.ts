@@ -13,7 +13,7 @@ import { GRANTS } from './doubles.js';
  *
  * This is the piece D-2's condition was most at risk on. The Agent SDK's own
  * `createSdkMcpServer` / `tool()` helpers take a Zod raw shape for `inputSchema`, and
- * `ToolGrant.args_schema` is JSON Schema — the source of truth for every shape in AgentOS.
+ * `ToolGrant.args_schema` is JSON Schema — the source of truth for every shape in Intentra.
  * Declaring the tools with an empty shape would have dropped the arguments entirely, so the
  * server is this file's own and the schema is handed over exactly as the adapter declared
  * it. These tests are what say that is still true.

@@ -6,7 +6,7 @@ import {
   type ToolGrant,
   type ToolInvoker,
   type ToolSurfaceReport,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 
 /**
  * A substrate with no substrate behind it.

@@ -12,12 +12,12 @@ import {
   type Locator,
   type ModelEntry,
   type SkillEntry,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 
 /**
  * A recorded run, on disk.
  *
- * `agentos replay <fixture-dir>` drives the whole kernel from one of these: no model, no
+ * `intentra replay <fixture-dir>` drives the whole kernel from one of these: no model, no
  * network and no repository. It is the tool that answers "what would the kernel do with these
  * envelopes", which is how a run is re-audited after the fact and how the kernel's own
  * behaviour is checked against recorded agent output — including the malformed, the

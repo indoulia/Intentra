@@ -6,7 +6,7 @@ import {
   type Event,
   type HandoffEnvelope,
   type Stage,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 import { Kernel, type StartInput } from '../src/kernel.js';
 import {
   auditEnvelope,
@@ -418,7 +418,7 @@ describe('a read-only run, end to end, with no model and no repository', () => {
 
   test('the run ends BLOCKED with INDETERMINATE, because a read-only run cannot demonstrate a fix', async () => {
     /*
-     * The honest outcome, and worth asserting precisely. A read-only AgentOS asked to correct
+     * The honest outcome, and worth asserting precisely. A read-only Intentra asked to correct
      * a typo can audit and cannot demonstrate the correction, so the DoD computes
      * INDETERMINATE and names the criteria it could not check. Reporting that as COMPLETE
      * would be the one thing DEFINITION_OF_DONE section 5 forbids: "we could not check" and
@@ -459,7 +459,7 @@ describe('a read-only run, end to end, with no model and no repository', () => {
     );
   });
 
-  test('the narrative states what AgentOS decided the work was and why', async () => {
+  test('the narrative states what Intentra decided the work was and why', async () => {
     /*
      * Not a later nicety. This is the stated mitigation for v0.3's residual risk: a run that
      * did the wrong thing correctly is invisible without it.
@@ -467,8 +467,8 @@ describe('a read-only run, end to end, with no model and no repository', () => {
     const h = rig({ script: goodScript() });
     const result = await new Kernel(h.ports).work(start());
     const narrative = result.narrative;
-    assert.match(narrative, /^## What AgentOS decided the work was, and why/);
-    assert.match(narrative, /\*\*AgentOS decided this is a TASK\*\*/);
+    assert.match(narrative, /^## What Intentra decided the work was, and why/);
+    assert.match(narrative, /\*\*Intentra decided this is a TASK\*\*/);
     assert.match(narrative, /the outcome it is pursuing:/);
     assert.match(narrative, /verbatim: "Fix typo in README\."/);
     assert.match(narrative, /## What reality it found/);

@@ -100,7 +100,7 @@ const DEPENDENCY_TABLE = {
  * substrate is a real transport that has to be depended on rather than described. It is
  * confined to the package whose job is agent execution, and to the one file inside it that
  * D-2's reversal clause wants swapping to be a change to. Every other package stays on the
- * dependency table exactly, so "AgentOS depends on nothing but its own contracts" remains
+ * dependency table exactly, so "Intentra depends on nothing but its own contracts" remains
  * true everywhere it was true before.
  */
 const EXTERNAL_DEPENDENCIES = new Map([
@@ -118,7 +118,7 @@ check(
       const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
       const external = EXTERNAL_DEPENDENCIES.get(pkg) ?? [];
       const all = Object.keys(manifest.dependencies ?? {});
-      const unpermitted = all.filter((d) => !d.startsWith('@agentos/') && !external.includes(d));
+      const unpermitted = all.filter((d) => !d.startsWith('@intentra/') && !external.includes(d));
       if (unpermitted.length > 0) {
         problems.push(
           `${pkg}: declares third-party dependencies with no recorded decision permitting `
@@ -126,8 +126,8 @@ check(
         );
       }
       const declared = all
-        .filter((d) => d.startsWith('@agentos/'))
-        .map((d) => d.replace('@agentos/', ''))
+        .filter((d) => d.startsWith('@intentra/'))
+        .map((d) => d.replace('@intentra/', ''))
         .sort();
       const want = [...allowed].sort();
       if (declared.join(',') !== want.join(',')) {
@@ -159,7 +159,7 @@ check(
 );
 
 check(
-  'no package declares @agentos/core except none',
+  'no package declares @intentra/core except none',
   'KERNEL_BOUNDARY dependency rule 1',
   () => {
     const offenders = [];
@@ -167,9 +167,9 @@ check(
       const manifestPath = join(ROOT, pkg, 'package.json');
       if (!existsSync(manifestPath)) continue;
       const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-      if ('@agentos/core' in (manifest.dependencies ?? {})) offenders.push(pkg);
+      if ('@intentra/core' in (manifest.dependencies ?? {})) offenders.push(pkg);
     }
-    return offenders.length === 0 ? true : `${offenders.join(', ')} declare @agentos/core`;
+    return offenders.length === 0 ? true : `${offenders.join(', ')} declare @intentra/core`;
   },
 );
 
@@ -185,7 +185,7 @@ const IO_MODULES = /from '(node:fs|node:fs\/promises|node:child_process|node:htt
  */
 const IO_EXCEPTIONS = new Map([
   ['policies/src/data-source.ts',
-    "decision I-11: the policy loader reads AgentOS's own installation at startup, and "
+    "decision I-11: the policy loader reads Intentra's own installation at startup, and "
     + 'routing it through the adapters would be circular because path confinement reads '
     + 'paths.json. Confined to the policy data root, and it is one file.'],
   ['agents/src/substrate/claude-agent-sdk.ts',
@@ -350,11 +350,11 @@ check(
 /* ------------------------------------------------------------- principle 17: agnostic -- */
 
 check(
-  'no product-specific identifier is compiled into AgentOS',
+  'no product-specific identifier is compiled into Intentra',
   'AGENTOS_PRINCIPLES 17',
   () => {
     /*
-     * "Any product-specific identifier appearing in AgentOS code or policy is a bug."
+     * "Any product-specific identifier appearing in Intentra code or policy is a bug."
      * The names below are the ones the frozen documents use as *examples* of a target
      * repository, which makes them exactly the ones most likely to be copied into code.
      */

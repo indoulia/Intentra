@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { fixtures as fx } from '@agentos/contracts';
-import type { ContextPackage } from '@agentos/contracts';
+import { fixtures as fx } from '@intentra/contracts';
+import type { ContextPackage } from '@intentra/contracts';
 import { REALITY_ELEMENTS } from '../src/index.js';
 import {
   assertValidPackage,
@@ -15,7 +15,7 @@ import { healthyWorld, misleadingWorkItem, withAvailability } from './worlds.js'
 /**
  * Degradation: what the package says when it cannot see.
  *
- * "The pattern throughout: reduced access reduces the strength of claims AgentOS is allowed to
+ * "The pattern throughout: reduced access reduces the strength of claims Intentra is allowed to
  * make. It never reduces honesty about them" ([REPOSITORY_ADAPTER.md](../../docs/REPOSITORY_ADAPTER.md)
  * section 4). Two failures are being guarded against, and they are opposites. One is a package
  * that quietly reports a shorter list and looks complete. The other is a package so full of
@@ -68,7 +68,7 @@ describe('an absent source and a broken source are different outcomes', () => {
       'DENIED',
     );
     assert.match(attemptedOf(context.runtime_state['environments']), /reachable and denied/);
-    assert.match(recoverableOf(context.runtime_state['environments']), /grant AgentOS read access/);
+    assert.match(recoverableOf(context.runtime_state['environments']), /grant Intentra read access/);
   });
 
   test('an operation the adapter does not offer is not an absent source', async () => {

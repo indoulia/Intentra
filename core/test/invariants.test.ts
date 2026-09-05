@@ -28,8 +28,8 @@ import {
   type Violation,
   type ViolationCode,
   type WorkflowProposal,
-} from '@agentos/contracts';
-import { loadPolicies, type PolicySet } from '@agentos/policies';
+} from '@intentra/contracts';
+import { loadPolicies, type PolicySet } from '@intentra/policies';
 import {
   AdapterFramework,
   DescriptorRegistry,
@@ -48,8 +48,8 @@ import {
   type MutationSink,
   type OperationRegistration,
   type PathVerdict,
-} from '@agentos/adapters';
-import { RunStore } from '@agentos/state';
+} from '@intentra/adapters';
+import { RunStore } from '@intentra/state';
 import { receiveEnvelope, type ReceiptInput, type ReceiptResult } from '../src/receipt.js';
 import { reconcile } from '../src/reconciliation.js';
 import { verifyEvidence } from '../src/evidence-verification.js';
@@ -163,7 +163,7 @@ interface Scratch {
   file(relativePath: string, content: string): void;
 }
 
-function scratch(prefix = 'agentos-invariants-'): Scratch {
+function scratch(prefix = 'intentra-invariants-'): Scratch {
   const root = mkdtempSync(join(tmpdir(), prefix));
   const worktree = join(root, 'worktree');
   mkdirSync(worktree, { recursive: true });
@@ -524,7 +524,7 @@ function graphOf(templateId: string, set: PolicySet = policies): FrozenGraph {
   };
 }
 
-/** A prior AgentOS run, from AgentOS's own ledger: the only honest "this stage happened". */
+/** A prior Intentra run, from Intentra's own ledger: the only honest "this stage happened". */
 function priorRun(stages: readonly string[]) {
   return fx.factAssertion(
     [{ run_id: 'run_20260903T090000Z_0000aa', outcome: 'BLOCKED', stages_completed: stages }],
@@ -643,7 +643,7 @@ describe('the invariant suite', () => {
         readFileSync(join(root, pkg, 'package.json'), 'utf8'),
       ) as { dependencies?: Record<string, string> };
       assert.ok(
-        !Object.keys(manifest.dependencies ?? {}).includes('@agentos/core'),
+        !Object.keys(manifest.dependencies ?? {}).includes('@intentra/core'),
         `${pkg}/package.json declares a dependency on the kernel`,
       );
 
@@ -656,7 +656,7 @@ describe('the invariant suite', () => {
       for (const file of typescriptFilesUnder(join(root, pkg, 'src'))) {
         const source = readFileSync(file, 'utf8');
         assert.ok(
-          !/from\s+'@agentos\/core/.test(source) && !/from\s+'[^']*\.\.\/core\//.test(source),
+          !/from\s+'@intentra\/core/.test(source) && !/from\s+'[^']*\.\.\/core\//.test(source),
           `${file} imports from the kernel. "Delete core/ and every agent still compiles" is `
           + 'the practical test for the dependency rule, and this import breaks it',
         );
@@ -677,7 +677,7 @@ describe('the invariant suite', () => {
 
   test('invariant 2 — state isolation: an agent write under state/, policies/ or contracts/ is denied inside the worktree', async () => {
     /*
-     * The shape that actually threatens this: AgentOS working on its own repository, where
+     * The shape that actually threatens this: Intentra working on its own repository, where
      * `state/` genuinely does resolve inside the worktree and rules 1 and 2 both pass. Rule 3
      * is the one that holds when the root and the mandate are computed generously.
      */
@@ -1356,7 +1356,7 @@ describe('the invariant suite', () => {
     if (sweep.outcome !== 'ENTRY') throw new Error('unreachable');
     assert.deepEqual(
       [...sweep.completedPrior], ['AUDIT'],
-      'AgentOS\'s own ledger says the audit ran, so the stage is not re-entered',
+      'Intentra\'s own ledger says the audit ran, so the stage is not re-entered',
     );
     assert.match(
       sweep.walk.find((s) => s.decision === 'COMPLETED_PRIOR')?.reason ?? '',
@@ -1403,7 +1403,7 @@ describe('the invariant suite', () => {
   /* ------------------------------------------------------------------------ 14 ------ */
 
   test('invariant 14 — one active run: concurrent starts against one work item leave one winner, and the loser is told who', () => {
-    const root = mkdtempSync(join(tmpdir(), 'agentos-lease-'));
+    const root = mkdtempSync(join(tmpdir(), 'intentra-lease-'));
     cleanup.push(() => { rmSync(root, { recursive: true, force: true }); });
     const store = new RunStore(root);
     const workItemId = 'wi_c_contended';

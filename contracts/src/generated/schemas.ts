@@ -2,7 +2,7 @@
  * GENERATED FILE - DO NOT EDIT.
  *
  * The schema documents from contracts/schema/*.json, embedded so that
- * `@agentos/contracts` needs neither a filesystem nor a dependency to validate.
+ * `@intentra/contracts` needs neither a filesystem nor a dependency to validate.
  * Produced by `npm run codegen`.
  */
 
@@ -28,7 +28,7 @@ export const ADAPTER_SCHEMA: JsonSchemaObject = {
           "$ref": "common.json#/$defs/nonEmptyString"
         },
         "mutating": {
-          "description": "Does it change authoritative state: repository content, VCS refs, an external system, a data store, or AgentOS run state.",
+          "description": "Does it change authoritative state: repository content, VCS refs, an external system, a data store, or Intentra run state.",
           "type": "boolean"
         },
         "reversal": {
@@ -711,7 +711,7 @@ export const AUTHORIZATION_SCHEMA: JsonSchemaObject = {
           "const": "single_action"
         },
         "granted_by": {
-          "description": "The identifier the host asserted. AgentOS records it and refuses to proceed without one; inventing an authorizer is a security floor violation.",
+          "description": "The identifier the host asserted. Intentra records it and refuses to proceed without one; inventing an authorizer is a security floor violation.",
           "$ref": "common.json#/$defs/nonEmptyString"
         },
         "granted_at": {
@@ -856,7 +856,7 @@ export const CAPABILITY_SCHEMA: JsonSchemaObject = {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agentos.dev/schema/capability.json",
   "title": "Capability record, chain stage record and capability graph",
-  "description": "The capability is AgentOS's unit of truth. The registry's purpose is blunt: make disconnected architecture visible.",
+  "description": "The capability is Intentra's unit of truth. The registry's purpose is blunt: make disconnected architecture visible.",
   "$defs": {
     "chainStageRecord": {
       "description": "`implemented` without `connected` is an orphan. `connected` without `exercised` is a capability that exists only on paper.",
@@ -1281,7 +1281,7 @@ export const CAPABILITY_SCHEMA: JsonSchemaObject = {
 export const COMMON_SCHEMA: JsonSchemaObject = {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agentos.dev/schema/common.json",
-  "title": "AgentOS common vocabulary",
+  "title": "Intentra common vocabulary",
   "description": "The closed vocabularies every other contract draws on. Defined once so that two components cannot disagree about what a value means.",
   "$defs": {
     "id": {
@@ -1800,7 +1800,7 @@ export const CONTEXT_PACKAGE_SCHEMA: JsonSchemaObject = {
       "$ref": "#/$defs/section"
     },
     "gaps": {
-      "description": "A first-class section, not a footnote. What AgentOS does not know is as operationally important as what it does.",
+      "description": "A first-class section, not a footnote. What Intentra does not know is as operationally important as what it does.",
       "type": "array",
       "items": {
         "$ref": "finding.json#/$defs/unknown"
@@ -4275,7 +4275,7 @@ export const EVENT_SCHEMA: JsonSchemaObject = {
               "$ref": "common.json#/$defs/nonEmptyString"
             },
             "readings": {
-              "description": "One question, both readings, the evidence for each, and what AgentOS would do under each.",
+              "description": "One question, both readings, the evidence for each, and what Intentra would do under each.",
               "type": "array",
               "minItems": 2,
               "items": {
@@ -7070,7 +7070,7 @@ export const POLICY_SCHEMA: JsonSchemaObject = {
       "additionalProperties": false
     },
     "executionPolicy": {
-      "description": "policies/execution.json. Which risk classes this installation may execute. Milestone 1 is a read-only AgentOS that discovers and audits and mutates nothing, and this is where that is stated as data rather than as an absence of code: the mutation frameworks are built and no mutating operation is registered, and this file is what refuses a mutating workflow if one ever were.",
+      "description": "policies/execution.json. Which risk classes this installation may execute. Milestone 1 is a read-only Intentra that discovers and audits and mutates nothing, and this is where that is stated as data rather than as an absence of code: the mutation frameworks are built and no mutating operation is registered, and this file is what refuses a mutating workflow if one ever were.",
       "type": "object",
       "properties": {
         "version": {
@@ -7963,7 +7963,7 @@ export const WORK_ITEM_SCHEMA: JsonSchemaObject = {
           "$ref": "common.json#/$defs/nonEmptyString"
         },
         "would_do": {
-          "description": "What AgentOS would do under this reading. Rung 4 of the uncertainty ladder asks with this in hand.",
+          "description": "What Intentra would do under this reading. Rung 4 of the uncertainty ladder asks with this in hand.",
           "type": "string"
         }
       },
@@ -8008,7 +8008,7 @@ export const WORK_ITEM_SCHEMA: JsonSchemaObject = {
       "additionalProperties": false
     },
     "workItem": {
-      "description": "The durable thing AgentOS is trying to accomplish. It outlives every attempt.",
+      "description": "The durable thing Intentra is trying to accomplish. It outlives every attempt.",
       "type": "object",
       "properties": {
         "work_item_id": {

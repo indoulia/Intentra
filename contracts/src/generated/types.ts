@@ -21,7 +21,7 @@ export type AdapterOperationDescriptor = {
   readonly description: NonEmptyString;
   /**
    * Does it change authoritative state: repository content, VCS refs, an external system, a
-   * data store, or AgentOS run state.
+   * data store, or Intentra run state.
    */
   readonly mutating: boolean;
   /**
@@ -253,7 +253,7 @@ export type AuthorizationGrant = {
   readonly target: NonEmptyString;
   readonly scope: "single_action";
   /**
-   * The identifier the host asserted. AgentOS records it and refuses to proceed without one;
+   * The identifier the host asserted. Intentra records it and refuses to proceed without one;
    * inventing an authorizer is a security floor violation.
    */
   readonly granted_by: NonEmptyString;
@@ -616,7 +616,7 @@ export type ContextPackage = {
   readonly constraints: ContextSection;
   readonly authorization: ContextSection;
   /**
-   * A first-class section, not a footnote. What AgentOS does not know is as operationally
+   * A first-class section, not a footnote. What Intentra does not know is as operationally
    * important as what it does.
    */
   readonly gaps: readonly UnknownRecord[];
@@ -1111,7 +1111,7 @@ export type QuestionLogEvent = {
     readonly phase: "ASKED" | "ANSWERED" | "TIMED_OUT";
     readonly question: NonEmptyString;
     /**
-     * One question, both readings, the evidence for each, and what AgentOS would do under
+     * One question, both readings, the evidence for each, and what Intentra would do under
      * each.
      */
     readonly readings: ReadonlyArray<{
@@ -1908,7 +1908,7 @@ export type DodPolicySet = {
 
 /**
  * policies/execution.json. Which risk classes this installation may execute. Milestone 1 is a
- * read-only AgentOS that discovers and audits and mutates nothing, and this is where that is
+ * read-only Intentra that discovers and audits and mutates nothing, and this is where that is
  * stated as data rather than as an absence of code: the mutation frameworks are built and no
  * mutating operation is registered, and this file is what refuses a mutating workflow if one
  * ever were.
@@ -2151,7 +2151,7 @@ export type ResolutionAlternative = {
   readonly reading: NonEmptyString;
   readonly why_rejected: NonEmptyString;
   /**
-   * What AgentOS would do under this reading. Rung 4 of the uncertainty ladder asks with this
+   * What Intentra would do under this reading. Rung 4 of the uncertainty ladder asks with this
    * in hand.
    */
   readonly would_do?: string;
@@ -2164,7 +2164,7 @@ export type ScopeAssertion = {
   readonly confidence: ConfidenceClass;
 };
 
-/** The durable thing AgentOS is trying to accomplish. It outlives every attempt. */
+/** The durable thing Intentra is trying to accomplish. It outlives every attempt. */
 export type WorkItem = {
   readonly work_item_id: Id;
   readonly created_at: Timestamp;

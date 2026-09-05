@@ -1,4 +1,4 @@
-import type { Assertion, Classification, Evidence } from '@agentos/contracts';
+import type { Assertion, Classification, Evidence } from '@intentra/contracts';
 import { ADAPTERS, OPS } from '../ops.js';
 import type { SectionProbe } from '../probe.js';
 import { asArray, asNumber, asRecord, asString, records } from '../probe.js';
@@ -427,7 +427,7 @@ export const productionProbe: SectionProbe = {
             'no environment topology was established, so there was no environment to ask for a '
             + 'deployed version. Production validation is NOT_VALIDATED and completion is at '
             + 'best COMPLETE_WITH_GAPS',
-            'give AgentOS runtime access, or declare the environment topology, and re-probe',
+            'give Intentra runtime access, or declare the environment topology, and re-probe',
             observedAt,
           ),
         },

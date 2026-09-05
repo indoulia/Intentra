@@ -14,11 +14,11 @@ Each entry records what was decided, why, and what would reverse it.
 
 ## WP-1 — the contract set
 
-### I-1 · `@agentos/contracts` carries its own JSON Schema validator
+### I-1 · `@intentra/contracts` carries its own JSON Schema validator
 
 The package declares no dependencies, and WP-1's exit test says so. A schema validator is a
 dependency. So the package carries a JSON Schema 2020-12 validator implementing exactly the
-keyword set the AgentOS schemas use, in `contracts/src/validator/`.
+keyword set the Intentra schemas use, in `contracts/src/validator/`.
 
 The keyword set is a closed allowlist, and an unsupported keyword is a **load-time error**
 rather than a silently ignored constraint — a constraint nobody enforces is worse than one
@@ -29,7 +29,7 @@ The obvious cost is confidence: a hand-written validator is not a widely used on
 bought back by `tools/bin/ajv-parity.mjs`, which compiles the same schemas with `ajv` — a
 build-time devDependency in `tools/`, never a dependency of the package — and requires the
 two to agree on every instance the suite exercises, deliberate invalids included. It also
-asserts every schema document is itself a valid 2020-12 schema, which the AgentOS validator
+asserts every schema document is itself a valid 2020-12 schema, which the Intentra validator
 does not attempt.
 
 **Reversed by:** a schema needing a keyword whose implementation is genuinely subtle
@@ -39,7 +39,7 @@ is to take the dependency and drop the exit test, not to write a subtle validato
 ### I-2 · Schemas are embedded in a generated module, not read from disk
 
 `contracts/src/generated/schemas.ts` carries the schema documents as frozen objects, emitted
-by the same codegen pass that emits the types. `@agentos/contracts` therefore does no I/O at
+by the same codegen pass that emits the types. `@intentra/contracts` therefore does no I/O at
 all, which the conformance check enforces.
 
 The alternative — reading `contracts/schema/*.json` at import — would have made the contract
@@ -96,7 +96,7 @@ ones with no provenance.
 The policy loader touches the filesystem. KERNEL_BOUNDARY rule 5 sends all outside-world
 access through adapters, and this is a stated exception rather than a hole in it: the adapters
 exist to reach the *target repository* and external systems under path confinement and a call
-log, and policy loading is AgentOS reading its own installation at startup. Routing it through
+log, and policy loading is Intentra reading its own installation at startup. Routing it through
 the adapters would be circular, because path confinement reads `paths.json`.
 
 The exception is kept honest three ways. It is one file, `policies/src/data-source.ts`. That
@@ -115,7 +115,7 @@ through them** — graph dominance — and the "after" rules are post-dominance.
 This is not a reading imposed on the documents; it is the only reading that holds. It is also
 what caught a real defect while authoring `change_request.land`: the summary in
 WORKFLOW_STATE_MACHINE 3.2 routes an approved PR `PR_REVIEW → AUTHORIZATION → MERGE`, and
-entered at `PR_REVIEW` with an already-approved PR that route reaches `MERGE` without AgentOS
+entered at `PR_REVIEW` with an already-approved PR that route reaches `MERGE` without Intentra
 having validated anything. Resumption does not save it — the DoD would compute `INCOMPLETE`
 at `COMPLETION` and route back, but the merge has already happened by then, which is precisely
 what the floor exists to prevent. The template therefore routes approval through `VALIDATION`
@@ -198,9 +198,9 @@ it. Nothing the kernel *decides* with does I/O — the ports a replay builds are
 answer from what was loaded.
 
 The alternative was a separate package for the replay tool, which would have moved the same
-I/O somewhere else and made `agentos replay` depend on a package that exists for one file.
+I/O somewhere else and made `intentra replay` depend on a package that exists for one file.
 
-### I-19 · `agentos work` is absent from this build rather than stubbed
+### I-19 · `intentra work` is absent from this build rather than stubbed
 
 The plan lists the CLI under WP-3, and three of its four commands are complete there:
 `status` and `narrate` read the store, and `replay` drives the entire kernel from recorded
@@ -259,10 +259,10 @@ per package, so a package with zero tests is visible rather than absent.
 ### I-20 · The Agent SDK is a declared dependency of `agents/`, and the only third-party one
 
 D-2 selects the Claude Agent SDK as the execution substrate. A substrate is a transport, and
-a transport has to be depended on rather than described, so `@agentos/agents` declares
+a transport has to be depended on rather than described, so `@intentra/agents` declares
 `@anthropic-ai/claude-agent-sdk` and `tools/bin/conformance.mjs` carries the permission as a
 named entry beside the dependency table — the same shape as the I/O exceptions, and for the
-same reason: "AgentOS depends on nothing but its own contracts" is only worth saying if the
+same reason: "Intentra depends on nothing but its own contracts" is only worth saying if the
 exceptions are countable.
 
 It is one package, in one package, reached from one file
@@ -272,7 +272,7 @@ swapping to the Anthropic SDK's tool runner replaces that file and nothing else,
 package learns that the substrate changed.
 
 The conformance check fails three ways rather than one: on a third-party dependency in any
-package with no recorded decision, on any change to the `@agentos/*` edges, and on a
+package with no recorded decision, on any change to the `@intentra/*` edges, and on a
 permission that has gone stale because the manifest no longer declares what it permits.
 
 **Reversed by:** D-2's own reversal — the allowlist condition proving unachievable on the SDK.
@@ -305,7 +305,7 @@ the first stage not declared non-mutating.
 Two consequences worth stating because they are not obvious:
 
 - **A single candidate still has a prefix.** Where only one template is admissible, every stage
-  in it is what AgentOS would do whichever reading is right, so the whole non-mutating head of
+  in it is what Intentra would do whichever reading is right, so the whole non-mutating head of
   it is the prefix. This is what makes `investigation.readonly` "the target of ambiguity rung 3"
   true in the read-only build rather than only in principle.
 - **The candidate set spans the alternative readings.** The templates intersected are those
@@ -350,7 +350,7 @@ Neither is fixed by widening `contracts/`, because both are frozen-schema questi
 implementation choices. Both are reported.
 
 **`WorkItem` has no `intent` field.** Resolution produces an `intent` assertion, and the
-narrative's v0.3 obligation is to state what AgentOS decided the work was and why — "a run that
+narrative's v0.3 obligation is to state what Intentra decided the work was and why — "a run that
 did the wrong thing correctly is the new failure mode this layer introduces, and it is invisible
 unless resolution is narrated alongside execution". An intent nothing durable records is an
 obligation nothing can discharge, so it is written to the **work-item** event log as a `note`
@@ -406,7 +406,7 @@ discovery run that could not reach the project-management system has not establi
 intends the work, and one that could not reach the git host has not established that there is no
 pull request. `core/src/work-item-reconciliation.ts` is that reader.
 
-What also stays in `core/` is the *decision made from it*: where AgentOS's own ledger and an
+What also stays in `core/` is the *decision made from it*: where Intentra's own ledger and an
 external system disagree, `arbitration.ts` applies the authority ordering of
 `INTENT_AND_WORK_ITEM_RESOLUTION.md` 5.1 as the rule-based step — the external system wins on
 its own state, and the discrepancy is itself recorded as a finding.
@@ -731,7 +731,7 @@ Which side moved was decided per operation, on which shape is the better observa
 descriptor moved where the probe was asking the more useful question and the adapter could
 answer it (`repo.list_paths` over globs, `git.log` narrowed by base, path set and message tokens,
 the structured selectors on `pm.search_issues` and `runtime.query` — a probe cannot invent a
-product-specific query string for a system it has never seen, and AgentOS never knows which
+product-specific query string for a system it has never seen, and Intentra never knows which
 system it is talking to). The probe moved where the descriptor's shape was safer or more general:
 the attachment operations take no arguments because the adapter is attached to exactly one
 worktree, and a `path` there would either be ignored — making the evidence locator claim

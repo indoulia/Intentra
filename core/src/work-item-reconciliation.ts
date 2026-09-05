@@ -2,7 +2,7 @@ import {
   RECONCILIATION_STATES,
   type CurrentReality,
   type ReconciliationState,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 
 /**
  * Reading the three-way reconciliation. **The kernel does not compute it.**
@@ -23,10 +23,10 @@ import {
  * - **A value outside the vocabulary is `INDETERMINATE` too.** Failing closed on a state the
  *   contract does not define is the only safe reading of a field the kernel did not compute.
  * - **`CLAIMED_DONE_UNPROVEN` is a finding the run proceeds on, never a reason to stop.** A
- *   ticket in `Done` with no merged change is the most valuable output AgentOS produces, and a
+ *   ticket in `Done` with no merged change is the most valuable output Intentra produces, and a
  *   consumer that treated it as "already done" would discard exactly the thing worth having.
  *
- * The decision made *from* the matrix stays kernel work: where AgentOS's own ledger and an
+ * The decision made *from* the matrix stays kernel work: where Intentra's own ledger and an
  * external system disagree, `arbitration.ts` applies the authority ordering — the external
  * system wins on its own state, and the discrepancy is itself recorded as a finding.
  */
@@ -84,7 +84,7 @@ function describe(state: ReconciliationState): string {
       return 'code exists in scope and no intent record accounts for it';
     case 'CODE_NO_RUNTIME':
       return 'an implementation exists and nothing running demonstrates the outcome. Written '
-        + 'is not working, and the gap between them is the one AgentOS exists to close rather '
+        + 'is not working, and the gap between them is the one Intentra exists to close rather '
         + 'than to report as closed';
     case 'RUNTIME_NO_CODE':
       return 'the outcome is observable and no implementation in scope accounts for it';
@@ -92,7 +92,7 @@ function describe(state: ReconciliationState): string {
       return 'a source reports this finished and no merged change supports it. A ticket\'s '
         + 'status field is authoritative about the ticket and is at most an INFERENCE about '
         + 'the system, so the run proceeds to establish or refute it rather than treating it '
-        + 'as already done — that finding is the most valuable output AgentOS produces';
+        + 'as already done — that finding is the most valuable output Intentra produces';
     case 'CONFLICTING':
       return 'two sources disagree and no rule in the matrix selected a winner. The authority '
         + 'ordering applies as the rule-based step of arbitration: the external system wins on '

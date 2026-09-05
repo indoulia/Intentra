@@ -12,7 +12,7 @@ import {
   writeSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { validators, type Event, type HandoffEnvelope, type IntakeRecord, type RunRecord, type WorkItem, type IdempotencyRecord } from '@agentos/contracts';
+import { validators, type Event, type HandoffEnvelope, type IntakeRecord, type RunRecord, type WorkItem, type IdempotencyRecord } from '@intentra/contracts';
 import { NdjsonLog, type ReadResult } from './ndjson.js';
 import { StateLayout, RUN_SUBDIRECTORIES, assertSafeId, type RunSubdirectory } from './layout.js';
 

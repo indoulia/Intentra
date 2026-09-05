@@ -215,7 +215,7 @@ export interface Registries {
 
 /* --------------------------------------------------------------------------- host ------ */
 
-/** What the host can assert about who invoked AgentOS. */
+/** What the host can assert about who invoked Intentra. */
 export interface HostIdentity {
   readonly host: string;
   readonly principal: { readonly id: string; readonly asserted_by: string } | null;

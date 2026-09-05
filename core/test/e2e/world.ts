@@ -16,7 +16,7 @@ import { dirname, join, relative } from 'node:path';
 export interface ScratchWorld {
   /** The repository the run works against. Path confinement is anchored here. */
   readonly repositoryPath: string;
-  /** Where durable run state is written. `agentos status` and `agentos narrate` read it. */
+  /** Where durable run state is written. `intentra status` and `intentra narrate` read it. */
   readonly stateRoot: string;
   /** The worktree content hash and the git ref state, as of now. */
   fingerprint(): WorldFingerprint;
@@ -54,7 +54,7 @@ export interface WorldFile {
 }
 
 export function scratchWorld(files: readonly WorldFile[]): ScratchWorld {
-  const root = mkdtempSync(join(tmpdir(), 'agentos-e2e-'));
+  const root = mkdtempSync(join(tmpdir(), 'intentra-e2e-'));
   const repositoryPath = join(root, 'repo');
   const stateRoot = join(root, 'state');
   mkdirSync(repositoryPath, { recursive: true });
@@ -67,8 +67,8 @@ export function scratchWorld(files: readonly WorldFile[]): ScratchWorld {
   }
 
   git(repositoryPath, ['init', '--quiet', '--initial-branch', 'main']);
-  git(repositoryPath, ['config', 'user.email', 'e2e@agentos.test']);
-  git(repositoryPath, ['config', 'user.name', 'AgentOS end-to-end suite']);
+  git(repositoryPath, ['config', 'user.email', 'e2e@intentra.test']);
+  git(repositoryPath, ['config', 'user.name', 'Intentra end-to-end suite']);
   git(repositoryPath, ['config', 'commit.gpgsign', 'false']);
   git(repositoryPath, ['add', '--all']);
   git(repositoryPath, ['commit', '--quiet', '--message', 'the repository as the scenario finds it']);

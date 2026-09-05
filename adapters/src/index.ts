@@ -1,5 +1,5 @@
 /**
- * `@agentos/adapters` — the only path between agents and the outside world.
+ * `@intentra/adapters` — the only path between agents and the outside world.
  *
  * An enforcement layer, not a convenience layer. Path confinement, fail-closed
  * classification, grant checking at execution time, the call log, mutation events,

@@ -1,7 +1,7 @@
 /**
  * `core/src/composition` — where the kernel meets the world.
  *
- * The only place in `core/src` permitted to name `@agentos/agents` and `@agentos/discovery`
+ * The only place in `core/src` permitted to name `@intentra/agents` and `@intentra/discovery`
  * (decision I-8, enforced by `.dependency-cruiser.cjs`). Everything the kernel needs to run
  * against a real repository is assembled here and nowhere else, so "the kernel depends on
  * agents through one interface" is a property of the module graph rather than a convention.

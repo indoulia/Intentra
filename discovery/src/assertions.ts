@@ -7,8 +7,8 @@ import type {
   EvidencePredicate,
   Freshness,
   Locator,
-} from '@agentos/contracts';
-import { digest } from '@agentos/contracts';
+} from '@intentra/contracts';
+import { digest } from '@intentra/contracts';
 import { excerptOf } from './redact.js';
 
 /**

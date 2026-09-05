@@ -1,5 +1,5 @@
-import { loadPolicies } from '@agentos/policies';
-import { RunStore } from '@agentos/state';
+import { loadPolicies } from '@intentra/policies';
+import { RunStore } from '@intentra/state';
 import { Kernel, type RunResult } from '../kernel.js';
 import type { IdentityResolution } from '../admission.js';
 import { loadFixture, type ReplayFixture } from './fixture.js';
@@ -18,13 +18,13 @@ import {
 /**
  * Drives the whole kernel from a recorded run.
  *
- * The plan's `agentos replay <fixture-dir>`. Everything the kernel meets is recorded, so what
+ * The plan's `intentra replay <fixture-dir>`. Everything the kernel meets is recorded, so what
  * comes out is a statement about the kernel and the envelopes and nothing else — which is
  * what makes it usable as the driver for the end-to-end scenarios and as the way a run is
  * re-examined after it happened.
  *
  * The state written is real: the same store, the same append-only logs, the same projections.
- * A replay is a run, and its log is readable by `agentos status` and `agentos narrate`
+ * A replay is a run, and its log is readable by `intentra status` and `intentra narrate`
  * afterwards. That is deliberate — a replay whose output could not be inspected the way a
  * real run's can would be a different thing wearing the same name.
  */

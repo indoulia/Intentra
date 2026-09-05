@@ -22,7 +22,7 @@ export const ADAPTERS = {
   pm: 'pm',
   /** Databases, HTTP APIs, service health, logs, deployed versions. */
   runtime: 'runtime',
-  /** The agent execution environment, and AgentOS's own run ledger. */
+  /** The agent execution environment, and Intentra's own run ledger. */
   host: 'host',
 } as const;
 
@@ -100,16 +100,16 @@ export const OPS = {
     /** Includes servers configured and unreachable, which are UNAVAILABLE and never absent. */
     listMcpServers: 'list_mcp_servers',
     /**
-     * Prior AgentOS runs against one work item, from AgentOS's own ledger.
+     * Prior Intentra runs against one work item, from Intentra's own ledger.
      *
      * The ledger lives under `state/`, which discovery may not reach directly
      * (dependency rule 5, and the dependency-cruiser rule that forbids
      * `discovery -> state`), so it arrives the same way every other observation does. It is
-     * authoritative about what AgentOS did and says nothing about whether it still holds,
+     * authoritative about what Intentra did and says nothing about whether it still holds,
      * which is the right scope for `reality.stage_completed_previously`.
      */
     readRunHistory: 'read_run_history',
-    /** Child work items AgentOS itself recorded, with their lifecycle states. */
+    /** Child work items Intentra itself recorded, with their lifecycle states. */
     readChildWorkItems: 'read_child_work_items',
   },
 } as const;

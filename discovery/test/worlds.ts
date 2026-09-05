@@ -1,5 +1,5 @@
-import { fixtures as fx } from '@agentos/contracts';
-import type { IntakeRecord, WorkItem } from '@agentos/contracts';
+import { fixtures as fx } from '@intentra/contracts';
+import type { IntakeRecord, WorkItem } from '@intentra/contracts';
 import type { FakeWorld } from './fake-registry.js';
 
 /**
@@ -50,7 +50,7 @@ export function listPaths(args: Readonly<Record<string, unknown>>): readonly str
 
 /**
  * A repository with everything reachable: a change on a branch, an open pull request with a
- * review, a green pipeline, a ticket, a running system, and a prior AgentOS run.
+ * review, a green pipeline, a ticket, a running system, and a prior Intentra run.
  */
 export function healthyWorld(overrides: Partial<FakeWorld> = {}): FakeWorld {
   return {

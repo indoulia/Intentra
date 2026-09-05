@@ -1,7 +1,7 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import type { EvidenceKind, ReplayResult } from '@agentos/contracts';
+import type { EvidenceKind, ReplayResult } from '@intentra/contracts';
 import {
   AdapterFramework,
   STRING_ARG,

@@ -12,7 +12,7 @@
         "op": { "$ref": "common.json#/$defs/nonEmptyString" },
         "description": { "$ref": "common.json#/$defs/nonEmptyString" },
         "mutating": {
-          "description": "Does it change authoritative state: repository content, VCS refs, an external system, a data store, or AgentOS run state.",
+          "description": "Does it change authoritative state: repository content, VCS refs, an external system, a data store, or Intentra run state.",
           "type": "boolean"
         },
         "reversal": {

@@ -10,7 +10,7 @@ import type {
   RealityElement,
   Scope,
   WorkItem,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 import type { Promotion } from './assertions.js';
 import { promote } from './assertions.js';
 import { collectGaps } from './gaps.js';
@@ -332,7 +332,7 @@ export async function assemble(input: AssembleInput): Promise<AssembleResult> {
       call_id: refusal.call_id,
     })),
     session.refusals.length > 0 ? session.refusals.map((r) => r.call_id) : ['adapter.call-log'],
-    'refusals recorded during discovery, with their kind. A refusal is AgentOS\'s own '
+    'refusals recorded during discovery, with their kind. A refusal is Intentra\'s own '
     + 'enforcement acting; it is listed here so that it is enumerable as a refusal rather than '
     + 'readable only as an absence somewhere else in the package',
     'agentos',

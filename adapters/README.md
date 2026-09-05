@@ -62,7 +62,7 @@ composition root supplies:
 - **`IdempotencyLedger`** — the work-item-scoped completed-key ledger is durable run state,
   and only the kernel writes `state/`. The adapter reads and invalidates through the port.
 - **`MutationSink`** — a mutation event is a journal entry the kernel appends.
-- **`RunLedgerReader`** — AgentOS's own run history, which `host.read_run_history` and
+- **`RunLedgerReader`** — Intentra's own run history, which `host.read_run_history` and
   `host.read_child_work_items` report. Same reason: it lives under `state/`.
 
 Every one of them **fails closed by default**: no checker means no grant, no sink means no

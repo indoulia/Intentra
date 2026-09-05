@@ -1,4 +1,4 @@
-import type { Evidence, RealityElement, WorkItem } from '@agentos/contracts';
+import type { Evidence, RealityElement, WorkItem } from '@intentra/contracts';
 import { ADAPTERS, OPS } from '../ops.js';
 import type { ProbeInput, RealityProbe, RealityProbeResult } from '../probe.js';
 import { asBoolean, asNumber, asRecord, asString, records } from '../probe.js';
@@ -19,9 +19,9 @@ import { listedPaths, observe } from './observation.js';
  *
  * Nothing in this file reads `intake.raw`, a ticket status, or an envelope. The work item's
  * identity is used as a *lookup key* — that is how anything is found — and every value comes
- * back from git, from the runtime, or from AgentOS's own ledger, each within its own
+ * back from git, from the runtime, or from Intentra's own ledger, each within its own
  * authority. Git owns whether a change is proposed. The runtime owns what is deployed. The
- * ledger owns what AgentOS did, and says nothing about whether it still holds.
+ * ledger owns what Intentra did, and says nothing about whether it still holds.
  *
  * The second rule is the one about absence. "An unreachable GitHub makes `pr` `UNAVAILABLE`;
  * it does not make it 'no PR'." A predicate over an `UNKNOWN` element evaluates
@@ -812,7 +812,7 @@ export const mergeStateProbe: RealityProbe = {
        *
        * The pair is what makes this answerable with no VCS host at all: the local history can
        * settle whether the head is an ancestor of the base. Sending only the pull-request
-       * number would make "merged?" unanswerable on every repository whose host AgentOS
+       * number would make "merged?" unanswerable on every repository whose host Intentra
        * cannot reach, which is the case the fail-closed rules exist for.
        */
       args: mergeArgs,
@@ -1123,7 +1123,7 @@ export const childrenProbe: RealityProbe = {
         });
       }
     } else {
-      unread.push(`AgentOS's own ledger (${HOST}.${OPS.host.readChildWorkItems})`);
+      unread.push(`Intentra's own ledger (${HOST}.${OPS.host.readChildWorkItems})`);
     }
 
     if (pm !== null) {
@@ -1133,7 +1133,7 @@ export const childrenProbe: RealityProbe = {
           const key = asString(child['key']) ?? asString(child['id']);
           if (key === null || children.some((existing) => existing['id'] === key)) continue;
           /*
-           * A ticket AgentOS has never run against has no AgentOS lifecycle, and the ticket's
+           * A ticket Intentra has never run against has no Intentra lifecycle, and the ticket's
            * own status is not one. `UNKNOWN` here is what makes `children_all_terminal`
            * INDETERMINATE rather than confidently false, which is the honest answer.
            */
@@ -1151,7 +1151,7 @@ export const childrenProbe: RealityProbe = {
           ? session.insufficient(
             'reality.children',
             'no source of child work items could be read',
-            'restore access to AgentOS\'s run ledger or to the project-management system',
+            'restore access to Intentra\'s run ledger or to the project-management system',
           )
           : session.noAccess('reality.children', 'the child work items', failure),
         available: false,
@@ -1197,9 +1197,9 @@ export const childrenProbe: RealityProbe = {
 /* ======================================================= agentos_history ==== */
 
 /**
- * What AgentOS itself did against this work item.
+ * What Intentra itself did against this work item.
  *
- * The ledger is authoritative about AgentOS's own actions and about nothing else: it records
+ * The ledger is authoritative about Intentra's own actions and about nothing else: it records
  * that a pull request was opened, not that the pull request is still open. That is the right
  * scope for `reality.stage_completed_previously`, whose question — "did we analyse this" — is
  * a question about the past. Code existing does not mean an analysis happened, which is why
@@ -1235,7 +1235,7 @@ export const historyProbe: RealityProbe = {
     if (observation.outcome !== 'OBSERVED') {
       return {
         assertion: session.noAccess(
-          'reality.agentos_history', "AgentOS's own history for this work item", observation,
+          'reality.agentos_history', "Intentra's own history for this work item", observation,
         ),
         available: false,
         detail: 'the run ledger could not be read',

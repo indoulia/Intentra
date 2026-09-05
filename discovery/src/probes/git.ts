@@ -1,4 +1,4 @@
-import type { Assertion } from '@agentos/contracts';
+import type { Assertion } from '@intentra/contracts';
 import { ADAPTERS, OPS } from '../ops.js';
 import type { SectionProbe } from '../probe.js';
 import { asNumber, asString, records } from '../probe.js';

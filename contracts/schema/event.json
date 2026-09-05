@@ -829,7 +829,7 @@
             "phase": { "enum": ["ASKED", "ANSWERED", "TIMED_OUT"] },
             "question": { "$ref": "common.json#/$defs/nonEmptyString" },
             "readings": {
-              "description": "One question, both readings, the evidence for each, and what AgentOS would do under each.",
+              "description": "One question, both readings, the evidence for each, and what Intentra would do under each.",
               "type": "array",
               "minItems": 2,
               "items": {

@@ -1,10 +1,10 @@
 /**
- * The one place `@agentos/policies` touches the filesystem.
+ * The one place `@intentra/policies` touches the filesystem.
  *
  * KERNEL_BOUNDARY rule 5 sends all outside-world access through adapters, and this is a
  * narrow, stated exception rather than a hole in it (decision I-11): the adapters exist to
  * reach the *target repository* and external systems under path confinement and a call log,
- * and policy loading is AgentOS reading its own installation at startup. Routing it through
+ * and policy loading is Intentra reading its own installation at startup. Routing it through
  * the adapters would be circular — path confinement reads `paths.json`.
  *
  * The exception is kept honest three ways. It is one file. It reads only under the policy

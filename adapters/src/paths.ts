@@ -1,6 +1,6 @@
 import { lstatSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
-import type { PathPolicy, PathRefusal } from '@agentos/contracts';
+import type { PathPolicy, PathRefusal } from '@intentra/contracts';
 import { firstMatch, matchesAny, matchesGlob, specificity, toPosix } from './glob.js';
 
 /**
@@ -80,7 +80,7 @@ export interface MandateScope {
 export interface ConfinementOptions {
   /** The worktree a dispatch may reach. Resolved once, at construction. */
   readonly worktreeRoot: string;
-  /** The AgentOS installation, which the deny-list is relative to. */
+  /** The Intentra installation, which the deny-list is relative to. */
   readonly installationRoot: string;
   /** The user's home directory, which the credential deny patterns are relative to. */
   readonly home: string;
@@ -359,7 +359,7 @@ export class PathConfinement {
    * Which deny-list entry a canonical path matches, or `null`.
    *
    * All four `kind`s in `paths.json` are distinct and all four are checked:
-   * `installation_relative` against the AgentOS installation, `home_relative` against the
+   * `installation_relative` against the Intentra installation, `home_relative` against the
    * user's home, `absolute` against the path as written, and `name_anywhere` against every
    * segment — the last of which is why a `.env` **inside** the worktree is refused for a read
    * and not only for a write.

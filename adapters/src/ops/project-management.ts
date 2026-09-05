@@ -1,4 +1,4 @@
-import type { AdapterAvailability } from '@agentos/contracts';
+import type { AdapterAvailability } from '@intentra/contracts';
 import { fact, selfEvidence, unavailable, unknown } from '../assertions.js';
 import {
   OPTIONAL_STRING_ARG,
@@ -29,8 +29,8 @@ import type { AvailabilityProbe, Connector } from '../ports.js';
  * Collapsing them would make a broken connector look like a deliberate configuration, which
  * is the difference between "we chose not to look" and "we could not look and did not say".
  *
- * No product name appears anywhere here. AgentOS finds a project-management system because
- * the host exposes one, never because AgentOS was told which one to expect.
+ * No product name appears anywhere here. Intentra finds a project-management system because
+ * the host exposes one, never because Intentra was told which one to expect.
  */
 
 export interface ProjectManagementOptions {
@@ -188,7 +188,7 @@ export function projectManagementOperations(
         + 'by capability or by repository — or reports why it could not.',
       /*
        * A free-text `query` alone would make this answerable only by a caller that already
-       * knows the system's own query language, and AgentOS never knows which system it is
+       * knows the system's own query language, and Intentra never knows which system it is
        * talking to: no product name appears anywhere in this file, deliberately. The structured
        * selectors are the product-neutral form of the same question, and the connector — which
        * does know what it is — turns them into whatever its index wants.
@@ -250,7 +250,7 @@ export function projectManagementOperations(
       adapter: ADAPTER,
       op: 'list_children',
       description: 'Child work items the project-management system records for one parent. Unioned by '
-        + 'discovery with what AgentOS recorded itself, because either source alone is a '
+        + 'discovery with what Intentra recorded itself, because either source alone is a '
         + 'partial view of what the work decomposed into.',
       args: { key: STRING_ARG },
       required: ['key'],

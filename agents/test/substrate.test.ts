@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { fixtures as fx, type SubstrateResult } from '@agentos/contracts';
+import { fixtures as fx, type SubstrateResult } from '@intentra/contracts';
 import {
   ClaudeAgentSdkSubstrate,
   ClaudeCodeTransport,

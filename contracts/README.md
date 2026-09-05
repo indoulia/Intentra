@@ -1,6 +1,6 @@
 # contracts/
 
-The stable surface of AgentOS. Every shape in the system, defined once.
+The stable surface of Intentra. Every shape in the system, defined once.
 
 **JSON Schema (2020-12) in `schema/` is the source of truth.** TypeScript types and the
 embedded schema documents in `src/generated/` are produced from it by `npm run codegen` and

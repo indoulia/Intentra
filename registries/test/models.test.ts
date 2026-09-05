@@ -1,12 +1,12 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { validators } from '@agentos/contracts';
+import { validators } from '@intentra/contracts';
 import type {
   AdapterAvailability,
   ModelEntry,
   ModelRequirement,
   RankedCandidate,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 import { EnumeratedRegistries, rankModels, shortfalls } from '../src/index.js';
 
 /**

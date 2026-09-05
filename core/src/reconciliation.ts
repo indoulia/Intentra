@@ -6,7 +6,7 @@ import type {
   MutationEvent,
   ToolGrant,
   Violation,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 
 /**
  * Step 3 of envelope receipt: reconciling what an agent says it did and looked at against

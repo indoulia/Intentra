@@ -78,7 +78,7 @@
         "target": { "$ref": "common.json#/$defs/nonEmptyString" },
         "scope": { "const": "single_action" },
         "granted_by": {
-          "description": "The identifier the host asserted. AgentOS records it and refuses to proceed without one; inventing an authorizer is a security floor violation.",
+          "description": "The identifier the host asserted. Intentra records it and refuses to proceed without one; inventing an authorizer is a security floor violation.",
           "$ref": "common.json#/$defs/nonEmptyString"
         },
         "granted_at": { "$ref": "common.json#/$defs/timestamp" },

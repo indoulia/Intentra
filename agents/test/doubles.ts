@@ -5,7 +5,7 @@ import {
   type ToolGrant,
   type ToolInvocationResult,
   type ToolInvoker,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 import type {
   DispatchTransport,
   TransportCost,

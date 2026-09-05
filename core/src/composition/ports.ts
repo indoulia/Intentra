@@ -4,7 +4,7 @@ import type {
   HumanChannel,
   IdempotencyRecord,
   MutationEvent,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 import type {
   ChildWorkItemEntry,
   GrantCheckRequest,
@@ -15,8 +15,8 @@ import type {
   MutationSink,
   RunLedgerEntry,
   RunLedgerReader,
-} from '@agentos/adapters';
-import type { RunStore } from '@agentos/state';
+} from '@intentra/adapters';
+import type { RunStore } from '@intentra/state';
 import { grantEnforcer } from '../authorization.js';
 import { Journal } from '../journal.js';
 import { project } from '../recovery.js';
@@ -169,7 +169,7 @@ export class StoreIdempotencyLedger implements IdempotencyLedger {
 /* -------------------------------------------------------------------- the run ledger ---- */
 
 /**
- * AgentOS's own history, read from its own logs.
+ * Intentra's own history, read from its own logs.
  *
  * This is the port that decides whether a resumed run knows what it already did. It is the
  * only source of `host.read_run_history`, which is the only input to

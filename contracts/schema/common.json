@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agentos.dev/schema/common.json",
-  "title": "AgentOS common vocabulary",
+  "title": "Intentra common vocabulary",
   "description": "The closed vocabularies every other contract draws on. Defined once so that two components cannot disagree about what a value means.",
   "$defs": {
     "id": {

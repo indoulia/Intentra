@@ -1,11 +1,11 @@
-import type { Assertion, ContextSectionName, UnknownRecord } from '@agentos/contracts';
+import type { Assertion, ContextSectionName, UnknownRecord } from '@intentra/contracts';
 import type { SectionAssertions } from './probe.js';
 import type { ProbeRefusal } from './session.js';
 
 /**
  * `gaps` as a first-class section.
  *
- * "What AgentOS does not know is as operationally important as what it does, and it drives
+ * "What Intentra does not know is as operationally important as what it does, and it drives
  * whether an agent may proceed" ([CONTEXT_MODEL.md](../../docs/CONTEXT_MODEL.md) section 4).
  * So every `UNKNOWN` in the package appears here with its reason, what was attempted, what
  * would resolve it, and — the field that makes it actionable rather than decorative — the
@@ -82,7 +82,7 @@ const SECTION_CONSEQUENCE: Partial<Readonly<Record<ContextSectionName, readonly 
 
 const REALITY_CONSEQUENCE =
   'a mutating stage whose satisfied_by stays INDETERMINATE after targeted discovery blocks '
-  + 'with AMBIGUOUS_STATE and executes nothing, because AgentOS never re-executes a '
+  + 'with AMBIGUOUS_STATE and executes nothing, because Intentra never re-executes a '
   + 'non-reversible operation on the strength of an INDETERMINATE';
 
 function blocksForReality(element: string): readonly string[] {
@@ -172,7 +172,7 @@ export function collectGaps(input: GapInput): readonly UnknownRecord[] {
           + 're-probe',
       blocks: [
         `everything ${refusal.probe} would have established`,
-        'the refusal is AgentOS\'s own enforcement acting, so it is recorded as a refusal and '
+        'the refusal is Intentra\'s own enforcement acting, so it is recorded as a refusal and '
         + 'never as an absence in the system under study',
       ],
     });

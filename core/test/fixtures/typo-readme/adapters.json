@@ -29,16 +29,16 @@
       "results": {
         "*": {
           "path": "README.md",
-          "content": "AgentOs is an operating system for agents."
+          "content": "Intentra is an operating system for agents."
         }
       },
       "replay": {
         "outcome": "OK",
         "value": {
           "path": "README.md",
-          "content": "AgentOs is an operating system for agents."
+          "content": "Intentra is an operating system for agents."
         },
-        "excerpt": "AgentOs"
+        "excerpt": "Intentra"
       }
     }
   ],

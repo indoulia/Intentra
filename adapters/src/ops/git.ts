@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import type { AdapterAvailability } from '@agentos/contracts';
+import type { AdapterAvailability } from '@intentra/contracts';
 import { fact, inference, selfEvidence, unavailable, unknown } from '../assertions.js';
 import {
   INTEGER_ARG,

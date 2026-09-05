@@ -4,8 +4,8 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Connector } from '@agentos/adapters';
-import { ResourceUnreachableError } from '@agentos/adapters';
+import type { Connector } from '@intentra/adapters';
+import { ResourceUnreachableError } from '@intentra/adapters';
 import {
   admitIntake,
   buildKernel,
@@ -44,7 +44,7 @@ interface World {
 }
 
 function world(): World {
-  const root = mkdtempSync(join(tmpdir(), 'agentos-composition-'));
+  const root = mkdtempSync(join(tmpdir(), 'intentra-composition-'));
   roots.push(root);
   const repositoryPath = join(root, 'repo');
   const stateRoot = join(root, 'state');
@@ -55,8 +55,8 @@ function world(): World {
     execFileSync('git', [...args], { cwd: repositoryPath, stdio: 'ignore' });
   };
   git(['init', '--quiet', '--initial-branch', 'main']);
-  git(['config', 'user.email', 'composition@agentos.test']);
-  git(['config', 'user.name', 'AgentOS composition suite']);
+  git(['config', 'user.email', 'composition@intentra.test']);
+  git(['config', 'user.name', 'Intentra composition suite']);
   git(['config', 'commit.gpgsign', 'false']);
   git(['add', '--all']);
   git(['commit', '--quiet', '--message', 'the repository as the test finds it']);
@@ -213,7 +213,7 @@ describe('source drift for a project-management intake', () => {
     assert.match(
       admittedRaw,
       /summary: Rename the widget$/m,
-      'AgentOS discloses the drift and does not chase it: what was admitted is what the '
+      'Intentra discloses the drift and does not chase it: what was admitted is what the '
       + 'verdict is computed against, and the edit is disclosed rather than absorbed',
     );
     assert.doesNotMatch(admittedRaw, /gadget/);

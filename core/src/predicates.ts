@@ -12,8 +12,8 @@ import type {
   RealityElement,
   Scope,
   WorkItem,
-} from '@agentos/contracts';
-import type { PolicySet } from '@agentos/policies';
+} from '@intentra/contracts';
+import type { PolicySet } from '@intentra/policies';
 import { globToRegExp } from './reconciliation.js';
 
 /**
@@ -486,7 +486,7 @@ export class PredicateEvaluator {
       case 'stageCompletedPreviously': {
         /*
          * A prior Workflow Run against this Work Item completed this stage. Keyed on
-         * AgentOS's own ledger, because that is the only honest observation available: code
+         * Intentra's own ledger, because that is the only honest observation available: code
          * existing does not mean an analysis happened, and marking an audit already done
          * because a fix exists is precisely the inference the design refuses.
          */
@@ -503,7 +503,7 @@ export class PredicateEvaluator {
         if (assertionTruth(history) === 'INDETERMINATE') {
           return {
             value: 'INDETERMINATE',
-            reason: "AgentOS's own history for this work item is UNKNOWN",
+            reason: "Intentra's own history for this work item is UNKNOWN",
           };
         }
         const runs = Array.isArray(history.value) ? history.value : [];
@@ -517,7 +517,7 @@ export class PredicateEvaluator {
             value: 'TRUE',
             reason:
               `a prior run against this work item completed ${stage}. The ledger is `
-              + 'authoritative about what AgentOS did',
+              + 'authoritative about what Intentra did',
           }
           : {
             value: 'FALSE',

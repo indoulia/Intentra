@@ -1,6 +1,6 @@
 import { existsSync, lstatSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import type { AdapterAvailability, Assertion, Evidence, EvidenceKind, PathPolicy } from '@agentos/contracts';
+import type { AdapterAvailability, Assertion, Evidence, EvidenceKind, PathPolicy } from '@intentra/contracts';
 import { fact, inference, selfEvidence, unknown } from '../assertions.js';
 import {
   GLOB_LIST_ARG,
@@ -17,10 +17,10 @@ import { ResourceAbsentError } from '../errors.js';
 import type { AvailabilityProbe } from '../ports.js';
 
 /**
- * The repository adapter: how AgentOS attaches to an arbitrary repository.
+ * The repository adapter: how Intentra attaches to an arbitrary repository.
  *
  * The governing constraint is REPOSITORY_ADAPTER's own: **a repository with no
- * AgentOS-specific files must work fully.** `.agent/` is an optimization and a place to
+ * Intentra-specific files must work fully.** `.agent/` is an optimization and a place to
  * record human decisions, never a prerequisite, so every operation here works without it and
  * `read_agent_directory` reports its absence as an ordinary observation rather than as a gap.
  *
@@ -593,7 +593,7 @@ export function repositoryOperations(options: RepoOptions): readonly OperationRe
               present: false,
               files: [],
               note:
-                'a repository with no AgentOS-specific files works fully. Discovery proceeds '
+                'a repository with no Intentra-specific files works fully. Discovery proceeds '
                 + 'from scratch and nothing is recorded as missing',
             },
             excerpt: '.agent: absent',
@@ -731,7 +731,7 @@ function readEnvironments(root: string, probe: string, at: string): Assertion {
   if (text === null) {
     return unknown(
       probe, at, 'UNKNOWN',
-      'declare the topology in .agent/environments.json, or grant AgentOS the access it '
+      'declare the topology in .agent/environments.json, or grant Intentra the access it '
       + 'needs to classify. With no topology discovered at all, every reachable runtime is '
       + 'production',
       'read .agent/environments.json',

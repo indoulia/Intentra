@@ -2,12 +2,12 @@
 
 ## 1. Sequencing principle
 
-Build in the order that **fails fastest and cheapest**. The riskiest assumption in AgentOS
+Build in the order that **fails fastest and cheapest**. The riskiest assumption in Intentra
 is not orchestration — it is that automated discovery can produce a Context Package good
 enough to reason from. If that is false, nothing downstream matters, so it gets built and
 tested first.
 
-Corollary: the first real deliverable is a **read-only** AgentOS. It discovers, audits and
+Corollary: the first real deliverable is a **read-only** Intentra. It discovers, audits and
 reports, and changes nothing. That is testable against real repositories immediately, is
 safe by construction, and is genuinely useful on its own.
 
@@ -194,7 +194,7 @@ worth naming because it is where the next round of defects will be.
   opening a second PR — but a *cached* key hit tells the run it has a PR that someone may since
   have closed. A key hit now re-reads the external resource: present → return the record; absent
   → invalidate and proceed; unreachable → `AMBIGUOUS_STATE`, neither trusting the record nor
-  re-executing. **AgentOS's own ledger is authoritative about the past, not the present** — the
+  re-executing. **Intentra's own ledger is authoritative about the past, not the present** — the
   same standard it already applied to a ticket's status field, now applied to itself.
   (WORKFLOW_STATE_MACHINE 7.3)
 - **Y5 Reality re-probed, not snapshotted.** Reality predicates read the Context Package, and
@@ -256,7 +256,7 @@ Deliverables:
   envelope-status mapping (WORKFLOW_STATE_MACHINE.md section 4.2).
 - **BLOCKED** — Run loop dispatching an agent. Depends on the agent execution substrate
   (section 11). The loop's *logic* is specified; how it invokes an agent is not.
-- **READY** — CLI: `agentos run`, `agentos status`, `agentos narrate`. Lives in `core/`.
+- **READY** — CLI: `intentra run`, `intentra status`, `intentra narrate`. Lives in `core/`.
 
 Everything in Phase 1 except the dispatch mechanism can be built and tested against
 recorded fixture envelopes, with no model in the loop at all. That is the recommended
@@ -361,10 +361,10 @@ Deliverables:
 - **READY** — Project-management adapter (read-only) and runtime adapter (read-only).
 - **NEEDS CONTRACT** — Findings report with evidence. Needs `Finding` and `Evidence`.
 
-**Exit test:** the Marksy pilot in section 8. This is where AgentOS either earns trust or
+**Exit test:** the Marksy pilot in section 8. This is where Intentra either earns trust or
 does not.
 
-**End of Phase 3, AgentOS is useful and still writes nothing.** That is a deliberate
+**End of Phase 3, Intentra is useful and still writes nothing.** That is a deliberate
 stopping point, and shipping it before building mutation capability is the safest way to
 learn whether the evidence model works.
 
@@ -390,7 +390,7 @@ Deliverables:
 - **READY** — Capability validation: trace a real record end to end. The method is
   specified; only its dispatch is substrate-dependent.
 - **BLOCKED** — Product/UX agent. Two dependencies: the execution substrate, and evidence
-  acquisition — how screenshots are obtained when AgentOS cannot set up an environment
+  acquisition — how screenshots are obtained when Intentra cannot set up an environment
   (section 11).
 - **READY** — Rework loop with budgets. Kernel-side.
 - **READY** — DoD evaluation and completion reporting. The kernel does the arithmetic;
@@ -398,7 +398,7 @@ Deliverables:
 
 **Exit test:** a run that *correctly fails* — the Validator rejects an implementation that
 passes its unit tests but does not work, rework fixes it, and re-validation passes. Proving
-AgentOS can say no is more important than proving it can say yes.
+Intentra can say no is more important than proving it can say yes.
 
 ## 8. Phase 6 — Authorization and production
 
@@ -407,7 +407,7 @@ Deliverables:
 - **READY** — Authorization gates, grant lifecycle and adapter-level enforcement.
 - **BLOCKED** — Request delivery and response. Depends on the human interaction channel
   (section 11) — CLI, PR comment, Jira or chat determines the response-window policy and
-  the identity AgentOS records.
+  the identity Intentra records.
 - **READY** — Security floor enforcement and violation logging.
 - **BLOCKED** — Production agent. Execution substrate.
 - **READY** — Production validation evidence collection.
@@ -424,16 +424,16 @@ data.
 
 ## 10. MVP definition
 
-**The MVP is Phases 1–3: a read-only AgentOS that discovers and audits.**
+**The MVP is Phases 1–3: a read-only Intentra that discovers and audits.**
 
 ```
-agentos work --repo <path> "<anything>"
+intentra work --repo <path> "<anything>"
 ```
 
 The MVP accepts any intake source and resolves it, but every admissible template for it is
 read-only — `investigation.readonly` and the audit path — because nothing mutates yet. That
 is a useful property rather than a limitation: **the whole resolution and workflow-selection
-layer can be exercised and judged before AgentOS can write anything.** Whether it correctly
+layer can be exercised and judged before Intentra can write anything.** Whether it correctly
 identifies what a request is, and where that work already stands, is testable with zero risk.
 
 Given a repository and any request, it produces:
@@ -449,7 +449,7 @@ It mutates nothing.
 This is the MVP because it exercises every hard part of the design — discovery,
 reconciliation, evidence, confidence, capability modelling, durable state, handoff
 contracts — while carrying no risk to any repository, and because a good audit is worth
-shipping even if AgentOS never writes a line of code.
+shipping even if Intentra never writes a line of code.
 
 **Explicitly out of MVP scope:** implementation, validation beyond static analysis, UX
 review, authorization gates (nothing is gated when nothing mutates), deployment,
@@ -499,7 +499,7 @@ Listed with when they must be resolved.
 - **Cost model** (Phase 2). A full audit of a large repository could be expensive. Tiered
   discovery is the mitigation; whether it is sufficient is unmeasured.
 - **Product/UX evidence acquisition** (Phase 5). Screenshots require running the app,
-  which requires environment setup AgentOS may not be able to do autonomously.
+  which requires environment setup Intentra may not be able to do autonomously.
 - **Human interaction channel** (Phase 6). Where authorization requests appear — CLI, PR
   comment, Jira, chat. Affects response-window policy.
 - **Multi-repository capability graphs** (Phase 7). Design sketched, not specified.
@@ -515,33 +515,33 @@ Listed with when they must be resolved.
 
 None of these block Phase 1 except the first two.
 
-## 12. Testing AgentOS against Marksy
+## 12. Testing Intentra against Marksy
 
 **Not yet.** The pilot runs at the end of Phase 3.
 
 ### Why Marksy is the right first target
 
 The problems in Marksy's IPO intelligence were found manually, so ground truth exists
-independently of AgentOS. That makes it a real test rather than a demo.
+independently of Intentra. That makes it a real test rather than a demo.
 
 ### Protocol
 
-1. **Freeze ground truth first.** Before AgentOS runs, write down the manually-found
+1. **Freeze ground truth first.** Before Intentra runs, write down the manually-found
    problems — SME classification gap, incorrect SME subscription book, disconnected
    writers and readers, GMP provenance concerns, lifecycle/API/UI gaps, incorrect
    empty-state semantics, missing outcome evidence, UI information architecture problems —
    with evidence and severity. Store this outside the run, sealed.
-2. **Run blind.** `agentos audit --repo <marksy> --goal "Make Marksy IPO intelligence
-   production-complete."` AgentOS is given nothing but the goal. No hints, no ground truth,
+2. **Run blind.** `intentra audit --repo <marksy> --goal "Make Marksy IPO intelligence
+   production-complete."` Intentra is given nothing but the goal. No hints, no ground truth,
    no `.agent/` directory seeded with answers.
 3. **Compare.**
 
 ### Scoring
 
-- **Recall** — how many known problems did AgentOS independently find? Each is `FOUND`
+- **Recall** — how many known problems did Intentra independently find? Each is `FOUND`
   (with correct evidence), `PARTIAL` (right area, wrong or incomplete diagnosis), or
   `MISSED`.
-- **Precision** — of what AgentOS reported, how much is real? Each finding is `TRUE`,
+- **Precision** — of what Intentra reported, how much is real? Each finding is `TRUE`,
   `FALSE` or `UNVERIFIABLE`.
 - **Novel findings** — real problems the humans missed. This is the strongest possible
   signal, and worth more than recall.

@@ -11,7 +11,7 @@ import type {
   EvidenceKind,
   EvidencePredicate,
   Locator,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 import type { FreshnessClass, FreshnessWindows } from './assertions.js';
 import { fact, inference, makeEvidence, unknown } from './assertions.js';
 
@@ -31,7 +31,7 @@ import { fact, inference, makeEvidence, unknown } from './assertions.js';
  *    refusal and an error are five different outcomes with five different recoveries. The one
  *    thing none of them is, is evidence that the thing does not exist.
  * 3. **Refusals are surfaced, never swallowed.** A `scope_violation` or a `security_violation`
- *    is AgentOS's own enforcement acting; recording it as "we found nothing there" would hide
+ *    is Intentra's own enforcement acting; recording it as "we found nothing there" would hide
  *    the most interesting event of the run. A security violation additionally aborts the
  *    session, and every probe that had not yet run is recorded as skipped for that reason.
  * 4. **Coverage is computed from the calls actually made**, not declared by the probe. The
@@ -160,7 +160,7 @@ export class ProbeSession {
    *
    * A security violation aborts immediately and is reported regardless of the run's outcome:
    * an attempt to reach outside the worktree is worth knowing about even when it failed, and
-   * continuing to probe after one would be AgentOS quietly retrying a boundary it just hit.
+   * continuing to probe after one would be Intentra quietly retrying a boundary it just hit.
    */
   get abortedBy(): ProbeRefusal | null {
     return this.#abortedBy;
@@ -417,7 +417,7 @@ export class ProbeSession {
         observedAt,
         reason: 'UNAVAILABLE',
         attempted: `${observation.adapter}.${observation.op} was refused as a `
-          + `${observation.refusal}: ${observation.message}. The refusal is AgentOS's own `
+          + `${observation.refusal}: ${observation.message}. The refusal is Intentra's own `
           + 'enforcement acting and is recorded as a refusal, not as an absence in the system '
           + 'under study',
         recoverableBy: observation.refusal === 'security_violation'
@@ -471,7 +471,7 @@ export class ProbeSession {
           reason: 'UNAVAILABLE',
           attempted: `the ${observation.adapter} adapter is reachable and denied the request: `
             + observation.detail,
-          recoverableBy: `grant AgentOS read access to the ${observation.adapter} source and `
+          recoverableBy: `grant Intentra read access to the ${observation.adapter} source and `
             + 're-probe',
         });
       case 'NO_OPERATION':

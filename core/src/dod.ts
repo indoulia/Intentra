@@ -10,8 +10,8 @@ import type {
   HandoffEnvelope,
   SourceDrift,
   TemplateStage,
-} from '@agentos/contracts';
-import type { PolicySet } from '@agentos/policies';
+} from '@intentra/contracts';
+import type { PolicySet } from '@intentra/policies';
 
 /**
  * The Definition-of-Done arithmetic.

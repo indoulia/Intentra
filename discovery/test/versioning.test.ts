@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { fixtures as fx } from '@agentos/contracts';
-import type { Assertion } from '@agentos/contracts';
+import { fixtures as fx } from '@intentra/contracts';
+import type { Assertion } from '@intentra/contracts';
 import {
   fact,
   freshnessOf,

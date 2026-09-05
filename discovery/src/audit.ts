@@ -6,7 +6,7 @@ import type {
   ContextPackage,
   Evidence,
   EvidencePredicate,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 import { inlineEvidence } from './assertions.js';
 import { ASSERTION_SECTIONS, REALITY_ELEMENTS } from './package.js';
 import { excerptOf } from './redact.js';

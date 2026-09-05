@@ -7,7 +7,7 @@
  * sits in the kernel's path, so all of it has to be a pure function of its inputs.
  *
  * The hash is SHA-256 from `node:crypto`, which is a Node builtin rather than a dependency,
- * so `@agentos/contracts` still declares none.
+ * so `@intentra/contracts` still declares none.
  */
 import { createHash } from 'node:crypto';
 

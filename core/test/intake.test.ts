@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { sha256, type HostIdentity, type IntakeSource } from '@agentos/contracts';
-import { loadPolicies } from '@agentos/policies';
+import { sha256, type HostIdentity, type IntakeSource } from '@intentra/contracts';
+import { loadPolicies } from '@intentra/policies';
 import {
   classifyTrust,
   compareSourceDrift,

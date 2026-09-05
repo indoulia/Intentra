@@ -1,5 +1,5 @@
-import { sha256 } from '@agentos/contracts';
-import type { EvidenceKind, EvidencePolicy, EvidencePredicate } from '@agentos/contracts';
+import { sha256 } from '@intentra/contracts';
+import type { EvidenceKind, EvidencePolicy, EvidencePredicate } from '@intentra/contracts';
 
 /**
  * The per-kind comparators, as `policies/data/evidence.json` declares them.

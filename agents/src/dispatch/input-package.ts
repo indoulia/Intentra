@@ -9,7 +9,7 @@ import type {
   SkillOffer,
   Stage,
   ToolGrant,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 
 /**
  * Building the typed input an agent receives.

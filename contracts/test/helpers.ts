@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 /**
  * Test-side filesystem access.
  *
- * `@agentos/contracts` itself does no I/O — the schemas are embedded. Its tests do, because
+ * `@intentra/contracts` itself does no I/O — the schemas are embedded. Its tests do, because
  * the expressiveness test has to read the frozen documents to check that every worked
  * example in them validates, and a test that read an embedded copy of a document would be
  * checking the copy.

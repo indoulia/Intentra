@@ -33,7 +33,7 @@ function at(path: string): string {
 
 const WORKTREE = at('/repo/worktree');
 const OUTSIDE = at('/repo/outside');
-const INSTALLATION = at('/opt/agentos');
+const INSTALLATION = at('/opt/intentra');
 const HOME = at('/home/operator');
 const HOP = at('/repo/hop');
 const GONE = at('/repo/gone');

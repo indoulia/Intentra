@@ -1,4 +1,4 @@
-import type { BudgetPolicy, ConsumedBudget, Cost } from '@agentos/contracts';
+import type { BudgetPolicy, ConsumedBudget, Cost } from '@intentra/contracts';
 
 /**
  * Budget and loop accounting.

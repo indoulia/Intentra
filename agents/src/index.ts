@@ -1,5 +1,5 @@
 /**
- * `@agentos/agents` — the dispatch boundary and the role specifications.
+ * `@intentra/agents` — the dispatch boundary and the role specifications.
  *
  * Two things live here and nothing else. **The roles**, as specifications rather than
  * prompts: what each owns, what it must be given, what it owes back, and what model

@@ -7,8 +7,8 @@ import {
   type Scope,
   type TriageProposal,
   type WorkItem,
-} from '@agentos/contracts';
-import { loadPolicies } from '@agentos/policies';
+} from '@intentra/contracts';
+import { loadPolicies } from '@intentra/policies';
 import {
   childWorkItem,
   coordinateChildren,

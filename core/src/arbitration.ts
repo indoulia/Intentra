@@ -5,7 +5,7 @@ import type {
   ConflictPosition,
   Finding,
   HandoffEnvelope,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 
 /**
  * Conflict detection and arbitration's kernel half.
@@ -102,7 +102,7 @@ export type RuleResolution =
     readonly rule: string;
     readonly detail: string;
     /**
-     * A discrepancy worth recording whatever action follows. "AgentOS believes it opened a PR
+     * A discrepancy worth recording whatever action follows. "Intentra believes it opened a PR
      * that does not exist" is worth knowing even once the external system has won.
      */
     readonly finding?: string;
@@ -133,7 +133,7 @@ export type AuthoritySubject =
   | 'runtime'
   /** What someone intended, and the ticket's own status. */
   | 'intent'
-  /** What AgentOS previously did — and nothing external. */
+  /** What Intentra previously did — and nothing external. */
   | 'agentos_log';
 
 /** Which source class a conflict position came from, from the source name it carries. */
@@ -165,8 +165,8 @@ export function subjectAuthority(subject: string): AuthoritySubject | null {
 /**
  * The authority rule, applied **before** anything else and before escalation.
  *
- * The external system wins on its own state. The AgentOS event log is authoritative about
- * AgentOS's own actions and nothing external — it records that a PR was opened, not that the
+ * The external system wins on its own state. The Intentra event log is authoritative about
+ * Intentra's own actions and nothing external — it records that a PR was opened, not that the
  * PR is still open — so a log-against-host conflict is settled by rule rather than delegated,
  * and **the discrepancy is itself recorded as a finding**.
  *
@@ -197,8 +197,8 @@ export function resolveByAuthority(conflict: Conflict): RuleResolution | null {
       + `${won.source} wins on ${conflict.subject} and ${loser.source} does not. Settled by `
       + 'rule with no model involved',
     finding: loserAuthority === 'agentos_log'
-      ? `AgentOS's own ledger says ${loser.claim} for ${conflict.subject} and ${won.source} `
-        + `says ${won.claim}. The ledger is authoritative about what AgentOS did and says `
+      ? `Intentra's own ledger says ${loser.claim} for ${conflict.subject} and ${won.source} `
+        + `says ${won.claim}. The ledger is authoritative about what Intentra did and says `
         + 'nothing about whether it still holds, so the external system wins — and the '
         + 'discrepancy is worth knowing regardless of which action follows'
       : `${loser.source} claimed ${loser.claim} about ${conflict.subject}, which it is not `
@@ -210,12 +210,12 @@ export function resolveByAuthority(conflict: Conflict): RuleResolution | null {
  * Step 3 of arbitration: classify by rule where possible.
  *
  * Two rules, in order. **Authority first**: the external system wins on its own state, and a
- * conflict between AgentOS's log and an external system is settled here with the discrepancy
+ * conflict between Intentra's log and an external system is settled here with the discrepancy
  * recorded as a finding. Then confidence class: `FACT` beats `INFERENCE` beats `UNKNOWN`,
  * decided by the kernel with no model involved.
  *
  * Authority precedes confidence deliberately. A `FACT` from a source that does not speak for
- * the subject — AgentOS's own log about the present state of a pull request — would otherwise
+ * the subject — Intentra's own log about the present state of a pull request — would otherwise
  * beat an `INFERENCE` from the source that does, which is the exact inversion section 5.1
  * exists to prevent.
  *

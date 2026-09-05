@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * Cross-checks AgentOS's own JSON Schema validator against ajv.
+ * Cross-checks Intentra's own JSON Schema validator against ajv.
  *
- * `@agentos/contracts` has zero dependencies, so it carries its own validator. That buys
+ * `@intentra/contracts` has zero dependencies, so it carries its own validator. That buys
  * determinism and no supply chain, and it costs the confidence that comes from a widely
  * used implementation. This script buys that confidence back without adding a dependency to
  * the package: ajv is a build-time devDependency here in `tools/`, and the two validators
@@ -39,7 +39,7 @@ const ajv = new Ajv2020({
 for (const file of readdirSync(SCHEMA_DIR).filter((f) => f.endsWith('.json'))) {
   ajv.addSchema(JSON.parse(readFileSync(join(SCHEMA_DIR, file), 'utf8')));
 }
-/* The wrapper schemas `@agentos/contracts` registers for `$defs` entry points. */
+/* The wrapper schemas `@intentra/contracts` registers for `$defs` entry points. */
 for (const id of SCHEMAS.ids()) {
   if (!id.includes('?def=')) continue;
   ajv.addSchema(SCHEMAS.get(id));
@@ -123,17 +123,17 @@ for (const { validatorName, label, instance } of cases) {
       label,
       validatorName,
       schemaId: validator.schemaId,
-      agentos: mine,
+      intentra: mine,
       ajv: theirs,
       ajvErrors: (ajvValidate.errors ?? []).slice(0, 4),
-      agentosErrors: validator.check(instance).errors.slice(0, 4),
+      intentraErrors: validator.check(instance).errors.slice(0, 4),
     });
   }
 }
 
 /* Also compare the two on every registered schema's own meta-shape: each schema document
- * must itself be a valid 2020-12 schema, which ajv checks and the AgentOS validator does
- * not attempt. This is the one asymmetry, and it is deliberate: the AgentOS validator
+ * must itself be a valid 2020-12 schema, which ajv checks and the Intentra validator does
+ * not attempt. This is the one asymmetry, and it is deliberate: the Intentra validator
  * rejects unsupported keywords at seal, which is stricter than the metaschema. */
 let metaChecked = 0;
 for (const schema of ALL_SCHEMAS) {
@@ -144,10 +144,10 @@ for (const schema of ALL_SCHEMAS) {
       label: `metaschema ${schema.$id}`,
       validatorName: '(metaschema)',
       schemaId: 'https://json-schema.org/draft/2020-12/schema',
-      agentos: true,
+      intentra: true,
       ajv: false,
       ajvErrors: (ajv.errors ?? []).slice(0, 4),
-      agentosErrors: [],
+      intentraErrors: [],
     });
   }
 }
@@ -156,9 +156,9 @@ if (disagreements.length > 0) {
   console.error(`ajv parity FAILED: ${disagreements.length} disagreement(s) of ${checked}\n`);
   for (const d of disagreements) {
     console.error(`  ${d.label} against ${d.schemaId}`);
-    console.error(`    agentos: ${d.agentos ? 'valid' : 'invalid'}   ajv: ${d.ajv ? 'valid' : 'invalid'}`);
-    if (d.agentosErrors.length > 0) {
-      console.error(`    agentos says: ${d.agentosErrors.map((e) => `${e.instancePath} ${e.message}`).join('; ')}`);
+    console.error(`    intentra: ${d.intentra ? 'valid' : 'invalid'}   ajv: ${d.ajv ? 'valid' : 'invalid'}`);
+    if (d.intentraErrors.length > 0) {
+      console.error(`    intentra says: ${d.intentraErrors.map((e) => `${e.instancePath} ${e.message}`).join('; ')}`);
     }
     if (d.ajvErrors.length > 0) {
       console.error(`    ajv says: ${d.ajvErrors.map((e) => `${e.instancePath} ${e.message}`).join('; ')}`);

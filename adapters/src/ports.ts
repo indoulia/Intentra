@@ -4,7 +4,7 @@ import type {
   Gate,
   IdempotencyRecord,
   MutationEvent,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 
 /**
  * The edges the adapter framework does not own, declared as ports and injected.
@@ -144,7 +144,7 @@ export const EMPTY_IDEMPOTENCY_LEDGER: IdempotencyLedger = {
 
 /* ------------------------------------------------------------------- the run ledger ---- */
 
-/** One prior AgentOS run against a work item, as its own ledger recorded it. */
+/** One prior Intentra run against a work item, as its own ledger recorded it. */
 export interface RunLedgerEntry {
   readonly run_id: string;
   readonly work_item_id: string;
@@ -155,13 +155,13 @@ export interface RunLedgerEntry {
    * The stages this run actually completed.
    *
    * The only honest observation that an analysis happened (amendment A-15). Code existing
-   * does not mean an audit was run; AgentOS's own ledger is what says it was, and
+   * does not mean an audit was run; Intentra's own ledger is what says it was, and
    * `reality.stage_completed_previously` reads nothing else.
    */
   readonly stages_completed: readonly string[];
 }
 
-/** A child work item AgentOS itself recorded, with the lifecycle state it is in. */
+/** A child work item Intentra itself recorded, with the lifecycle state it is in. */
 export interface ChildWorkItemEntry {
   readonly work_item_id: string;
   readonly parent_work_item_id: string;
@@ -171,7 +171,7 @@ export interface ChildWorkItemEntry {
 }
 
 /**
- * Read-only access to AgentOS's own run ledger.
+ * Read-only access to Intentra's own run ledger.
  *
  * The ledger lives under `state/`, which only the kernel writes and which neither `adapters/`
  * nor `discovery/` may reach — both are named in the dependency-cruiser rule that forbids it.

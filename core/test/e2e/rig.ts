@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import type { Connector } from '@agentos/adapters';
-import { ResourceAbsentError, ResourceUnreachableError } from '@agentos/adapters';
-import type { Event, IntakeSource, ModelEntry, Registries } from '@agentos/contracts';
+import type { Connector } from '@intentra/adapters';
+import { ResourceAbsentError, ResourceUnreachableError } from '@intentra/adapters';
+import type { Event, IntakeSource, ModelEntry, Registries } from '@intentra/contracts';
 import type { RunResult, StartInput } from '../../src/kernel.js';
 import {
   admitIntake,
@@ -21,13 +21,13 @@ import { assertUnchanged, type ScratchWorld, type WorldFingerprint } from './wor
  * Every scenario drives the *composition root*, not a hand-assembled port bag: `buildKernel`
  * wires the real adapter framework against a real scratch repository, the real discovery
  * service, the real registries, the real agent catalogue and the real run store, the intake is
- * admitted through `admitIntake` exactly as `agentos work` admits it, and then
- * `kernel.work(...)` runs with the same two callbacks `agentos work` passes. The single
+ * admitted through `admitIntake` exactly as `intentra work` admits it, and then
+ * `kernel.work(...)` runs with the same two callbacks `intentra work` passes. The single
  * substitution is the substrate — a scripted double instead of a model — because the ground
  * rule for this suite is that no test may need a network, a key or a live model.
  *
  * That substitution is exactly the one `core/src/cli/main.ts` does *not* make, so a scenario
- * here is `agentos work` with the model replaced by a recording and nothing else replaced.
+ * here is `intentra work` with the model replaced by a recording and nothing else replaced.
  * `status` and `narrate` are then driven through `main()` itself against the same state root,
  * which is what makes "the flow reached a durable run record" a claim about the CLI rather
  * than about the store.
@@ -85,7 +85,7 @@ export interface WorkOutcome {
   /**
    * Why the intake source could not be dereferenced at admission, or `null` where it was.
    *
-   * `agentos work` prints this on stderr and runs on what the operator typed, which is why the
+   * `intentra work` prints this on stderr and runs on what the operator typed, which is why the
    * drift check will say `UNAVAILABLE` at the end. Carried out of the rig so a scenario can
    * assert the reason rather than only the consequence.
    */
@@ -110,7 +110,7 @@ export async function work(options: WorkOptions): Promise<WorkOutcome> {
   });
 
   /*
-   * The intake, admitted the way `agentos work` admits it.
+   * The intake, admitted the way `intentra work` admits it.
    *
    * This used to hand the kernel `sourceLocatorFor(source, raw)` and the operator's `raw`
    * directly, which is what `core/src/cli/main.ts` did *before* D4 was fixed — and the reason
@@ -200,7 +200,7 @@ export interface CliResult {
   readonly err: string;
 }
 
-/** Runs `agentos <argv>` against a world's state root, capturing both streams. */
+/** Runs `intentra <argv>` against a world's state root, capturing both streams. */
 export async function cli(
   world: ScratchWorld,
   argv: readonly string[],
@@ -263,13 +263,13 @@ export async function assertReadOnlyAndDurable(
   );
 
   const status = await cli(world, ['status', workItemId, runId]);
-  assert.equal(status.code, 0, 'agentos status reads the run back');
-  assert.ok(status.out.length > 0, 'agentos status has something to say about the run');
+  assert.equal(status.code, 0, 'intentra status reads the run back');
+  assert.ok(status.out.length > 0, 'intentra status has something to say about the run');
 
   const narrative = await cli(world, ['narrate', workItemId, runId]);
-  assert.equal(narrative.code, 0, 'agentos narrate reads the run back');
+  assert.equal(narrative.code, 0, 'intentra narrate reads the run back');
 
-  /* 4. The narrative states what AgentOS decided the work was, and why — and the decision is
+  /* 4. The narrative states what Intentra decided the work was, and why — and the decision is
    *    durable in the log the narrative is rendered from. */
   assertNarrativeStatesTheDecision(narrative.out, expectations.selectedWorkflow ?? true);
   assertIntentIsDurable(outcome);
@@ -302,7 +302,7 @@ export function assertNoMutatingCall(outcome: WorkOutcome): void {
 }
 
 /**
- * The narrative says what AgentOS decided the work was and why.
+ * The narrative says what Intentra decided the work was and why.
  *
  * v0.3 names a confidently wrong resolution as its residual risk and names the narrative as
  * the mitigation, so this is the assertion that makes the mitigation real: a run that did the
@@ -315,8 +315,8 @@ export function assertNarrativeStatesTheDecision(
 ): void {
   assert.match(
     narrative,
-    /\*\*AgentOS decided this is an? [A-Z_]+\*\*/,
-    'the narrative states, in the type it admitted, what AgentOS decided the work was',
+    /\*\*Intentra decided this is an? [A-Z_]+\*\*/,
+    'the narrative states, in the type it admitted, what Intentra decided the work was',
   );
   assert.match(
     narrative,
@@ -326,7 +326,7 @@ export function assertNarrativeStatesTheDecision(
   );
   assert.match(
     narrative,
-    /## What AgentOS decided the work was, and why/,
+    /## What Intentra decided the work was, and why/,
     'the account leads with the decision rather than burying it under the transcript',
   );
   if (selectedWorkflow) {
@@ -350,7 +350,7 @@ export function assertNarrativeStatesTheDecision(
 }
 
 /**
- * The durable one-line record of what AgentOS decided, from the run log.
+ * The durable one-line record of what Intentra decided, from the run log.
  *
  * `WorkItem` carries no intent field, so this `note` is the only place the decided intent
  * survives — and it is written to the work-item log as well as the run log, so it outlives the
@@ -360,7 +360,7 @@ export function assertNarrativeStatesTheDecision(
 export function assertIntentIsDurable(outcome: WorkOutcome): void {
   const recorded = notes(outcome.log, 'intent');
   assert.ok(recorded.length > 0, 'the decided intent is a durable event');
-  assert.match(recorded[0] ?? '', /AgentOS decided this work is [A-Z_]+/);
+  assert.match(recorded[0] ?? '', /Intentra decided this work is [A-Z_]+/);
   assert.match(recorded[0] ?? '', /admitted as type [A-Z_]+/);
   assert.match(
     recorded[0] ?? '',
@@ -394,21 +394,21 @@ export async function assertNothingAdvanced(
   );
 
   const listing = await cli(world, ['status']);
-  assert.equal(listing.code, 0, 'agentos status still reads the state root');
+  assert.equal(listing.code, 0, 'intentra status still reads the state root');
   assert.match(
     listing.out,
     /no work items under/,
-    'agentos status reports an empty state root rather than inventing a run',
+    'intentra status reports an empty state root rather than inventing a run',
   );
 
   /*
    * The narrative is printed on every path, including the ones that stop. It is the only
-   * account of what AgentOS made of the request before it stopped — a run that refused
+   * account of what Intentra made of the request before it stopped — a run that refused
    * silently would be a run nobody could argue with.
    */
   assert.match(
     outcome.result.narrative,
-    /## What AgentOS decided the work was, and why/,
+    /## What Intentra decided the work was, and why/,
     'the refusal still leads with an account of the request',
   );
   assert.match(
@@ -508,7 +508,7 @@ export function unreachablePm(
  *
  * The counterpart to `unreachablePm`, and the case scenario 13 exists to keep apart from it:
  * the source answered, the key is wrong, and a human should hear that rather than watch
- * AgentOS wait for a system that is already up.
+ * Intentra wait for a system that is already up.
  */
 export function reachableEmptyPm(): Connector {
   return reachablePm({});

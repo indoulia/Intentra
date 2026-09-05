@@ -1,4 +1,4 @@
-import type { Event, WorkItem } from '@agentos/contracts';
+import type { Event, WorkItem } from '@intentra/contracts';
 import type { Projection } from './recovery.js';
 
 /**
@@ -8,14 +8,14 @@ import type { Projection } from './recovery.js';
  * log alone, the log is deficient — that is a kernel bug, not a documentation gap.**
  *
  * The narrative gains one obligation in v0.3, and it is the mitigation for the residual risk
- * the freeze carries forward: **it must state what AgentOS decided the work was, and why.**
+ * the freeze carries forward: **it must state what Intentra decided the work was, and why.**
  * A run that misread its intake and then executed flawlessly is the new failure mode this
  * layer introduces, and it is invisible unless resolution is narrated alongside execution.
  * So the narrative opens with the resolution and its evidence, and not with the first
  * dispatch.
  *
  * The answerability test is the standard: at any moment a human must be able to ask "what is
- * AgentOS doing right now, why, on what evidence, and what will it do next?" and get an
+ * Intentra doing right now, why, on what evidence, and what will it do next?" and get an
  * accurate answer from durable state — not from a model's recollection.
  */
 
@@ -70,7 +70,7 @@ function withoutDanglingColon(line: string): string {
 }
 
 /**
- * What AgentOS decided the work was, and why. First, always.
+ * What Intentra decided the work was, and why. First, always.
  *
  * This is the section the narrative exists for. A reader who stops after it should be able to
  * tell whether the run was about the right thing.
@@ -110,7 +110,7 @@ function resolutionSection(
   if (admitted !== undefined) {
     const item = admitted.data.work_item;
     lines.push(
-      `**AgentOS decided this is a ${item.type}**: "${item.title}", scoped to `
+      `**Intentra decided this is a ${item.type}**: "${item.title}", scoped to `
       + (item.scope.paths.join(', ') || 'no paths')
       + (item.scope.capabilities.length > 0
         ? ` and ${item.scope.capabilities.join(', ')}`
@@ -205,7 +205,7 @@ function resolutionSection(
   for (const event of questions) {
     lines.push(
       `a question was ${event.data.phase.toLowerCase()}: "${event.data.question}" with `
-      + `${event.data.readings.length} readings and what AgentOS would do under each`
+      + `${event.data.readings.length} readings and what Intentra would do under each`
       + (event.data.answer === null ? '' : `. Answer: ${event.data.answer}`),
     );
   }
@@ -217,7 +217,7 @@ function resolutionSection(
     );
   }
 
-  return { heading: 'What AgentOS decided the work was, and why', lines };
+  return { heading: 'What Intentra decided the work was, and why', lines };
 }
 
 /** What reality it found, from adapters or UNKNOWN. */
@@ -620,7 +620,7 @@ function completionSection(events: readonly Event[]): NarrativeSection {
 }
 
 /**
- * The live view: what AgentOS is doing right now, why, on what evidence, and what next.
+ * The live view: what Intentra is doing right now, why, on what evidence, and what next.
  *
  * A projection over the log rather than a status a component reports, so it cannot disagree
  * with what actually happened.

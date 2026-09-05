@@ -8,8 +8,8 @@ import {
   type Registries,
   type SkillEntry,
   type ToolInvoker,
-} from '@agentos/contracts';
-import { RunStore } from '@agentos/state';
+} from '@intentra/contracts';
+import { RunStore } from '@intentra/state';
 import { coordinateChildren } from '../../src/orchestration.js';
 import { buildKernel } from '../../src/composition/index.js';
 import { project } from '../../src/recovery.js';
@@ -230,7 +230,7 @@ describe('scenario 18 — cancellation (at the seam: CHILD_COORDINATION is unrea
 describe('scenario 19 — missing model', () => {
   test('end to end, through the real CLI: with no model at all the prologue refuses, and nothing was started to block', async () => {
     /*
-     * This is the one scenario driven through `agentos work` itself, with no substitution
+     * This is the one scenario driven through `intentra work` itself, with no substitution
      * whatever — not even the substrate, because with no model selectable the substrate is
      * never reached. Every kernel function still runs: intake is recorded, tier-1 orientation
      * runs, the resolution dispatch is attempted and reports `NO_MODEL`.
@@ -259,7 +259,7 @@ describe('scenario 19 — missing model', () => {
     assert.match(result.out, /models {6}0 available of 0 enumerated/);
 
     /* The narrative is printed even here, which is what makes a refusal arguable. */
-    assert.match(result.out, /## What AgentOS decided the work was, and why/);
+    assert.match(result.out, /## What Intentra decided the work was, and why/);
 
     assert.equal(after.tree, before.tree, 'nothing was written to the repository');
     assert.equal(after.head, before.head);
@@ -414,13 +414,13 @@ describe('scenario 20 — resume after interruption', () => {
     );
   });
 
-  test('end to end: a second run over the same work item resumes from AgentOS’s own ledger rather than starting over', async () => {
+  test('end to end: a second run over the same work item resumes from Intentra’s own ledger rather than starting over', async () => {
     /*
      * The other half of resumption, and the one a human would call "restarting it". The first
      * run completes `AUDIT` and `ROOT_CAUSE` and reaches `COMPLETION`; the second run against
      * the same request resolves to the same work item and computes its entry stage by reading
      * `reality.stage_completed_previously`, which is answered by `host.read_run_history` over
-     * AgentOS's own ledger and by nothing else. Code existing does not mean an audit was run —
+     * Intentra's own ledger and by nothing else. Code existing does not mean an audit was run —
      * which is why the second run consults the ledger rather than the worktree, and why the
      * assertions below are about the ledger read and not about the outcome.
      */
@@ -452,7 +452,7 @@ describe('scenario 20 — resume after interruption', () => {
     assert.match(
       walk,
       /reality\.stage_completed_previously/,
-      'the walk consults AgentOS’s own run ledger, which is the only honest observation '
+      'the walk consults Intentra’s own run ledger, which is the only honest observation '
       + 'that an analysis happened',
     );
 

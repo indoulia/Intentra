@@ -2,8 +2,8 @@ import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { validators } from '@agentos/contracts';
-import type { Assertion } from '@agentos/contracts';
+import { validators } from '@intentra/contracts';
+import type { Assertion } from '@intentra/contracts';
 import {
   createAdapterSuite,
   type AdapterSuite,
@@ -36,7 +36,7 @@ import {
  * get wrong in the same direction:
  *
  * - **`host.read_run_history`** is the only input to `reality.stage_completed_previously`
- *   (amendment A-15). Code existing does not mean an analysis happened; AgentOS's own ledger
+ *   (amendment A-15). Code existing does not mean an analysis happened; Intentra's own ledger
  *   is the only honest observation that it did. If this returned an empty history when it
  *   could not look, every resumed run would re-enter at `AUDIT` and redo work it had already
  *   done — so "we could not look" and "there were none" must stay different answers.

@@ -9,7 +9,7 @@ import type {
   Finding,
   HandoffEnvelope,
   Violation,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 
 /**
  * Step 4 of envelope receipt: the kernel replays evidence through the originating adapter.

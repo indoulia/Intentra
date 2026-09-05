@@ -106,7 +106,7 @@
         "reading": { "$ref": "common.json#/$defs/nonEmptyString" },
         "why_rejected": { "$ref": "common.json#/$defs/nonEmptyString" },
         "would_do": {
-          "description": "What AgentOS would do under this reading. Rung 4 of the uncertainty ladder asks with this in hand.",
+          "description": "What Intentra would do under this reading. Rung 4 of the uncertainty ladder asks with this in hand.",
           "type": "string"
         }
       },
@@ -127,7 +127,7 @@
     },
 
     "workItem": {
-      "description": "The durable thing AgentOS is trying to accomplish. It outlives every attempt.",
+      "description": "The durable thing Intentra is trying to accomplish. It outlives every attempt.",
       "type": "object",
       "properties": {
         "work_item_id": { "$ref": "common.json#/$defs/id" },

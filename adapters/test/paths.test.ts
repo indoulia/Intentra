@@ -209,7 +209,7 @@ describe('the mandate', () => {
 
 describe('the absolute deny-list, checked even when the worktree and mandate pass', () => {
   /**
-   * The invariant suite's rule 2, run against the shape that actually threatens it: AgentOS
+   * The invariant suite's rule 2, run against the shape that actually threatens it: Intentra
    * auditing its own repository, where `state/` genuinely does resolve inside the worktree.
    */
   function selfHosted(): PathConfinement {

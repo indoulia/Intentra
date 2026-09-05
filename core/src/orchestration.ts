@@ -14,8 +14,8 @@ import {
   type WorkItemLink,
   type WorkItemLinkKind,
   type WorkItemType,
-} from '@agentos/contracts';
-import type { PolicySet } from '@agentos/policies';
+} from '@intentra/contracts';
+import type { PolicySet } from '@intentra/policies';
 import {
   admitCancellation,
   admitDecomposition,

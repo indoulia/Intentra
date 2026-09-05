@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { fixtures as fx } from '@agentos/contracts';
+import { fixtures as fx } from '@intentra/contracts';
 import { REALITY_ELEMENTS } from '../src/index.js';
 import { assertValidPackage, operationsCalled, reasonOf, serviceOver } from './helpers.js';
 import { healthyWorld } from './worlds.js';

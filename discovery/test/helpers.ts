@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import type { Assertion, ContextPackage } from '@agentos/contracts';
-import { validators } from '@agentos/contracts';
+import type { Assertion, ContextPackage } from '@intentra/contracts';
+import { validators } from '@intentra/contracts';
 import { DiscoveryService, type DiscoveryOptions } from '../src/index.js';
 import { FakeAdapters, TestClock, WINDOWS, type FakeWorld } from './fake-registry.js';
 

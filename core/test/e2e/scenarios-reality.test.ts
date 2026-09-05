@@ -1,6 +1,6 @@
 import { test, describe, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { fixtures as fx, type HandoffEnvelope, type Locator } from '@agentos/contracts';
+import { fixtures as fx, type HandoffEnvelope, type Locator } from '@intentra/contracts';
 import { Kernel, type StartInput } from '../../src/kernel.js';
 import { detectConflicts, resolveByRule, sourceAuthority } from '../../src/arbitration.js';
 import {
@@ -29,7 +29,7 @@ import {
 import { fileEvidence, investigationGraph, resolution, ticketEvidence } from './envelopes.js';
 
 /**
- * Scenarios 10-16: what AgentOS made of the state it found.
+ * Scenarios 10-16: what Intentra made of the state it found.
  *
  * The header of `scenarios-resolution.test.ts` states the two facts that govern this whole
  * suite — `investigation.readonly` is the only admissible template under
@@ -321,7 +321,7 @@ describe('scenario 11 — ambiguous work ("The pricing looks wrong.")', () => {
     );
   }
 
-  test('end to end: the ladder is entered and one question is asked, carrying both readings and what AgentOS would do under each', async () => {
+  test('end to end: the ladder is entered and one question is asked, carrying both readings and what Intentra would do under each', async () => {
     const world = newWorld();
     const asked: {
       question: string;
@@ -350,7 +350,7 @@ describe('scenario 11 — ambiguous work ("The pricing looks wrong.")', () => {
     for (const reading of first.readings) {
       assert.ok(
         reading.would_do.trim().length > 0,
-        'every reading says what AgentOS would do under it, which is what makes the question a '
+        'every reading says what Intentra would do under it, which is what makes the question a '
         + 'discrimination rather than a briefing',
       );
     }
@@ -384,7 +384,7 @@ describe('scenario 11 — ambiguous work ("The pricing looks wrong.")', () => {
 
     /*
      * A run that blocks at UNDERSTOOD never selects a workflow, and its narrative correctly
-     * carries no workflow paragraph: there is no decision to account for, because AgentOS
+     * carries no workflow paragraph: there is no decision to account for, because Intentra
      * declined to make one on silence.
      */
     const { narrative } = await assertReadOnlyAndDurable(world, outcome, { selectedWorkflow: false });
@@ -400,7 +400,7 @@ describe('scenario 11 — ambiguous work ("The pricing looks wrong.")', () => {
     );
     assert.match(
       narrative.out,
-      /a question was timed_out: .+ with 3 readings and what AgentOS would do under each/,
+      /a question was timed_out: .+ with 3 readings and what Intentra would do under each/,
       'the unanswered question is in the account a human reads, not only in the log',
     );
 
@@ -455,7 +455,7 @@ describe('scenario 12 — unknown work', () => {
     const { narrative, status } = await assertReadOnlyAndDurable(world, outcome);
 
     assert.match(status.out, /UNKNOWN/, 'the work item is admitted, with type UNKNOWN');
-    assert.match(narrative.out, /\*\*AgentOS decided this is a UNKNOWN\*\*/);
+    assert.match(narrative.out, /\*\*Intentra decided this is a UNKNOWN\*\*/);
     assert.doesNotMatch(
       narrative.out,
       /the kernel admitted UNKNOWN/,
@@ -659,7 +659,7 @@ describe('scenario 13 — unresolvable external item', () => {
     assert.match(absent.detail, /the source is reachable, and no such item exists/);
     assert.match(
       absent.detail,
-      /The key is wrong, and a human should hear that rather than watch AgentOS work on a guess/,
+      /The key is wrong, and a human should hear that rather than watch Intentra work on a guess/,
     );
     assert.notEqual(
       unreachable.detail,
@@ -712,7 +712,7 @@ describe('scenario 14 — stale state', () => {
       'and the predicate that decides whether the work is already done is one of them',
     );
 
-    /* And a human reading `agentos narrate` is told, in the words of the rule. */
+    /* And a human reading `intentra narrate` is told, in the words of the rule. */
     assert.match(
       narrative.out,
       /was evaluated after re-probing a stale element: reality is re-probed rather than snapshotted, because a review comment arriving mid-run would otherwise be invisible/,
@@ -1031,7 +1031,7 @@ describe('scenario 16 — changed requirements', () => {
     /* Disclosed in the narrative a human reads, not merely journalled. */
     assert.match(narrative.out, /the intake source/i);
 
-    /* And AgentOS did not chase the edit: it reports against the outcome it admitted. */
+    /* And Intentra did not chase the edit: it reports against the outcome it admitted. */
     assert.match(narrative.out, /every documented mention of the widget is identified/);
     assert.doesNotMatch(narrative.out, /doohickey/);
   });

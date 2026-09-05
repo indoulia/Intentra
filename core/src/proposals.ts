@@ -8,8 +8,8 @@ import type {
   WorkItem,
   WorkItemLifecycle,
   WorkItemType,
-} from '@agentos/contracts';
-import { workItemIdFromContent, workItemIdFromExternalIdentity } from '@agentos/contracts';
+} from '@intentra/contracts';
+import { workItemIdFromContent, workItemIdFromExternalIdentity } from '@intentra/contracts';
 import { decompositionWithinBounds } from './budgets.js';
 import { pathMatches } from './predicates.js';
 import { scopeContained } from './workflow-admission.js';

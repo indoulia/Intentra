@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import type { Clock } from '@agentos/contracts';
+import type { Clock } from '@intentra/contracts';
 import type { ProcessResult, ProcessRunner } from './ports.js';
 
 /**
@@ -80,7 +80,7 @@ export const NO_PROCESS_RUNNER: ProcessRunner = {
       code: null,
       stdout: '',
       stderr:
-        `this AgentOS installation is configured to run no commands, so ${command} was not `
+        `this Intentra installation is configured to run no commands, so ${command} was not `
         + 'started. Nothing is claimed about what it would have reported',
       started: false,
     });

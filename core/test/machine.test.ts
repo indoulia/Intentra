@@ -6,8 +6,8 @@ import {
   type FrozenGraph,
   type HandoffEnvelope,
   type StageCursorEntry,
-} from '@agentos/contracts';
-import { loadPolicies } from '@agentos/policies';
+} from '@intentra/contracts';
+import { loadPolicies } from '@intentra/policies';
 import {
   decideAction,
   isLegalTransition,
@@ -436,7 +436,7 @@ describe('the refined safer-branch rule', () => {
 /* ============================================================= entry stage ==== */
 
 describe('entry-stage computation', () => {
-  /** A prior run's history: the ledger, authoritative about what AgentOS previously did. */
+  /** A prior run's history: the ledger, authoritative about what Intentra previously did. */
   const priorRun = (stages: readonly string[]) => fx.factAssertion(
     [{ run_id: 'run_20260903T090000Z_0000aa', outcome: 'BLOCKED', stages_completed: stages }],
     { evidence: ['E-ledger-1'], probe: 'agentos.history' },
@@ -479,7 +479,7 @@ describe('entry-stage computation', () => {
 
   test('scenario D: a resumed defect with a reviewed PR enters at REVIEW_TRIAGE', async () => {
     /*
-     * git and the PR host say the work is done and under review; the AgentOS ledger says the
+     * git and the PR host say the work is done and under review; the Intentra ledger says the
      * analysis happened. So the sweep marks the prefix COMPLETED_PRIOR and enters at triage.
      * Analysis, planning and implementation are not restarted, and not because an agent
      * decided they were done.

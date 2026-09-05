@@ -1,4 +1,4 @@
-import type { AdapterAvailability } from '@agentos/contracts';
+import type { AdapterAvailability } from '@intentra/contracts';
 import { fact, selfEvidence, unavailable, unknown } from '../assertions.js';
 import {
   OPTIONAL_STRING_ARG,
@@ -17,7 +17,7 @@ import type { AvailabilityProbe, Connector } from '../ports.js';
  * The runtime adapter: read-only, and optional.
  *
  * Optional in the sense REPOSITORY_ADAPTER 4 means it — its absence reduces the strength of
- * claims AgentOS is allowed to make and never reduces honesty about them. With no runtime
+ * claims Intentra is allowed to make and never reduces honesty about them. With no runtime
  * access, capability validation caps at integration level: every capability is at most
  * `PARTIAL`, never `PROVEN`, and the Validator says so. That sentence is the deliverable, not
  * the connector.

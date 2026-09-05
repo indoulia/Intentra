@@ -5,7 +5,7 @@ import type {
   ReconciliationMatrix,
   ReconciliationState,
   WorkItem,
-} from '@agentos/contracts';
+} from '@intentra/contracts';
 import { INTENT_KEYS } from './intent-keys.js';
 import type { SectionAssertions } from './probe.js';
 import { asArray, asBoolean, asString, records } from './probe.js';
@@ -26,11 +26,11 @@ import type { ProbeSession } from './session.js';
  * The authority rule is what makes the contradictions resolvable rather than arbitrary: **each
  * source is authoritative about its own subject and nothing else.** Git owns repository
  * content and pull request existence. The project-management system owns the ticket's own
- * status and is at most an inference about the system. AgentOS's event log owns what AgentOS
+ * status and is at most an inference about the system. Intentra's event log owns what Intentra
  * did and says nothing about whether it still holds.
  *
  * Where two sources disagree, the rule selects a winner *for the value* and the disagreement
- * is still recorded. "AgentOS believes it opened a pull request that does not exist" is worth
+ * is still recorded. "Intentra believes it opened a pull request that does not exist" is worth
  * knowing regardless of which action follows, and a reconciliation that quietly took git's
  * answer and moved on would have thrown away the only sign that something is wrong.
  */
@@ -229,8 +229,8 @@ export function reconcileWorkItem(
   /* ------------------------------------------------------- the conflicts ---- */
 
   /*
-   * AgentOS's ledger against git, on git's own subject. The ledger is authoritative about
-   * what AgentOS did — it records that a pull request was opened, not that one exists now —
+   * Intentra's ledger against git, on git's own subject. The ledger is authoritative about
+   * what Intentra did — it records that a pull request was opened, not that one exists now —
    * so git wins the value and the discrepancy is still a finding.
    */
   const history = reality['agentos_history'];
@@ -246,7 +246,7 @@ export function reconcileWorkItem(
         {
           source: 'agentos-ledger',
           claim: 'a prior run completed PR_PREPARATION against this work item',
-          authority: "what AgentOS did, and nothing about whether it still holds",
+          authority: "what Intentra did, and nothing about whether it still holds",
         },
         {
           source: 'git',
@@ -257,7 +257,7 @@ export function reconcileWorkItem(
       resolution: 'AUTHORITY_RULE',
       winner: 'git',
       detail:
-        'AgentOS believes it opened a pull request that does not exist. Git owns pull request '
+        'Intentra believes it opened a pull request that does not exist. Git owns pull request '
         + 'existence so its answer is the value, and the discrepancy is recorded as a finding '
         + 'because it is worth knowing regardless of which action follows',
     });

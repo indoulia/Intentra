@@ -1,4 +1,4 @@
-import type { AdapterOperationDescriptor, EvidenceKind, Gate } from '@agentos/contracts';
+import type { AdapterOperationDescriptor, EvidenceKind, Gate } from '@intentra/contracts';
 import type { OperationHandler, OperationRegistration } from './descriptors.js';
 
 /**

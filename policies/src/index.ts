@@ -1,5 +1,5 @@
 /**
- * `@agentos/policies` — declarative, human-readable, versioned in git.
+ * `@intentra/policies` — declarative, human-readable, versioned in git.
  *
  * Policy is data the kernel enforces, not behaviour an agent is asked to remember. This is
  * the difference between a safeguard and a suggestion. The package holds the data in

@@ -1,4 +1,4 @@
-import type { AgentRole, ContextSectionName } from '@agentos/contracts';
+import type { AgentRole, ContextSectionName } from '@intentra/contracts';
 
 /**
  * The MVP role specifications — specifications, and deliberately not prompts.
@@ -9,7 +9,7 @@ import type { AgentRole, ContextSectionName } from '@agentos/contracts';
  * only thing that ever turns one into text, and it does so in one place so that swapping
  * substrates is the one-file change ARCHITECTURE_FREEZE D-2 requires.
  *
- * Three roles ship in milestone 1, because a read-only AgentOS needs exactly three:
+ * Three roles ship in milestone 1, because a read-only Intentra needs exactly three:
  * Context Discovery with both of its mandates, the Auditor's first pass, and the
  * Orchestrator Agent. The other five roles exist in AGENT_ROLES and in the policy data; they
  * are not specified here because milestone 1 dispatches none of them, and a specification
@@ -83,7 +83,7 @@ const RESOLUTION: RoleSpec = {
     'Every unreachable source and every permission denial.',
     'Every place where intent, code and runtime disagree.',
     'Your own coverage: what fraction of the relevant system you actually inspected.',
-    'Every alternative reading you considered and why you rejected each, with what AgentOS '
+    'Every alternative reading you considered and why you rejected each, with what Intentra '
     + 'would do under each — that list is what a question to a human is built from.',
   ],
   model_requirement: {
