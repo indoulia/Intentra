@@ -1,6 +1,6 @@
 import { test, describe, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { fixtures as fx, type Assertion, type ContextPackage, type Evidence, type Scope } from '@intentra/contracts';
+import { fixtures as fx, type Assertion, type ContextPackage, type Event, type Evidence, type Scope } from '@intentra/contracts';
 import { loadPolicies } from '@intentra/policies';
 import { checkTypeEvidence } from '../../src/admission.js';
 import { PredicateEvaluator } from '../../src/predicates.js';
@@ -910,5 +910,156 @@ describe('scenario 9 — PR with review comments (at the seam: REVIEW_TRIAGE is 
     );
     assert.equal(outcome.scopeExpansions.length, 1);
     assert.equal(outcome.children.length, 0);
+  });
+});
+
+/* ================================== the resolution envelope's `proposals` ==== */
+
+/**
+ * What `dispatchResolution` does with an envelope that does not carry `proposals`.
+ *
+ * `SubstrateResult.envelope` is `unknown` by contract — the substrate parses and hands on,
+ * and the kernel is what validates — so the cast to `HandoffEnvelope` inside
+ * `dispatchResolution` asserts a shape nobody has checked. Reading `proposals.work_item`
+ * through it threw a `TypeError` on any envelope without the field, and it threw *before*
+ * `dispatch_result` was written: the exception left the prologue, left `Kernel.work`, and
+ * left the process, with `dispatch_intent` as the last record in the intake log and no run
+ * to recover from. That is the shape the first WP-8 pilot ended in.
+ *
+ * `proposals` is a required envelope field, so all three shapes below are contract-invalid,
+ * and the three graph dispatches classify exactly this input as `MALFORMED_ENVELOPE` through
+ * `receiveEnvelope`. This one is the only dispatch that reaches into the envelope itself, so
+ * it is the only one that has to tolerate the field being absent — which it does by treating
+ * absent, null and empty as the one thing they all mean: no proposal, refused out loud.
+ *
+ * The assertion that matters in every case is the terminal event. A refusal is a result; an
+ * intent with nothing after it is a run nobody can account for.
+ */
+describe('a resolution envelope with no usable proposals is refused, not thrown', () => {
+  const RAW = 'Make the README accurate.';
+
+  /** The prologue log, which is where a run that never admitted a Work Item writes. */
+  function prologue(outcome: Awaited<ReturnType<typeof work>>): readonly Event[] {
+    return outcome.built.store.readIntakeLog('in_0001').records;
+  }
+
+  /**
+   * An envelope that is a well-formed JSON object and nothing more.
+   *
+   * Built by hand rather than through `fx.envelope`, because the fixture supplies `proposals`
+   * and the defect is precisely about an envelope that does not.
+   */
+  function envelopeWithout(overrides: Record<string, unknown>): Record<string, unknown> {
+    return {
+      envelope_version: '1.2',
+      envelope_id: 'env_no_proposals',
+      agent: 'context-discovery',
+      stage_in: 'RESOLUTION',
+      status: 'COMPLETE',
+      summary: 'the resolution mandate answered without proposing a Work Item',
+      ...overrides,
+    };
+  }
+
+  const shapes: readonly { readonly name: string; readonly envelope: Record<string, unknown> }[] = [
+    { name: 'proposals absent', envelope: envelopeWithout({}) },
+    { name: 'proposals null', envelope: envelopeWithout({ proposals: null }) },
+    { name: 'proposals empty', envelope: envelopeWithout({ proposals: {} }) },
+  ];
+
+  for (const shape of shapes) {
+    test(`${shape.name}: the dispatch is answered, the refusal is recorded, nothing is admitted`, async () => {
+      const world = newWorld();
+
+      /*
+       * Reaching a result at all is the regression. Before the repair this rejected with
+       * `TypeError: Cannot read properties of undefined (reading 'work_item')`, and every
+       * assertion below was unreachable.
+       */
+      const outcome = await work({
+        world,
+        raw: RAW,
+        script: [{ kind: 'ENVELOPE', stage: 'RESOLUTION', envelope: shape.envelope }],
+      });
+
+      const log = prologue(outcome);
+      const intents = eventsOf(log, 'dispatch_intent');
+      const results = eventsOf(log, 'dispatch_result');
+
+      assert.equal(intents.length, 1, 'the resolution intent was written before the agent ran');
+      assert.equal(
+        results.length,
+        1,
+        'and the dispatch was answered: an intent with no result after it is the failure '
+        + 'signature this repair exists to remove',
+      );
+
+      const result = results[0];
+      assert.equal(result?.stage, 'RESOLUTION');
+      assert.equal(result?.data.outcome, 'ENVELOPE', 'the substrate returned an envelope');
+      assert.equal(
+        result?.data.detail,
+        'the envelope carried no work_item proposal',
+        'and the existing no-proposal path is what named it',
+      );
+
+      assert.equal(outcome.result.outcome, 'REFUSED');
+      assert.match(outcome.result.detail, /resolution produced no admissible proposal/);
+      assert.match(outcome.result.detail, /carried no work_item proposal/);
+
+      assert.equal(outcome.result.workItemId, null, 'nothing was admitted from it');
+      assert.deepEqual(
+        [...outcome.built.store.listWorkItems()],
+        [],
+        'and no Work Item reached the store, so `intentra status` has nothing to report',
+      );
+    });
+  }
+
+  /**
+   * The positive control, in the same shape as the three above.
+   *
+   * Scenario 1 already drives a valid proposal end to end; this asserts the one thing those
+   * three cannot — that the repair did not make every resolution look like a refusal. The
+   * same envelope with `proposals.work_item` present admits a Work Item and writes a
+   * `dispatch_result` carrying the envelope's own id and no complaint.
+   */
+  test('an envelope that does carry a work_item proposal still admits one', async () => {
+    const world = newWorld();
+    const evidence = fileEvidence('E-01', 'README.md', README_CONTENT);
+    const outcome = await work({
+      world,
+      raw: 'Fix typo in README.',
+      script: investigationScript(
+        investigationGraph({
+          resolution: resolution({
+            type: 'TASK',
+            intent: 'MODIFY_ARTIFACT',
+            title: 'Fix typo in README',
+            desiredOutcome: 'the misspelling in README.md is corrected',
+            scopePaths: ['README.md'],
+            evidence: [evidence],
+            cites: ['E-01'],
+          }),
+          evidence: [evidence],
+          paths: ['README.md'],
+          cause: 'the file was written with the wrong capitalization',
+        }),
+        ['README.md'],
+      ),
+    });
+
+    const resolutionResult = eventsOf(prologue(outcome), 'dispatch_result')
+      .find((event) => event.stage === 'RESOLUTION');
+
+    assert.notEqual(resolutionResult, undefined, 'the resolution dispatch was answered');
+    assert.equal(resolutionResult?.data.outcome, 'ENVELOPE');
+    assert.equal(resolutionResult?.data.envelope_id, 'env_resolution');
+    assert.equal(
+      resolutionResult?.data.detail,
+      '',
+      'a proposal that is there is not reported as missing',
+    );
+    assert.notEqual(outcome.result.workItemId, null, 'and the Work Item was admitted');
   });
 });

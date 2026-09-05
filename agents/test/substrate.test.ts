@@ -785,6 +785,17 @@ describe('sandbox removal is bounded, reported, and never fatal', () => {
         cwd,
         stdio: 'ignore',
       });
+      /*
+       * Waited for, not assumed. Windows takes the working-directory lock when the process is
+       * created, so a removal attempted before then finds nothing holding the directory and
+       * succeeds — which is what happened when the suite ran this file in parallel with the
+       * rest and the child had not started inside the deadline. The `spawn` event is the
+       * point at which the lock exists.
+       */
+      await new Promise<void>((resolve, reject) => {
+        child.once('spawn', () => { resolve(); });
+        child.once('error', reject);
+      });
 
       try {
         const started = Date.now();

@@ -3204,7 +3204,25 @@ export class Kernel {
     }
 
     const envelope = result.envelope as HandoffEnvelope | null;
-    const proposal = envelope?.proposals.work_item ?? null;
+    /*
+     * Read through `Partial`, not through the cast above.
+     *
+     * `SubstrateResult.envelope` is `unknown` by contract — the substrate parses and hands on,
+     * and the kernel is what validates — so the cast asserts a shape nobody has checked, and
+     * `envelope.proposals.work_item` threw a `TypeError` on any envelope that omitted the
+     * field. It threw *before* `dispatch_result` was written, so the exception left the
+     * prologue, left `work()` and left the process, with `dispatch_intent` as the last record
+     * in the intake log and no run to recover from.
+     *
+     * `proposals` is a required envelope field, so an envelope without it is one the receipt
+     * would reject as `MALFORMED_ENVELOPE`; this dispatch is the only one that reads the
+     * envelope before receipt, so it is the only one that has to say what it does with the
+     * field missing. Absent, null and empty all mean the one admissible thing: no proposal.
+     * Stated as `Partial` rather than as an optional chain the linter can see is unnecessary,
+     * because what was wrong here was the claim about the shape, not the punctuation.
+     */
+    const unvalidated = result.envelope as Partial<HandoffEnvelope> | null;
+    const proposal = unvalidated?.proposals?.work_item ?? null;
     log(
       'dispatch_result',
       {
