@@ -918,3 +918,52 @@ Restoring it in `policies/data` first would fail the load, which is the check wo
 **Reversed by:** a statement in policy data that the prologue's `context` mandate supplies
 criterion 1, at which point `critical-criteria-owned-by-a-stage` can read it and the capability
 profiles may make the criterion critical again.
+
+---
+
+## Known defects, recorded rather than fixed
+
+These are defects, not decisions. They are recorded here because the honest place
+for a known defect is where the next person will look, and because a defect nobody
+wrote down becomes a surprise rather than a task.
+
+### K-1 · The Orchestrator's workflow dispatch never happens
+
+`core/src/kernel.ts` looks up `agents.spec('orchestrator', 'workflow')`. The spec's
+mandate is named `orchestration` (`agents/src/roles/specs.ts`). The lookup misses,
+`dispatchOrchestrator` returns `null` before it reaches the registry, and **every run
+silently takes the fallback template**.
+
+**Why it is not currently visible.** With `execution.mutation_enabled: false` and
+`admissible_risk_classes: ["READ_ONLY"]`, `investigation.readonly` is the only
+admissible template for every work item type, so the fallback and the proposal would
+select the same graph. The outcome of every run in this build is identical either
+way. What is lost is not correctness here but *exercise*: the Orchestrator proposal
+path — template selection, optional-stage exclusion with the kernel evaluating the
+predicate, stage mandates bounded by the work item's scope, and the override record
+when a proposal fails admission — has never run in a live dispatch. Those checks are
+unit-tested against `admitWorkflow` directly and are not reached end to end.
+
+**Why it is recorded rather than fixed.** The correction is one word. Turning it on
+adds a dispatch to every run, which invalidates every scripted substrate and every
+recorded envelope fixture: applied, it takes the suite from 1225 passing to 17
+failing, all of them fixtures needing an honest orchestrator envelope. That is the
+same shape and size of work as dispatching the `context` mandate (I-38), and it
+deserves the same care rather than being rushed in alongside it. Rushing it is how
+a fixture gets written to satisfy a reconciliation check instead of to record what
+an agent could honestly have returned.
+
+**What to do.** Change the mandate name at the lookup, then give each scripted
+substrate and `core/test/fixtures/typo-readme/` a workflow proposal envelope that an
+Orchestrator could really have produced — a template from the admissible set, no
+invented stage, and any exclusion carrying a claim the kernel is free to evaluate
+against it. The fallback and override paths must keep their own tests: a proposal
+that now succeeds must not remove the coverage of one that fails.
+
+**Related, and deliberately not fixed here:** `core/src/composition/build.ts`'s
+`identityResolverFor` collapses "reachable but absent" into `UNAVAILABLE` before the
+kernel sees it, because `AdapterCallOutcome.ERROR` carries only a message. The
+kernel distinguishes the two (`admitWorkItem` says different things about a wrong
+key and an unreachable source), and the adapter framework's internal presence check
+distinguishes them too — the information exists at both ends and is discarded in the
+middle. Surfacing presence on the call outcome would close it.
