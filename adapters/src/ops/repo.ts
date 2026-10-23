@@ -42,6 +42,8 @@ const ADAPTER = 'repo';
 const DEFAULT_LIMIT = 2000;
 /** Built rather than typed, so no tool rewrites the separator inside an excerpt. */
 const NEWLINE = String.fromCharCode(10);
+/** CONTEXT_MODEL §2's `lines` locator argument: `start-end`, 1-based and inclusive (WP-8). */
+const LINE_RANGE_ARG = Object.freeze({ type: 'string', pattern: '^[1-9][0-9]*-[1-9][0-9]*$' });
 
 /** Manifests, and what each implies. Read from the repository, never from a name. */
 const MANIFESTS: ReadonlyArray<{
@@ -427,8 +429,10 @@ export function repositoryOperations(options: RepoOptions): readonly OperationRe
     readOnlyOperation({
       adapter: ADAPTER,
       op: 'read_file',
-      description: 'Reads one file from the worktree, confined and redacted.',
-      args: { path: PATH_ARG },
+      description:
+        'Reads one file from the worktree, confined and redacted: the whole file, or only the '
+        + '1-based inclusive line range given as lines "start-end".',
+      args: { path: PATH_ARG, lines: LINE_RANGE_ARG },
       required: ['path'],
       evidenceKind: 'file',
       observationSafe: true,
@@ -444,15 +448,19 @@ export function repositoryOperations(options: RepoOptions): readonly OperationRe
           );
         }
         const normalized = content.replace(/\r\n/g, '\n');
+        const all = normalized.split('\n');
+        const range = lineRange(invocation.args['lines'], all.length, resolved);
+        const text = range === null ? normalized : all.slice(range.start - 1, range.end).join('\n');
         const value = {
           path: toPosix(relative(root, resolved)),
           bytes: Buffer.byteLength(content, 'utf8'),
-          lines: normalized.split('\n').length,
-          content: normalized,
+          lines: all.length,
+          ...(range === null ? {} : { range: `${range.start}-${range.end}` }),
+          content: text,
         };
         return Promise.resolve({
           value,
-          excerpt: normalized,
+          excerpt: text,
           pathsTouched: [toPosix(relative(root, resolved))],
         });
       },
@@ -700,6 +708,19 @@ export function repositoryAvailability(options: RepoOptions): AvailabilityProbe 
 function stringList(value: unknown): readonly string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
+}
+
+/** `null` reads the whole file. A range past the end is absent, never a shorter read; one ending before it starts is refused. */
+function lineRange(
+  arg: unknown,
+  count: number,
+  resource: string,
+): { readonly start: number; readonly end: number } | null {
+  if (typeof arg !== 'string') return null;
+  const [start = 0, end = 0] = arg.split('-').map(Number);
+  if (end < start) throw new Error(`lines ${arg} ends before it starts`);
+  if (end > count) throw new ResourceAbsentError(resource, `lines ${arg} are not in a ${count}-line file`);
+  return { start, end };
 }
 
 function readIfPresent(path: string): string | null {

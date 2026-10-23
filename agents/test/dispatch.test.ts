@@ -226,6 +226,7 @@ describe('the brief renders the specification and nothing else', () => {
     assert.match(rendered, /evidence excerpt \(JSON string\)/);
     assert.match(rendered, /copied whole and unchanged/);
     assert.match(rendered, /same operation and arguments/);
+    assert.match(rendered, /read just those lines with read_file's lines argument/);
   });
 
   test('a role this package does not specify still gets the universal obligations', () => {

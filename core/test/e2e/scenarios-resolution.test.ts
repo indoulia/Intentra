@@ -1,11 +1,15 @@
 import { test, describe, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { fixtures as fx, type Assertion, type ContextPackage, type Event, type Evidence, type Scope, type ToolInvocationResult } from '@intentra/contracts';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fixtures as fx, type Assertion, type ContextPackage, type Event, type Evidence, type HandoffEnvelope, type Scope, type ToolInvocationResult } from '@intentra/contracts';
 import { loadPolicies } from '@intentra/policies';
 import { checkTypeEvidence } from '../../src/admission.js';
+import { buildKernel } from '../../src/composition/index.js';
+import { verifyEvidence } from '../../src/evidence-verification.js';
 import { PredicateEvaluator } from '../../src/predicates.js';
 import { decomposeEnvelope, triageEnvelope } from '../../src/orchestration.js';
-import { FixedClock, FixtureDiscovery, README_CONTENT, type ScriptedResponse } from '../doubles.js';
+import { FixedClock, FixtureDiscovery, README_CONTENT, ScriptedSubstrate, type ScriptedResponse } from '../doubles.js';
 import { scratchWorld, type ScratchWorld } from './world.js';
 import {
   assertReadOnlyAndDurable,
@@ -1271,4 +1275,131 @@ describe('resolution evidence quotes the excerpt its call showed, and admission 
       assert.deepEqual(outcome.after, outcome.before);
     });
   }
+});
+
+/* ======================================================= file evidence cites its lines ==== */
+
+/* WP-8: CONTEXT_MODEL §2 cites read_file with `lines`; a whole-file locator forced evidence to quote the whole file. */
+describe('file evidence cites the lines it rests on, and the replay reads exactly those lines', () => {
+  const PATH = 'src/large.py';
+  const LARGE = Array.from({ length: 1200 }, (_, i) => `    total_${i + 1} = compute(${i + 1})`).join('\n');
+  const RELEVANT = LARGE.split('\n').slice(599, 604).join('\n');
+
+  function largeWorld(): ScratchWorld {
+    return newWorld([README, SESSION, { path: PATH, content: LARGE }]);
+  }
+
+  function cite(id: string, excerpt: string, lines?: string): Evidence {
+    return fx.evidence({
+      id,
+      kind: 'file',
+      locator: { adapter: 'repo', op: 'read_file', args: lines === undefined ? { path: PATH } : { path: PATH, lines } },
+      ref: lines === undefined ? PATH : `${PATH}:${lines}`,
+      excerpt,
+      reproducible: true,
+    });
+  }
+
+  /** A resolution scoped to the large file whose HIGH finding rests on `evidence`, so every item is always replayed. */
+  function resolvingOn(evidence: readonly Evidence[]): HandoffEnvelope {
+    const envelope = resolution({
+      type: 'TASK',
+      intent: 'MODIFY_ARTIFACT',
+      title: 'Correct the totals in src/large.py',
+      desiredOutcome: 'lines 600-604 of src/large.py compute the right totals',
+      scopePaths: [PATH],
+      evidence,
+      cites: [evidence[0]?.id ?? ''],
+    });
+    return { ...envelope, findings: [fx.finding({ id: 'F-01', severity: 'HIGH', evidence: evidence.map((e) => e.id) })] };
+  }
+
+  async function verify(world: ScratchWorld, evidence: readonly Evidence[]) {
+    const built = await buildKernel({
+      stateRoot: world.stateRoot,
+      repositoryPath: world.repositoryPath,
+      intake: { source: 'NATURAL_LANGUAGE', raw: 'Correct the totals.', received_at: new Date().toISOString() },
+      env: { AGENTOS_MODELS: '[]' },
+      substrate: new ScriptedSubstrate([]),
+      projectManagement: null,
+      runtime: null,
+    });
+    return verifyEvidence({
+      envelope: resolvingOn(evidence),
+      policy: policies.evidence,
+      adapters: built.framework,
+      callContext: {
+        workItemId: 'in_0001',
+        runId: 'in_0001',
+        dispatchId: 'd_res',
+        mandate: { in_scope: [PATH], out_of_scope: [] },
+        grantsHeld: [],
+        stageMutating: false,
+      },
+      clock: new FixedClock(),
+      calls: [],
+    });
+  }
+
+  test('end to end: the relevant five lines of a 1,200-line file verify, and the Work Item is admitted', async () => {
+    const world = largeWorld();
+    const evidence = cite('E-01', RELEVANT, '600-604');
+    const script = investigationScript(
+      investigationGraph({ resolution: resolvingOn([evidence]), evidence: [evidence], paths: [PATH], cause: 'the totals are computed from the wrong index' }),
+      [PATH],
+    );
+    const outcome = await work({ world, raw: 'Correct the totals in src/large.py.', script });
+
+    const [verification] = eventsOf(outcome.built.store.readIntakeLog('in_0001').records, 'evidence_verification');
+    assert.equal(verification?.data.results.find((r) => r.evidence_id === 'E-01')?.status, 'VERIFIED');
+    assert.equal(verification?.data.mismatch_count, 0);
+    assert.notEqual(outcome.result.workItemId, null);
+    assert.deepEqual(outcome.after, outcome.before, 'and the repository is byte-identical');
+  });
+
+  test('end to end: a subset quoted against the whole file, and a changed line, are two mismatches; refused, nothing runs after', async () => {
+    const world = largeWorld();
+    const wrong = resolvingOn([
+      cite('E-01', RELEVANT),
+      cite('E-02', RELEVANT.replace('compute(602)', 'compute(-602)'), '600-604'),
+    ]);
+    const outcome = await work({
+      world,
+      raw: 'Correct the totals in src/large.py.',
+      script: [{ kind: 'ENVELOPE', envelope: wrong }, { kind: 'ENVELOPE', envelope: wrong }],
+    });
+
+    const log = outcome.built.store.readIntakeLog('in_0001').records;
+    const [verification] = eventsOf(log, 'evidence_verification');
+    assert.deepEqual(verification?.data.results.map((r) => `${r.evidence_id}:${r.status}`).sort(), ['E-01:MISMATCH', 'E-02:MISMATCH']);
+    assert.deepEqual(eventsOf(log, 'dispatch_intent').map((e) => e.stage), ['RESOLUTION', 'RESOLUTION']);
+    assert.equal(outcome.result.outcome, 'REFUSED');
+    assert.equal(outcome.result.workItemId, null);
+    assert.deepEqual(outcome.log, []);
+    assert.deepEqual(outcome.after, outcome.before);
+  });
+
+  const seam: readonly { readonly name: string; readonly evidence: () => Evidence; readonly status: string }[] = [
+    { name: 'the relevant lines, quoted as read', evidence: () => cite('E-01', RELEVANT, '600-604'), status: 'VERIFIED' },
+    { name: 'the whole file, quoted whole', evidence: () => cite('E-01', LARGE), status: 'VERIFIED' },
+    { name: 'the relevant lines against a whole-file locator', evidence: () => cite('E-01', RELEVANT), status: 'MISMATCH' },
+    { name: 'a range that is off by one', evidence: () => cite('E-01', RELEVANT, '601-605'), status: 'MISMATCH' },
+    { name: 'a range past the end of the file', evidence: () => cite('E-01', RELEVANT, '1199-1300'), status: 'UNREPLAYABLE' },
+    { name: 'fabricated lines', evidence: () => cite('E-01', '    total_3 = 0\n    total_4 = 0', '3-4'), status: 'MISMATCH' },
+  ];
+
+  for (const shape of seam) {
+    test(`at the verifier, against the real adapter: ${shape.name} is ${shape.status}`, async () => {
+      const report = await verify(largeWorld(), [shape.evidence()]);
+      assert.equal(report.outcomes[0]?.status, shape.status);
+      assert.equal(report.outcomes[0]?.status === 'VERIFIED', shape.status === 'VERIFIED', 'only an exact replay is verified');
+    });
+  }
+
+  test('at the verifier: a line changed on disk after it was quoted is MISMATCH', async () => {
+    const world = largeWorld();
+    writeFileSync(join(world.repositoryPath, PATH), LARGE.replace('compute(602)', 'compute(603)'), 'utf8');
+    const report = await verify(world, [cite('E-01', RELEVANT, '600-604')]);
+    assert.equal(report.outcomes[0]?.status, 'MISMATCH');
+  });
 });

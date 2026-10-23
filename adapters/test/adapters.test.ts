@@ -8,6 +8,7 @@ import {
   ResourceAbsentError,
   createAdapterSuite,
   hostIdentity,
+  normalizeObservation,
   repositorySkills,
   type AdapterSuite,
 } from '../src/index.js';
@@ -743,4 +744,73 @@ describe('a call carries the excerpt its replay is compared against', () => {
     }
     assert.ok(answered >= 10, `the sweep reached ${answered} operations, not a handful`);
   });
+});
+
+/* WP-8: CONTEXT_MODEL §2's frozen locator cites read_file with `lines`, so a range must read and replay as itself. */
+describe('repo.read_file reads a line range, and replays it as the same range', () => {
+  const LARGE = Array.from({ length: 1200 }, (_, i) => `    total_${i + 1} = compute(${i + 1})`).join('\n');
+  const RANGE = LARGE.split('\n').slice(599, 604).join('\n');
+
+  function locator(lines?: string): { adapter: string; op: string; args: Record<string, unknown> } {
+    return { adapter: 'repo', op: 'read_file', args: lines === undefined ? { path: 'large.py' } : { path: 'large.py', lines } };
+  }
+
+  test('a range of a large file: the value and the excerpt are exactly those lines, and the replay agrees', async () => {
+    writeFileSync(join(space.worktree, 'large.py'), LARGE, 'utf8');
+    const { framework } = await suite();
+    const call = await framework.call('repo', 'read_file', locator('600-604').args, context());
+    assert.equal(call.outcome, 'OK');
+    assert.equal(call.outcome === 'OK' ? call.excerpt : null, RANGE);
+    assert.deepEqual(call.outcome === 'OK' ? call.value : null, {
+      path: 'large.py',
+      bytes: Buffer.byteLength(LARGE, 'utf8'),
+      lines: 1200,
+      range: '600-604',
+      content: RANGE,
+    });
+    const replay = await framework.replay(locator('600-604'), context());
+    assert.equal(replay.outcome === 'OK' ? replay.excerpt : null, RANGE);
+  });
+
+  test('the frozen example\'s shape, one line, reads one line; without lines the whole file is read as before', async () => {
+    writeFileSync(join(space.worktree, 'large.py'), LARGE, 'utf8');
+    const { framework } = await suite();
+    const one = await framework.call('repo', 'read_file', locator('12-12').args, context());
+    assert.equal(one.outcome === 'OK' ? one.excerpt : null, '    total_12 = compute(12)');
+    const whole = await framework.call('repo', 'read_file', locator().args, context());
+    assert.equal(whole.outcome === 'OK' ? whole.excerpt : null, LARGE);
+    assert.notEqual(normalizeObservation(RANGE), normalizeObservation(LARGE), 'a subset never matches the whole file');
+  });
+
+  test('a change inside the range replays differently; a change outside it does not', async () => {
+    const path = join(space.worktree, 'large.py');
+    writeFileSync(path, LARGE, 'utf8');
+    const { framework } = await suite();
+    writeFileSync(path, LARGE.replace('    total_10 = compute(10)', '    total_10 = compute(-10)'), 'utf8');
+    const outside = await framework.replay(locator('600-604'), context());
+    assert.equal(outside.outcome === 'OK' ? outside.excerpt : null, RANGE);
+    writeFileSync(path, LARGE.replace('    total_602 = compute(602)', '    total_602 = compute(-602)'), 'utf8');
+    const inside = await framework.replay(locator('600-604'), context());
+    assert.equal(inside.outcome, 'OK');
+    assert.notEqual(normalizeObservation(inside.outcome === 'OK' ? inside.excerpt : ''), normalizeObservation(RANGE));
+  });
+
+  const bad: readonly { readonly lines: string; readonly why: string; readonly presence: 'ABSENT' | 'UNREACHABLE' }[] = [
+    { lines: '1199-1300', why: 'ends past the last line', presence: 'ABSENT' },
+    { lines: '1300-1300', why: 'starts past the last line', presence: 'ABSENT' },
+    { lines: '5-3', why: 'ends before it starts', presence: 'UNREACHABLE' },
+    { lines: '0-3', why: 'counts from zero', presence: 'UNREACHABLE' },
+    { lines: '12', why: 'is not a start-end range', presence: 'UNREACHABLE' },
+  ];
+
+  for (const range of bad) {
+    test(`a range that ${range.why} is an error, never a shorter read, and does not replay`, async () => {
+      writeFileSync(join(space.worktree, 'large.py'), LARGE, 'utf8');
+      const { framework } = await suite();
+      const call = await framework.call('repo', 'read_file', locator(range.lines).args, context());
+      assert.equal(call.outcome, 'ERROR');
+      assert.equal(call.outcome === 'ERROR' ? call.presence : null, range.presence);
+      assert.equal((await framework.replay(locator(range.lines), context())).outcome, 'UNREPLAYABLE');
+    });
+  }
 });

@@ -42,7 +42,8 @@ const UNIVERSAL_OBLIGATIONS: readonly string[] = [
   + 'and the excerpt of evidence citing the call is that JSON string copied whole and '
   + 'unchanged, with a locator naming the same operation and arguments. The replay is '
   + 'compared after normalizing only whitespace and line order, so a fragment, a paraphrase '
-  + 'or another call\'s excerpt is a mismatch.',
+  + 'or another call\'s excerpt is a mismatch. To rest a claim on part of a file, read just '
+  + 'those lines with read_file\'s lines argument and quote that call\'s excerpt.',
   'The verification block on evidence is written only by the kernel. An envelope arriving '
   + 'with one populated is a contract violation.',
   'coverage is mandatory and is reconciled mechanically against the adapter call log for this '
