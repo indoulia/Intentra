@@ -55,7 +55,7 @@ import { computeUnderstood, type UnderstoodVerdict } from './understood.js';
 import { admissibleTemplatesFor, admitWorkflow, deriveRiskClass } from './workflow-admission.js';
 import { computeEntryStage, stagesRemaining, stageFromCursor } from './entry-stage.js';
 import { PredicateEvaluator, type PredicateEvaluation, type PredicateInputs } from './predicates.js';
-import { decideAction, type KernelAction, type TransitionContext } from './state-machine.js';
+import { afterFailure, decideAction, type KernelAction, type TransitionContext } from './state-machine.js';
 import { receiveEnvelope, withVerification } from './receipt.js';
 import { verifyEvidence, type VerificationReport } from './evidence-verification.js';
 import { computeDod, effectiveProfile } from './dod.js';
@@ -266,6 +266,14 @@ interface DispatchOutcome {
   readonly detail: string;
 }
 
+/** What a resolution dispatch answered. */
+interface ResolutionAnswer {
+  readonly proposal: ProposedWorkItem | null;
+  /** The envelope the proposal arrived in, whose `evidence[]` is the pool it cites into. */
+  readonly envelope: HandoffEnvelope | null;
+  readonly detail: string;
+}
+
 /**
  * What the prologue's `context` dispatch produced.
  *
@@ -424,6 +432,14 @@ export class Kernel {
     );
 
     const resolution = await this.dispatchResolution(record, orientation, logPrologue);
+    if (resolution.blockerKind !== null) {
+      return this.block(
+        prologue,
+        resolution.blockerKind,
+        `resolution produced no admissible proposal: ${resolution.detail}`,
+        checks,
+      );
+    }
     if (resolution.proposal === null) {
       return this.refuse(
         intakeId,
@@ -515,6 +531,14 @@ export class Kernel {
         logPrologue,
         admission.violations,
       );
+      if (second.blockerKind !== null) {
+        return this.block(
+          prologue,
+          second.blockerKind,
+          `the re-dispatched resolution produced no admissible proposal: ${second.detail}`,
+          checks,
+        );
+      }
       if (second.proposal === null) {
         return this.refuse(
           intakeId,
@@ -2462,7 +2486,7 @@ export class Kernel {
         detail: `re-resolution produced no proposal: ${resolution.detail}`,
         narrative: '',
         checks: args.checks,
-        blockerKind: null,
+        blockerKind: resolution.blockerKind,
       };
     }
 
@@ -3083,22 +3107,60 @@ export class Kernel {
     orientation: ContextPackage,
     log: PrologueLogger,
     priorViolations: readonly Violation[] = [],
-  ): Promise<{
-      readonly proposal: ProposedWorkItem | null;
-      /** The envelope the proposal arrived in, whose `evidence[]` is the pool it cites into. */
-      readonly envelope: HandoffEnvelope | null;
-      readonly detail: string;
+  ): Promise<ResolutionAnswer & {
+      /** Set when every attempt the FAILED rule allows answered malformed: a block, not a refusal. */
+      readonly blockerKind: BlockerKind | null;
     }> {
+    /* WP-8 smoke-2: a malformed answer is an agent-level failure (WORKFLOW_STATE_MACHINE 4.2), bounded by the graph's own rule. */
+    let escalated = false;
+    let failedModel: string | null = null;
+    for (let attempt = 1; ; attempt += 1) {
+      const outcome = await this.dispatchResolutionAttempt(
+        intake, orientation, log, priorViolations, attempt, escalated, failedModel,
+      );
+      if (!outcome.malformed) {
+        return { proposal: outcome.proposal, envelope: outcome.envelope, detail: outcome.detail, blockerKind: null };
+      }
+      const action = afterFailure(
+        { budgets: this.ports.policies.budgets, dispatchAttempt: attempt, modelAlreadyEscalated: escalated },
+        'RESOLUTION',
+        outcome.detail,
+      );
+      if (action.kind === 'BLOCK') {
+        return {
+          proposal: null,
+          envelope: null,
+          detail: `${outcome.detail}. ${action.reason}`,
+          blockerKind: action.blockerKind,
+        };
+      }
+      if (action.escalateModel) escalated = true;
+      failedModel ??= outcome.model;
+      log('note', { topic: 're-dispatch', detail: action.reason }, 'RESOLUTION');
+    }
+  }
+
+  private async dispatchResolutionAttempt(
+    intake: IntakeRecord,
+    orientation: ContextPackage,
+    log: PrologueLogger,
+    priorViolations: readonly Violation[],
+    attempt: number,
+    escalate: boolean,
+    previousModel: string | null,
+  ): Promise<ResolutionAnswer & { readonly malformed: boolean; readonly model: string | null }> {
     const spec = this.ports.agents.spec('context-discovery', 'resolution');
     if (spec === undefined) {
       return {
         proposal: null,
         envelope: null,
         detail: 'no Context Discovery resolution mandate is registered',
+        malformed: false,
+        model: null,
       };
     }
 
-    const model = await this.chooseModelWithoutJournal(spec);
+    const model = await this.chooseModelWithoutJournal(spec, escalate, previousModel);
     if (model === null) {
       log(
         'dispatch_result',
@@ -3111,7 +3173,7 @@ export class Kernel {
         },
         'RESOLUTION',
       );
-      return { proposal: null, envelope: null, detail: 'no model available for resolution' };
+      return { proposal: null, envelope: null, detail: 'no model available for resolution', malformed: false, model };
     }
 
     const dispatchId = 'd_res';
@@ -3150,7 +3212,7 @@ export class Kernel {
       budget: dispatchBudget(this.ports.policies.budgets),
     };
 
-    log('dispatch_intent', { input_package: inputPackage, attempt: 1 }, 'RESOLUTION');
+    log('dispatch_intent', { input_package: inputPackage, attempt }, 'RESOLUTION');
 
     const result = await this.ports.substrate.dispatch(inputPackage, {
       invoke: async (toolName, toolArgs) => {
@@ -3201,7 +3263,13 @@ export class Kernel {
         },
         'RESOLUTION',
       );
-      return { proposal: null, envelope: null, detail: result.detail };
+      return {
+        proposal: null,
+        envelope: null,
+        detail: result.detail,
+        malformed: result.failure === 'MALFORMED_ENVELOPE',
+        model,
+      };
     }
 
     const envelope = result.envelope as HandoffEnvelope | null;
@@ -3225,19 +3293,19 @@ export class Kernel {
     const unvalidated = result.envelope as Partial<HandoffEnvelope> | null;
     const proposal = unvalidated?.proposals?.work_item ?? null;
     /* WP-8 attempt 2: receipt never sees this envelope, so its schema step is taken here, before any field is read. */
-    const schema = proposal === null ? null : validators.handoffEnvelope.check(result.envelope);
-    const invalid = schema !== null && !schema.valid
-      ? `does not satisfy its schema. A malformed envelope is never repaired:\n${formatErrors(schema.errors)}`
-      : null;
+    const schema = validators.handoffEnvelope.check(result.envelope);
+    const invalid = schema.valid
+      ? null
+      : `does not satisfy its schema. A malformed envelope is never repaired:\n${formatErrors(schema.errors)}`;
     log(
       'dispatch_result',
       {
-        outcome: 'ENVELOPE',
-        envelope_id: envelope?.envelope_id ?? null,
-        failure_reason: null,
-        detail: proposal === null
-          ? 'the envelope carried no work_item proposal'
-          : invalid === null ? '' : `the envelope ${invalid}`,
+        outcome: invalid === null ? 'ENVELOPE' : 'FAILED',
+        envelope_id: invalid === null ? envelope?.envelope_id ?? null : null,
+        failure_reason: invalid === null ? null : 'MALFORMED_ENVELOPE',
+        detail: invalid !== null
+          ? `the envelope ${invalid}`
+          : proposal === null ? 'the envelope carried no work_item proposal' : '',
         cost: {
           input_tokens: result.cost.input_tokens,
           output_tokens: result.cost.output_tokens,
@@ -3248,12 +3316,14 @@ export class Kernel {
     );
 
     if (invalid !== null) {
-      return { proposal: null, envelope: null, detail: `the resolution envelope ${invalid}` };
+      return { proposal: null, envelope: null, detail: `the resolution envelope ${invalid}`, malformed: true, model };
     }
     return {
       proposal,
       envelope,
       detail: proposal === null ? 'the resolution envelope carried no work_item proposal' : '',
+      malformed: false,
+      model,
     };
   }
 
@@ -4052,7 +4122,11 @@ export class Kernel {
     return selection.selected;
   }
 
-  private async chooseModelWithoutJournal(spec: AgentSpecView): Promise<string | null> {
+  private async chooseModelWithoutJournal(
+    spec: AgentSpecView,
+    escalate = false,
+    previousModel: string | null = null,
+  ): Promise<string | null> {
     const entries = await this.ports.registries.models();
     const ranked = rankModels(entries, spec.model_requirement);
     return selectModel({
@@ -4060,9 +4134,9 @@ export class Kernel {
       entries,
       requirement: spec.model_requirement,
       preference: null,
-      escalate: false,
-      previousModel: null,
-      escalationTrigger: null,
+      escalate,
+      previousModel,
+      escalationTrigger: escalate ? 'the previous dispatch failed' : null,
     }).selected;
   }
 

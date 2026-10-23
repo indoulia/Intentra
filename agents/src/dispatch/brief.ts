@@ -142,6 +142,17 @@ export function renderSystemSpecification(
     ...RESPONSE_SCHEMA.map(([label, schema]) => indent(`${label} ${JSON.stringify(schema)}`)),
   );
 
+  /* WP-8 smoke-2: the format rule above sits before ~35 KB of schema, and a first answer opened with prose. */
+  lines.push(
+    '',
+    'Final reminder',
+    indent(
+      'Your entire final message is exactly one JSON object that validates against the Response '
+      + `schema above, rooted at ${RESPONSE_SCHEMA[0]?.[0] ?? ''}: no introductory prose, no Markdown code `
+      + 'fence, no commentary after it, and no field the schema does not define.',
+    ),
+  );
+
   return lines.join('\n');
 }
 

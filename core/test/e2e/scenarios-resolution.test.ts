@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fixtures as fx, type Assertion, type ContextPackage, type Event, type Evidence, type HandoffEnvelope, type Scope, type ToolInvocationResult } from '@intentra/contracts';
-import { loadPolicies } from '@intentra/policies';
+import { loadPolicies, type PolicySet } from '@intentra/policies';
 import { checkTypeEvidence } from '../../src/admission.js';
 import { buildKernel } from '../../src/composition/index.js';
 import { verifyEvidence } from '../../src/evidence-verification.js';
@@ -12,6 +12,7 @@ import { decomposeEnvelope, triageEnvelope } from '../../src/orchestration.js';
 import { FixedClock, FixtureDiscovery, README_CONTENT, ScriptedSubstrate, type ScriptedResponse } from '../doubles.js';
 import { scratchWorld, type ScratchWorld } from './world.js';
 import {
+  DECLARED_MODEL,
   assertReadOnlyAndDurable,
   cli,
   completionVerdict,
@@ -932,15 +933,16 @@ describe('scenario 9 — PR with review comments (at the seam: REVIEW_TRIAGE is 
  *
  * `proposals` is a required envelope field, so all three shapes below are contract-invalid,
  * and the three graph dispatches classify exactly this input as `MALFORMED_ENVELOPE` through
- * `receiveEnvelope`. This one is the only dispatch that reaches into the envelope itself, so
- * it is the only one that has to tolerate the field being absent — which it does by treating
- * absent, null and empty as the one thing they all mean: no proposal, refused out loud.
+ * `receiveEnvelope`. Since WP-8 smoke-2 resolution does too: a malformed answer is an
+ * agent-level failure (WORKFLOW_STATE_MACHINE section 4.2), re-dispatched per policy and then
+ * BLOCKED, not a refusal of the request.
  *
- * The assertion that matters in every case is the terminal event. A refusal is a result; an
+ * The assertion that matters in every case is the terminal event. A block is a result; an
  * intent with nothing after it is a run nobody can account for.
  */
-describe('a resolution envelope with no usable proposals is refused, not thrown', () => {
+describe('a resolution envelope with no usable proposals is answered, not thrown', () => {
   const RAW = 'Make the README accurate.';
+  const ATTEMPTS = loadPolicies().budgets.dispatch_retries + 1;
 
   /** The prologue log, which is where a run that never admitted a Work Item writes. */
   function prologue(outcome: Awaited<ReturnType<typeof work>>): readonly Event[] {
@@ -965,6 +967,11 @@ describe('a resolution envelope with no usable proposals is refused, not thrown'
     };
   }
 
+  /** The same response for every attempt the policy allows. */
+  function everyAttempt(envelope: unknown): readonly ScriptedResponse[] {
+    return Array.from({ length: ATTEMPTS }, () => ({ kind: 'ENVELOPE', envelope }) as const);
+  }
+
   const shapes: readonly { readonly name: string; readonly envelope: Record<string, unknown> }[] = [
     { name: 'proposals absent', envelope: envelopeWithout({}) },
     { name: 'proposals null', envelope: envelopeWithout({ proposals: null }) },
@@ -972,7 +979,7 @@ describe('a resolution envelope with no usable proposals is refused, not thrown'
   ];
 
   for (const shape of shapes) {
-    test(`${shape.name}: the dispatch is answered, the refusal is recorded, nothing is admitted`, async () => {
+    test(`${shape.name}: every dispatch is answered, the failure is recorded, nothing is admitted`, async () => {
       const world = newWorld();
 
       /*
@@ -980,37 +987,28 @@ describe('a resolution envelope with no usable proposals is refused, not thrown'
        * `TypeError: Cannot read properties of undefined (reading 'work_item')`, and every
        * assertion below was unreachable.
        */
-      const outcome = await work({
-        world,
-        raw: RAW,
-        script: [{ kind: 'ENVELOPE', stage: 'RESOLUTION', envelope: shape.envelope }],
-      });
+      const outcome = await work({ world, raw: RAW, script: everyAttempt(shape.envelope) });
 
       const log = prologue(outcome);
       const intents = eventsOf(log, 'dispatch_intent');
       const results = eventsOf(log, 'dispatch_result');
 
-      assert.equal(intents.length, 1, 'the resolution intent was written before the agent ran');
+      assert.equal(intents.length, ATTEMPTS, 'each intent was written before the agent ran');
       assert.equal(
         results.length,
-        1,
-        'and the dispatch was answered: an intent with no result after it is the failure '
+        ATTEMPTS,
+        'and each dispatch was answered: an intent with no result after it is the failure '
         + 'signature this repair exists to remove',
       );
+      for (const result of results) {
+        assert.equal(result.stage, 'RESOLUTION');
+        assert.equal(result.data.outcome, 'FAILED');
+        assert.equal(result.data.failure_reason, 'MALFORMED_ENVELOPE');
+        assert.match(result.data.detail ?? '', /does not satisfy its schema/);
+      }
 
-      const result = results[0];
-      assert.equal(result?.stage, 'RESOLUTION');
-      assert.equal(result?.data.outcome, 'ENVELOPE', 'the substrate returned an envelope');
-      assert.equal(
-        result?.data.detail,
-        'the envelope carried no work_item proposal',
-        'and the existing no-proposal path is what named it',
-      );
-
-      assert.equal(outcome.result.outcome, 'REFUSED');
+      assert.equal(outcome.result.outcome, 'BLOCKED');
       assert.match(outcome.result.detail, /resolution produced no admissible proposal/);
-      assert.match(outcome.result.detail, /carried no work_item proposal/);
-
       assert.equal(outcome.result.workItemId, null, 'nothing was admitted from it');
       assert.deepEqual(
         [...outcome.built.store.listWorkItems()],
@@ -1020,38 +1018,38 @@ describe('a resolution envelope with no usable proposals is refused, not thrown'
     });
   }
 
+  /* A schema-valid envelope that proposes nothing is the agent's answer, and stays a refusal. */
+  test('a valid envelope with no work_item proposal is refused, once, with the gap named', async () => {
+    const envelope = validResolution();
+    delete proposalsOf(envelope)['work_item'];
+    const outcome = await work({
+      world: newWorld(),
+      raw: RAW,
+      script: [{ kind: 'ENVELOPE', stage: 'RESOLUTION', envelope }],
+    });
+
+    const log = prologue(outcome);
+    assert.equal(eventsOf(log, 'dispatch_intent').length, 1, 'no re-dispatch');
+    const results = eventsOf(log, 'dispatch_result');
+    assert.equal(results[0]?.data.outcome, 'ENVELOPE', 'the substrate returned an envelope');
+    assert.equal(results[0]?.data.detail, 'the envelope carried no work_item proposal');
+    assert.equal(outcome.result.outcome, 'REFUSED');
+    assert.match(outcome.result.detail, /resolution produced no admissible proposal/);
+    assert.match(outcome.result.detail, /carried no work_item proposal/);
+    assert.equal(outcome.result.workItemId, null);
+  });
+
   /**
    * The positive control, in the same shape as the three above.
    *
    * Scenario 1 already drives a valid proposal end to end; this asserts the one thing those
-   * three cannot — that the repair did not make every resolution look like a refusal. The
+   * three cannot — that the repair did not make every resolution look like a failure. The
    * same envelope with `proposals.work_item` present admits a Work Item and writes a
    * `dispatch_result` carrying the envelope's own id and no complaint.
    */
   test('an envelope that does carry a work_item proposal still admits one', async () => {
     const world = newWorld();
-    const evidence = fileEvidence('E-01', 'README.md', README_CONTENT);
-    const outcome = await work({
-      world,
-      raw: 'Fix typo in README.',
-      script: investigationScript(
-        investigationGraph({
-          resolution: resolution({
-            type: 'TASK',
-            intent: 'MODIFY_ARTIFACT',
-            title: 'Fix typo in README',
-            desiredOutcome: 'the misspelling in README.md is corrected',
-            scopePaths: ['README.md'],
-            evidence: [evidence],
-            cites: ['E-01'],
-          }),
-          evidence: [evidence],
-          paths: ['README.md'],
-          cause: 'the file was written with the wrong capitalization',
-        }),
-        ['README.md'],
-      ),
-    });
+    const outcome = await work({ world, raw: 'Fix typo in README.', script: admittedScript([]) });
 
     const resolutionResult = eventsOf(prologue(outcome), 'dispatch_result')
       .find((event) => event.stage === 'RESOLUTION');
@@ -1067,27 +1065,6 @@ describe('a resolution envelope with no usable proposals is refused, not thrown'
     assert.notEqual(outcome.result.workItemId, null, 'and the Work Item was admitted');
   });
 
-  /* WP-8 attempt 2: unvalidated, these threw past the log or were admitted as though complete. */
-  function validResolution(): Record<string, unknown> {
-    return structuredClone(resolution({
-      type: 'TASK',
-      intent: 'MODIFY_ARTIFACT',
-      title: 'Fix typo in README',
-      desiredOutcome: 'the misspelling in README.md is corrected',
-      scopePaths: ['README.md'],
-      evidence: [fileEvidence('E-01', 'README.md', README_CONTENT)],
-      cites: ['E-01'],
-    })) as unknown as Record<string, unknown>;
-  }
-
-  function proposalsOf(envelope: Record<string, unknown>): Record<string, unknown> {
-    return envelope['proposals'] as Record<string, unknown>;
-  }
-
-  function workItemOf(envelope: Record<string, unknown>): Record<string, unknown> {
-    return proposalsOf(envelope)['work_item'] as Record<string, unknown>;
-  }
-
   const invalid: readonly {
     readonly name: string;
     readonly mutate: (envelope: Record<string, unknown>) => void;
@@ -1101,22 +1078,30 @@ describe('a resolution envelope with no usable proposals is refused, not thrown'
   ];
 
   for (const shape of invalid) {
-    test(`${shape.name}: refused with the schema errors named, and nothing runs after it`, async () => {
+    test(`${shape.name}: failed with the schema errors named, re-dispatched per policy, then blocked`, async () => {
       const envelope = validResolution();
       shape.mutate(envelope);
       const outcome = await work({
         world: newWorld(),
         raw: 'Fix typo in README.',
-        script: [{ kind: 'ENVELOPE', stage: 'RESOLUTION', envelope }],
+        script: everyAttempt(envelope),
       });
 
       const log = prologue(outcome);
-      assert.equal(eventsOf(log, 'dispatch_intent').length, 1, 'no re-dispatch and no audit');
+      assert.deepEqual(
+        eventsOf(log, 'dispatch_intent').map((e) => e.data.attempt),
+        Array.from({ length: ATTEMPTS }, (_, i) => i + 1),
+        'the policy\'s attempts and no more, and no audit',
+      );
       const results = eventsOf(log, 'dispatch_result');
-      assert.equal(results.length, 1, 'the dispatch was answered');
-      assert.match(results[0]?.data.detail ?? '', /does not satisfy its schema/);
+      assert.equal(results.length, ATTEMPTS, 'every dispatch was answered');
+      for (const result of results) {
+        assert.equal(result.data.failure_reason, 'MALFORMED_ENVELOPE');
+        assert.match(result.data.detail ?? '', /does not satisfy its schema/);
+      }
 
-      assert.equal(outcome.result.outcome, 'REFUSED');
+      assert.equal(outcome.result.outcome, 'BLOCKED');
+      assert.equal(outcome.result.blockerKind, 'EXTERNAL_DEPENDENCY');
       assert.match(
         outcome.result.detail,
         /no admissible proposal: the resolution envelope does not satisfy its schema/,
@@ -1125,6 +1110,258 @@ describe('a resolution envelope with no usable proposals is refused, not thrown'
       assert.deepEqual([...outcome.built.store.listWorkItems()], []);
     });
   }
+});
+
+/* WP-8 attempt 2: unvalidated, these threw past the log or were admitted as though complete. */
+function validResolution(): Record<string, unknown> {
+  return structuredClone(resolution(TYPO_TASK)) as unknown as Record<string, unknown>;
+}
+
+const TYPO_TASK = {
+  type: 'TASK',
+  intent: 'MODIFY_ARTIFACT',
+  title: 'Fix typo in README',
+  desiredOutcome: 'the misspelling in README.md is corrected',
+  scopePaths: ['README.md'],
+  evidence: [fileEvidence('E-01', 'README.md', README_CONTENT)],
+  cites: ['E-01'],
+} as const;
+
+function proposalsOf(envelope: Record<string, unknown>): Record<string, unknown> {
+  return envelope['proposals'] as Record<string, unknown>;
+}
+
+function workItemOf(envelope: Record<string, unknown>): Record<string, unknown> {
+  return proposalsOf(envelope)['work_item'] as Record<string, unknown>;
+}
+
+/** A full admitted run whose resolution answer is preceded by `before` and may be replaced by `answer`. */
+function admittedScript(
+  before: readonly ScriptedResponse[],
+  answer?: ScriptedResponse,
+): readonly ScriptedResponse[] {
+  const evidence = fileEvidence('E-01', 'README.md', README_CONTENT);
+  const [valid, ...rest] = investigationScript(
+    investigationGraph({
+      resolution: resolution(TYPO_TASK),
+      evidence: [evidence],
+      paths: ['README.md'],
+      cause: 'the file was written with the wrong capitalization',
+    }),
+    ['README.md'],
+  );
+  if (valid === undefined) throw new Error('unreachable: the script has a resolution answer');
+  return [...before, answer ?? valid, ...rest];
+}
+
+/* ============================== a malformed resolution answer is retried, then blocks ==== */
+
+/**
+ * WP-8 smoke-2: resolution's final message began with prose, the substrate rightly refused to
+ * parse it as `MALFORMED_ENVELOPE`, and the kernel ended the request REFUSED on the first
+ * attempt. WORKFLOW_STATE_MACHINE section 4.2 calls that an agent-level failure — "Retry per
+ * policy, escalating the model once. On repeated failure: BLOCKED" — and section 3.1 of the
+ * resolution document lists no exemption, so resolution now applies the graph's own rule.
+ *
+ * `TEXT` responses go through `parseEnvelope`, the parser the Claude substrate uses, so the
+ * prose, fence, empty and truncated cases below are the real transport check, not a label.
+ */
+describe('a malformed resolution answer is an agent-level failure: re-dispatched per policy, then BLOCKED', () => {
+  const POLICIES = loadPolicies();
+  const ATTEMPTS = POLICIES.budgets.dispatch_retries + 1;
+  const JSON_ANSWER = JSON.stringify(resolution(TYPO_TASK));
+  const STRONGER = { ...DECLARED_MODEL, id: 'model.stronger', usd_per_mtok_input: 15, usd_per_mtok_output: 75 };
+
+  function prologue(outcome: Awaited<ReturnType<typeof work>>): readonly Event[] {
+    return outcome.built.store.readIntakeLog('in_0001').records;
+  }
+
+  function resolutionResults(outcome: Awaited<ReturnType<typeof work>>) {
+    return eventsOf(prologue(outcome), 'dispatch_result').filter((e) => e.stage === 'RESOLUTION');
+  }
+
+  function attemptModels(outcome: Awaited<ReturnType<typeof work>>): readonly string[] {
+    return eventsOf(prologue(outcome), 'dispatch_intent').map((e) => e.data.input_package.model);
+  }
+
+  function withBudgets(budgets: Partial<PolicySet['budgets']>): PolicySet {
+    return { ...POLICIES, budgets: { ...POLICIES.budgets, ...budgets } };
+  }
+
+  function texts(count: number, text: string): readonly ScriptedResponse[] {
+    return Array.from({ length: count }, () => ({ kind: 'TEXT', text }) as const);
+  }
+
+  test('A: prose before the JSON fails, the next attempt recovers, and only it is admitted', async () => {
+    const world = newWorld();
+    const outcome = await work({
+      world,
+      raw: 'Fix typo in README.',
+      script: admittedScript(
+        [{ kind: 'TEXT', text: `I have what I need. Here is the envelope:\n${JSON_ANSWER}` }],
+        { kind: 'TEXT', text: JSON_ANSWER },
+      ),
+    });
+
+    const log = prologue(outcome);
+    assert.deepEqual(
+      eventsOf(log, 'dispatch_intent').map((e) => e.data.attempt),
+      [1, 2],
+      'one re-dispatch, numbered',
+    );
+    const [failed, answered] = resolutionResults(outcome);
+    assert.equal(failed?.data.outcome, 'FAILED');
+    assert.equal(failed?.data.failure_reason, 'MALFORMED_ENVELOPE');
+    assert.match(failed?.data.detail ?? '', /not JSON/, 'the parser\'s own reason is recorded');
+    assert.equal(answered?.data.outcome, 'ENVELOPE');
+    assert.equal(answered?.data.envelope_id, 'env_resolution');
+    assert.equal(
+      eventsOf(log, 'note').filter((e) => e.data.topic === 're-dispatch').length,
+      1,
+      'the re-dispatch is recorded with the rule that allowed it',
+    );
+
+    /* The recovered answer takes the normal path: evidence replay, admission, the run. */
+    assert.equal(eventsOf(log, 'evidence_verification')[0]?.data.envelope_id, 'env_resolution');
+    assert.notEqual(outcome.result.workItemId, null);
+    assert.equal(outcome.built.store.listWorkItems().length, 1, 'one Work Item, from the valid answer');
+    assert.deepEqual(
+      outcome.substrate.dispatched.slice(0, 3).map((d) => d.stage),
+      ['RESOLUTION', 'RESOLUTION', 'CONTEXT_DISCOVERY'],
+      'nothing ran past resolution until the valid answer was admitted',
+    );
+    assert.deepEqual(outcome.after, outcome.before);
+  });
+
+  const malformed: readonly (readonly [string, string])[] = [
+    ['prose before the JSON', `I have what I need.\n${JSON_ANSWER}`],
+    ['prose after the JSON', `${JSON_ANSWER}\nThat is the envelope.`],
+    ['a Markdown code fence', `\`\`\`json\n${JSON_ANSWER}\n\`\`\``],
+    ['an empty answer', ''],
+    ['a truncated answer', JSON_ANSWER.slice(0, Math.floor(JSON_ANSWER.length / 2))],
+  ];
+
+  for (const [name, text] of malformed) {
+    test(`B/D: ${name} on every attempt is re-dispatched per policy, then BLOCKED, never REFUSED`, async () => {
+      const world = newWorld();
+      const outcome = await work({ world, raw: 'Fix typo in README.', script: texts(ATTEMPTS + 1, text) });
+
+      const log = prologue(outcome);
+      assert.deepEqual(
+        eventsOf(log, 'dispatch_intent').map((e) => e.data.attempt),
+        Array.from({ length: ATTEMPTS }, (_, i) => i + 1),
+        'exactly the attempts the policy allows, though the script had one more to give',
+      );
+      const results = resolutionResults(outcome);
+      assert.equal(results.length, ATTEMPTS);
+      for (const result of results) {
+        assert.equal(result.data.outcome, 'FAILED');
+        assert.equal(result.data.failure_reason, 'MALFORMED_ENVELOPE');
+        assert.ok((result.data.detail ?? '').length > 0, 'each failure names its reason');
+      }
+      assert.equal(eventsOf(log, 'note').filter((e) => e.data.topic === 're-dispatch').length, ATTEMPTS - 1);
+
+      assert.equal(outcome.result.outcome, 'BLOCKED');
+      assert.equal(outcome.result.blockerKind, 'EXTERNAL_DEPENDENCY');
+      assert.match(outcome.result.detail, new RegExp(`failed ${ATTEMPTS} times`));
+      assert.equal(outcome.result.workItemId, null);
+      assert.equal(outcome.result.runId, null, 'no run was started');
+      assert.deepEqual([...outcome.built.store.listWorkItems()], []);
+      assert.equal(eventsOf(log, 'evidence_verification').length, 0, 'nothing was replayed or admitted');
+      assert.equal(outcome.substrate.dispatched.length, ATTEMPTS, 'no model call outside the recorded attempts');
+      assert.deepEqual(outcome.after, outcome.before);
+    });
+  }
+
+  for (const retries of [0, 1, 2]) {
+    test(`C: dispatch_retries ${retries} allows exactly ${retries + 1} attempt(s)`, async () => {
+      const outcome = await work({
+        world: newWorld(),
+        raw: 'Fix typo in README.',
+        policies: withBudgets({ dispatch_retries: retries }),
+        script: texts(4, 'Done.'),
+      });
+      assert.equal(outcome.substrate.dispatched.length, retries + 1);
+      assert.equal(eventsOf(prologue(outcome), 'dispatch_intent').length, retries + 1);
+      assert.equal(outcome.result.outcome, 'BLOCKED');
+    });
+  }
+
+  test('C: with a stronger model declared, the model is escalated once and held', async () => {
+    const outcome = await work({
+      world: newWorld(),
+      raw: 'Fix typo in README.',
+      models: [DECLARED_MODEL, STRONGER],
+      script: texts(ATTEMPTS, 'Done.'),
+    });
+    const [first, ...retried] = attemptModels(outcome);
+    assert.ok(first === 'model.scripted' || first === 'model.stronger');
+    const other = first === 'model.scripted' ? 'model.stronger' : 'model.scripted';
+    assert.deepEqual(retried, Array.from({ length: ATTEMPTS - 1 }, () => other));
+  });
+
+  test('C: with escalation disabled by policy, every attempt keeps the selected model', async () => {
+    const outcome = await work({
+      world: newWorld(),
+      raw: 'Fix typo in README.',
+      models: [DECLARED_MODEL, STRONGER],
+      policies: withBudgets({ model_escalations_per_dispatch: 0 }),
+      script: texts(ATTEMPTS, 'Done.'),
+    });
+    const models = attemptModels(outcome);
+    assert.equal(models.length, ATTEMPTS);
+    assert.equal(new Set(models).size, 1);
+  });
+
+  test('C: with one model declared, no escalation target is invented', async () => {
+    const outcome = await work({ world: newWorld(), raw: 'Fix typo in README.', script: texts(ATTEMPTS, 'Done.') });
+    assert.deepEqual(attemptModels(outcome), Array.from({ length: ATTEMPTS }, () => 'model.scripted'));
+  });
+
+  test('F: a re-dispatch holds the same grants, and its out-of-scope read is still refused', async () => {
+    const outcome = await work({
+      world: newWorld(),
+      raw: 'Fix typo in README.',
+      script: admittedScript(
+        [{ kind: 'TEXT', text: 'Done.' }],
+        {
+          kind: 'CALLS_THEN_ENVELOPE',
+          calls: [{ tool: 'repo__read_file', args: { path: 'README.md' } }],
+          envelope: () => resolution(TYPO_TASK),
+        },
+      ),
+    });
+
+    const [first, second] = outcome.substrate.dispatched;
+    assert.equal(second?.stage, 'RESOLUTION');
+    assert.deepEqual(second?.tools_granted, first?.tools_granted, 'the grants are the policy\'s, not the attempt\'s');
+    assert.deepEqual(second?.mandate.in_scope, [], 'and the resolution mandate still reaches no path');
+    const calls = eventsOf(prologue(outcome), 'adapter_call');
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]?.data.outcome, 'REFUSED');
+    assert.equal(calls[0]?.data.refusal, 'scope_violation');
+    assert.notEqual(outcome.result.workItemId, null, 'and the valid answer is still admitted');
+  });
+
+  test('F: an invalid request is still refused through admission, not retried as a failure', async () => {
+    const unbounded = resolution({ ...TYPO_TASK, scopePaths: ['**'] });
+    const outcome = await work({
+      world: newWorld(),
+      raw: 'Fix typo in README.',
+      script: [
+        { kind: 'ENVELOPE', envelope: unbounded },
+        { kind: 'ENVELOPE', envelope: unbounded },
+      ],
+    });
+
+    const log = prologue(outcome);
+    assert.equal(eventsOf(log, 'dispatch_intent').length, 2, 'the frozen once-only re-dispatch of a rejected proposal');
+    assert.ok(resolutionResults(outcome).every((r) => r.data.outcome === 'ENVELOPE'), 'no attempt failed');
+    assert.equal(eventsOf(log, 'note').filter((e) => e.data.topic === 're-dispatch').length, 0);
+    assert.equal(outcome.result.outcome, 'REFUSED');
+    assert.match(outcome.result.detail, /resolution was refused twice/);
+    assert.equal(outcome.result.workItemId, null);
+  });
 });
 
 /* ===================================================== the excerpt the agent was shown ==== */
@@ -1262,14 +1499,19 @@ describe('resolution evidence quotes the excerpt its call showed, and admission 
   ];
 
   for (const shape of unusable) {
-    test(`${shape.name}: refused at the schema, before any replay`, async () => {
+    test(`${shape.name}: failed at the schema, before any replay, and blocked once retries run out`, async () => {
       const world = newWorld();
-      const outcome = await work({ world, raw: 'Fix typo in README.', script: [citing(shape.quote)] });
+      const attempts = loadPolicies().budgets.dispatch_retries + 1;
+      const outcome = await work({
+        world,
+        raw: 'Fix typo in README.',
+        script: Array.from({ length: attempts }, () => citing(shape.quote)),
+      });
 
       const log = prologue(outcome);
       assert.equal(eventsOf(log, 'evidence_verification').length, 0, 'nothing was replayed');
-      assert.equal(eventsOf(log, 'dispatch_intent').length, 1, 'no re-dispatch and no audit');
-      assert.equal(outcome.result.outcome, 'REFUSED');
+      assert.equal(eventsOf(log, 'dispatch_intent').length, attempts, 'the policy\'s attempts, and no audit');
+      assert.equal(outcome.result.outcome, 'BLOCKED');
       assert.match(outcome.result.detail, /does not satisfy its schema/);
       assert.equal(outcome.result.workItemId, null);
       assert.deepEqual(outcome.after, outcome.before);

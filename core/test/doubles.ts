@@ -44,6 +44,7 @@ import {
   type WorkItem,
   type WorkflowProposal,
 } from '@intentra/contracts';
+import { parseEnvelope } from '@intentra/agents';
 import { loadPolicies, type PolicySet } from '@intentra/policies';
 import { RunStore } from '@intentra/state';
 import type { KernelPorts } from '../src/kernel.js';
@@ -687,6 +688,8 @@ export type ScriptedFor = { readonly stage?: Stage };
 export type ScriptedResponse =
   | ({ readonly kind: 'ENVELOPE'; readonly envelope: unknown } & ScriptedFor)
   | ({ readonly kind: 'FAILED'; readonly failure: SubstrateFailure; readonly detail: string } & ScriptedFor)
+  /** A raw final message, parsed by the parser the Claude substrate uses (WP-8 smoke-2). */
+  | ({ readonly kind: 'TEXT'; readonly text: string } & ScriptedFor)
   | ({ readonly kind: 'NON_CONFORMING'; readonly unexpected: readonly string[] } & ScriptedFor)
   | ({
     /** Calls a tool before answering, so the call log and mutation events are real. */
@@ -818,6 +821,27 @@ export class ScriptedSubstrate implements AgentSubstrate {
           cost,
           model: input.model,
         };
+
+      case 'TEXT': {
+        const parsed = parseEnvelope(response.text);
+        if (!parsed.ok) {
+          return {
+            outcome: 'FAILED',
+            failure: 'MALFORMED_ENVELOPE',
+            detail: parsed.detail,
+            toolSurface: conforming,
+            cost,
+            model: input.model,
+          };
+        }
+        return {
+          outcome: 'ENVELOPE',
+          envelope: stamp(parsed.envelope, input),
+          toolSurface: conforming,
+          cost,
+          model: input.model,
+        };
+      }
 
       case 'NON_CONFORMING':
         return {

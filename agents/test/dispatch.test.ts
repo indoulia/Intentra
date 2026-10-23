@@ -220,6 +220,40 @@ describe('the brief renders the specification and nothing else', () => {
     );
   });
 
+  /* WP-8 smoke-2: the format rule sat before ~35 KB of schema, and the first answer opened with prose. */
+  test('the prompt ends with a format reminder that comes after the whole schema', () => {
+    const rendered = renderSystemSpecification(buildInputPackage(request()), undefined);
+    const reminder = rendered.slice(rendered.lastIndexOf('Final reminder'));
+    const lastSchema = responseSchema().at(-1);
+    assert.ok(lastSchema !== undefined);
+    assert.ok(
+      rendered.indexOf(`${lastSchema[0]} ${JSON.stringify(lastSchema[1])}`) < rendered.lastIndexOf('Final reminder'),
+      'the reminder follows every schema line',
+    );
+    assert.ok(rendered.trimEnd().endsWith(reminder.trimEnd()), 'and nothing follows the reminder');
+    assert.match(reminder, /exactly one JSON object/);
+    assert.match(reminder, /no introductory prose/);
+    assert.match(reminder, /no Markdown code fence/);
+    assert.match(reminder, /no commentary after it/);
+    assert.match(reminder, /no field the schema does not define/);
+  });
+
+  test('the reminder names only the schema the prompt shows, and no field of it', () => {
+    const rendered = renderSystemSpecification(buildInputPackage(request()), undefined);
+    const reminder = rendered.slice(rendered.lastIndexOf('Final reminder'));
+    const shown = new Set(responseSchema().map(([label]) => label));
+    const named = reminder.match(/https?:\/\/\S+?#\S*/g) ?? [];
+    assert.deepEqual(named.map((uri) => uri.replace(/[.,:;]$/, '')), [responseSchema()[0]?.[0]]);
+    for (const uri of named) assert.ok(shown.has(uri.replace(/[.,:;]$/, '')), `${uri} is shown above it`);
+    assert.ok(rendered.slice(0, rendered.lastIndexOf('Final reminder')).includes('Response schema'));
+    const [, root] = responseSchema()[0] ?? [];
+    const fields = Object.keys((root as { properties?: object } | undefined)?.properties ?? {});
+    assert.ok(fields.length > 0);
+    for (const field of fields) {
+      assert.doesNotMatch(reminder, new RegExp(`\\b${field}\\b`), `the reminder does not restate ${field}`);
+    }
+  });
+
   /* WP-8 smoke-1: every excerpt mismatched because no dispatch was told where the replayed excerpt is shown. */
   test('every dispatch is told its evidence excerpt is the one its tool result showed, copied whole', () => {
     const rendered = renderSystemSpecification(buildInputPackage(request()), undefined);
@@ -259,6 +293,7 @@ describe('parsing an envelope is parsing, and nothing more', () => {
     ['an array', '[]'],
     ['truncated', '{"status":"COMPLETE"'],
     ['prose around JSON', 'Envelope: {"status":"COMPLETE"}'],
+    ['prose after JSON', '{"status":"COMPLETE"}\nThat is my answer.'],
     ['two objects', '{"a":1}{"b":2}'],
     ['a fence', '```json\n{"a":1}\n```'],
     ['whitespace', '\n\t '],

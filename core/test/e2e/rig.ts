@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import type { Connector } from '@intentra/adapters';
 import { ResourceAbsentError, ResourceUnreachableError } from '@intentra/adapters';
 import type { Event, IntakeSource, ModelEntry, Registries } from '@intentra/contracts';
+import type { PolicySet } from '@intentra/policies';
 import type { RunResult, StartInput } from '../../src/kernel.js';
 import {
   admitIntake,
@@ -72,6 +73,8 @@ export interface WorkOptions {
    * constant for the life of the run.
    */
   readonly registries?: Registries;
+  /** The policy set, for scenarios that vary a budget such as `dispatch_retries`. */
+  readonly policies?: PolicySet;
 }
 
 export interface WorkOutcome {
@@ -106,6 +109,7 @@ export async function work(options: WorkOptions): Promise<WorkOutcome> {
     projectManagement: options.projectManagement ?? null,
     runtime: options.runtime ?? null,
     ...(options.registries === undefined ? {} : { registries: options.registries }),
+    ...(options.policies === undefined ? {} : { policies: options.policies }),
     ...(options.operator === undefined ? {} : { operator: options.operator }),
   });
 

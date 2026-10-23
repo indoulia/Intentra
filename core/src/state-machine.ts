@@ -141,6 +141,46 @@ export function loopExhausted(
 }
 
 /**
+ * The FAILED rule on its own: retry per policy, escalating the model once, then BLOCKED.
+ *
+ * Exported because resolution fails the same way before any graph exists, and must apply this
+ * rule rather than a copy of it (WP-8 smoke-2).
+ */
+export function afterFailure(
+  context: Pick<TransitionContext, 'budgets' | 'dispatchAttempt' | 'modelAlreadyEscalated'>,
+  currentStage: Stage,
+  summary: string,
+): Extract<KernelAction, { readonly kind: 'REDISPATCH' | 'BLOCK' }> {
+  if (context.dispatchAttempt <= context.budgets.dispatch_retries) {
+    return {
+      kind: 'REDISPATCH',
+      reason:
+        `the dispatch failed (attempt ${context.dispatchAttempt} of `
+        + `${context.budgets.dispatch_retries + 1}). A FAILED envelope never satisfies an `
+        + 'exit condition, so the stage does not advance',
+      namedGaps: [],
+      escalateModel: !context.modelAlreadyEscalated
+        && context.budgets.model_escalations_per_dispatch > 0,
+    };
+  }
+  return {
+    kind: 'BLOCK',
+    blockerKind: 'EXTERNAL_DEPENDENCY',
+    reason:
+      `the dispatch failed ${context.dispatchAttempt} times. No state advances, no `
+      + 'envelope merges, and the run resumes at the same point when the dependency returns',
+    preBlockStage: currentStage,
+    report: [
+      summary,
+      `attempts: ${context.dispatchAttempt}`,
+      context.modelAlreadyEscalated
+        ? 'the model was escalated once and the failure recurred'
+        : 'no model escalation was available',
+    ],
+  };
+}
+
+/**
  * Maps an envelope status to exactly one kernel action.
  *
  * The switch is exhaustive over `EnvelopeStatus` and `assertNever` closes it, so adding a
@@ -312,40 +352,13 @@ export async function decideAction(
       };
     }
 
-    case 'FAILED': {
+    case 'FAILED':
       /*
        * An agent-level failure — tooling, model, timeout — and not a finding about the work.
        * Retry per policy, escalating the model once. On repeated failure: BLOCKED. The stage
        * does not advance, and a FAILED envelope never satisfies an exit condition.
        */
-      if (context.dispatchAttempt <= context.budgets.dispatch_retries) {
-        return {
-          kind: 'REDISPATCH',
-          reason:
-            `the dispatch failed (attempt ${context.dispatchAttempt} of `
-            + `${context.budgets.dispatch_retries + 1}). A FAILED envelope never satisfies an `
-            + 'exit condition, so the stage does not advance',
-          namedGaps: [],
-          escalateModel: !context.modelAlreadyEscalated
-            && context.budgets.model_escalations_per_dispatch > 0,
-        };
-      }
-      return {
-        kind: 'BLOCK',
-        blockerKind: 'EXTERNAL_DEPENDENCY',
-        reason:
-          `the dispatch failed ${context.dispatchAttempt} times. No state advances, no `
-          + 'envelope merges, and the run resumes at the same point when the dependency returns',
-        preBlockStage: currentStage,
-        report: [
-          envelope.summary,
-          `attempts: ${context.dispatchAttempt}`,
-          context.modelAlreadyEscalated
-            ? 'the model was escalated once and the failure recurred'
-            : 'no model escalation was available',
-        ],
-      };
-    }
+      return afterFailure(context, currentStage, envelope.summary);
 
     case 'REJECTED': {
       /*
