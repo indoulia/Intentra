@@ -836,23 +836,26 @@ describe('sandbox removal is bounded, reported, and never fatal', () => {
       await mkdir(cwd, { recursive: true });
       await mkdir(join(sandbox, 'config'), { recursive: true });
       /* Exactly what `Options.cwd` does to the harness subprocess. */
-      const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], {
-        cwd,
-        stdio: 'ignore',
-      });
-      /*
-       * Waited for, not assumed. Windows takes the working-directory lock when the process is
-       * created, so a removal attempted before then finds nothing holding the directory and
-       * succeeds — which is what happened when the suite ran this file in parallel with the
-       * rest and the child had not started inside the deadline. The `spawn` event is the
-       * point at which the lock exists.
-       */
-      await new Promise<void>((resolve, reject) => {
-        child.once('spawn', () => { resolve(); });
-        child.once('error', reject);
-      });
+      const child = spawn(
+        process.execPath,
+        ['-e', "process.stdout.write('ready'); setTimeout(() => {}, 60000)"],
+        { cwd, stdio: ['ignore', 'pipe', 'ignore'] },
+      );
 
       try {
+        /* WP-8 verify a1468e4: the cwd lock appears during the child's start-up, after `spawn`; its own first write comes after it. */
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            reject(new Error('the child never signalled it was running, so nothing shows its working directory is locked'));
+          }, 10_000);
+          child.stdout.once('data', () => { clearTimeout(timer); resolve(); });
+          child.once('error', (error) => { clearTimeout(timer); reject(error); });
+          child.once('exit', (code) => {
+            clearTimeout(timer);
+            reject(new Error(`the child exited (${String(code)}) before signalling it was running`));
+          });
+        });
+
         const started = Date.now();
         const detail = await discardSandbox(sandbox);
         const elapsed = Date.now() - started;
@@ -875,8 +878,11 @@ describe('sandbox removal is bounded, reported, and never fatal', () => {
         );
         assert.equal(existsSync(cwd), true, 'the locked directory is what survived');
       } finally {
-        child.kill();
-        await new Promise<void>((resolve) => { child.once('exit', () => { resolve(); }); });
+        if (child.exitCode === null && child.signalCode === null) {
+          const exited = new Promise<void>((resolve) => { child.once('exit', () => { resolve(); }); });
+          child.kill();
+          await exited;
+        }
         await rm(sandbox, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })
           .catch(() => undefined);
       }
