@@ -58,7 +58,7 @@ export type ScriptStep =
 export interface RecordedToolCall {
   readonly tool: string;
   readonly args: Readonly<Record<string, unknown>>;
-  readonly result: { readonly ok: boolean; readonly detail: string };
+  readonly result: { readonly ok: boolean; readonly detail: string; readonly excerpt?: string };
 }
 
 export class FakeSession implements TransportSession {
@@ -117,7 +117,7 @@ export class FakeSession implements TransportSession {
             tool: step.tool,
             args,
             result: outcome.ok
-              ? { ok: true, detail: JSON.stringify(outcome.value) }
+              ? { ok: true, detail: JSON.stringify(outcome.value), excerpt: outcome.excerpt }
               : { ok: false, detail: outcome.message },
           });
           continue;
@@ -188,7 +188,7 @@ export class RecordingInvoker implements ToolInvoker {
     private readonly answer: (
       tool: string,
       args: Readonly<Record<string, unknown>>,
-    ) => ToolInvocationResult = () => ({ outcome: 'OK', value: 'ok' }),
+    ) => ToolInvocationResult = () => ({ outcome: 'OK', value: 'ok', excerpt: 'ok' }),
   ) {}
 
   invoke(

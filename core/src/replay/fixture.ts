@@ -67,6 +67,8 @@ export interface RecordedOperation {
   readonly descriptor: AdapterOperationDescriptor;
   /** Call results keyed by a canonical digest of the arguments; `*` matches any arguments. */
   readonly results?: Readonly<Record<string, unknown>>;
+  /** The excerpt each recorded call showed, keyed as `results` is; a call without one is answered as unrecorded (WP-8). */
+  readonly excerpts?: Readonly<Record<string, string>>;
   /** What replaying this operation returns, for evidence verification. */
   readonly replay?:
     | { readonly outcome: 'OK'; readonly value: unknown; readonly excerpt: string }
@@ -318,6 +320,9 @@ function readAdapters(directory: string): RecordedAdapters {
         ...(op['results'] === undefined
           ? {}
           : { results: op['results'] as Readonly<Record<string, unknown>> }),
+        ...(op['excerpts'] === undefined
+          ? {}
+          : { excerpts: op['excerpts'] as Readonly<Record<string, string>> }),
         ...(op['replay'] === undefined
           ? {}
           : { replay: op['replay'] as RecordedOperation['replay'] }),

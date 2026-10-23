@@ -279,7 +279,7 @@ export class ClaudeAgentSdkSubstrate implements AgentSubstrate {
       const result = await invoker.invoke(toolName, args);
       switch (result.outcome) {
         case 'OK':
-          return { ok: true, value: result.value };
+          return { ok: true, value: result.value, excerpt: result.excerpt };
         case 'REFUSED':
           if (result.abortDispatch) {
             guard.securityViolation = `${toolName}: ${result.message}`;
@@ -1111,7 +1111,14 @@ export class AdapterToolServer {
     const args = request['arguments'];
     const outcome = await this.#invoke(name, isRecord(args) ? args : {});
     if (outcome.ok) {
-      return { content: [{ type: 'text', text: render(outcome.value) }], isError: false };
+      /* JSON-encoded so the agent can paste it into its envelope byte for byte (WP-8). */
+      return {
+        content: [
+          { type: 'text', text: render(outcome.value) },
+          { type: 'text', text: `evidence excerpt (JSON string): ${JSON.stringify(outcome.excerpt)}` },
+        ],
+        isError: false,
+      };
     }
     return { content: [{ type: 'text', text: outcome.message }], isError: true };
   }

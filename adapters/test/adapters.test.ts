@@ -669,3 +669,78 @@ describe('against a scratch repository on disk', () => {
     assert.equal(framework.refusals()[0]?.rule, 'symlink_escape');
   });
 });
+
+/* WP-8 smoke-1: evidence is compared with the replay's excerpt, so a call must hand the agent that same string. */
+describe('a call carries the excerpt its replay is compared against', () => {
+  function strings(value: unknown): readonly string[] {
+    if (typeof value === 'string') return [value];
+    if (value === null || typeof value !== 'object') return [];
+    return Object.values(value).flatMap((child) => strings(child));
+  }
+
+  async function callAndReplay(
+    framework: AdapterSuite['framework'],
+    adapter: string,
+    op: string,
+    args: Readonly<Record<string, unknown>>,
+  ): Promise<{ readonly value: unknown; readonly shown: string; readonly replayed: string }> {
+    const call = await framework.call(adapter, op, args, context());
+    assert.equal(call.outcome, 'OK', `${adapter}.${op} answered`);
+    const replay = await framework.replay({ adapter, op, args }, context());
+    assert.equal(replay.outcome, 'OK', `${adapter}.${op} replayed`);
+    return {
+      value: call.outcome === 'OK' ? call.value : null,
+      shown: call.outcome === 'OK' ? call.excerpt : '',
+      replayed: replay.outcome === 'OK' ? replay.excerpt : '',
+    };
+  }
+
+  test('git.status, which embeds a ready-made evidence item: one excerpt in the call, the item and the replay', async () => {
+    const { framework } = await suite();
+    const { value, shown, replayed } = await callAndReplay(framework, 'git', 'status', {});
+    assert.equal(shown, replayed);
+    const embedded = (value as { evidence?: readonly { excerpt: string }[] }).evidence ?? [];
+    assert.ok(embedded.some((item) => item.excerpt === shown), 'the embedded item quotes the same excerpt');
+  });
+
+  test('repo.read_file: the excerpt is the file text, unchanged', async () => {
+    writeFileSync(join(space.worktree, 'notes.md'), 'line one\n  indented two\n\nlast', 'utf8');
+    const { framework } = await suite();
+    const { shown, replayed } = await callAndReplay(framework, 'repo', 'read_file', { path: 'notes.md' });
+    assert.equal(shown, 'line one\n  indented two\n\nlast');
+    assert.equal(shown, replayed);
+  });
+
+  test('repo.list_paths, whose excerpt appears nowhere in its value: the call carries it anyway', async () => {
+    writeFileSync(join(space.worktree, 'a.md'), 'a', 'utf8');
+    writeFileSync(join(space.worktree, 'b.md'), 'b', 'utf8');
+    const { framework } = await suite();
+    const { value, shown, replayed } = await callAndReplay(framework, 'repo', 'list_paths', {});
+    assert.equal(shown, replayed);
+    assert.ok(
+      !strings(value).includes(shown),
+      'the value alone never showed this excerpt, which is why a port that dropped it left the agent nothing to quote',
+    );
+  });
+
+  test('every observation-safe operation that answers carries exactly the excerpt its replay returns', async () => {
+    writeFileSync(join(space.worktree, 'README.md'), 'Intentra\n', 'utf8');
+    const { framework } = await suite();
+    let answered = 0;
+    for (const descriptor of framework.descriptors()) {
+      if (!descriptor.observation_safe) continue;
+      const args = descriptor.op === 'read_file' ? { path: 'README.md' } : {};
+      const call = await framework.call(descriptor.adapter, descriptor.op, args, context());
+      if (call.outcome !== 'OK') continue;
+      answered += 1;
+      const replay = await framework.replay({ adapter: descriptor.adapter, op: descriptor.op, args }, context());
+      assert.equal(replay.outcome, 'OK', `${descriptor.adapter}.${descriptor.op} replayed`);
+      assert.equal(
+        call.excerpt,
+        replay.outcome === 'OK' ? replay.excerpt : null,
+        `${descriptor.adapter}.${descriptor.op}`,
+      );
+    }
+    assert.ok(answered >= 10, `the sweep reached ${answered} operations, not a handful`);
+  });
+});

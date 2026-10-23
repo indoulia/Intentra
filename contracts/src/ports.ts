@@ -100,7 +100,8 @@ export interface ToolInvoker {
 }
 
 export type ToolInvocationResult =
-  | { readonly outcome: 'OK'; readonly value: unknown }
+  /* `excerpt` is what evidence citing this call must quote: replay compares against the same string (WP-8). */
+  | { readonly outcome: 'OK'; readonly value: unknown; readonly excerpt: string }
   | {
     readonly outcome: 'REFUSED';
     readonly refusal: 'scope_violation' | 'security_violation' | 'grant_missing' | 'ambiguous_state' | 'unknown_tool';
@@ -122,7 +123,8 @@ export interface AdapterCallContext {
 }
 
 export type AdapterCallOutcome =
-  | { readonly outcome: 'OK'; readonly value: unknown; readonly call: CallRecord; readonly mutations: readonly MutationEvent[] }
+  /* `excerpt` is the string `replay` returns for the same locator; dropping it left evidence nothing to quote (WP-8). */
+  | { readonly outcome: 'OK'; readonly value: unknown; readonly excerpt: string; readonly call: CallRecord; readonly mutations: readonly MutationEvent[] }
   | {
     readonly outcome: 'REFUSED';
     readonly refusal: 'scope_violation' | 'security_violation' | 'grant_missing' | 'ambiguous_state';

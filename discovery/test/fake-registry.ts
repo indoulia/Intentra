@@ -229,9 +229,12 @@ export class FakeAdapters implements AdapterRegistry {
     }
 
     this.calls.push(call);
+    const value = await resolve(this.world.responses?.[key], args);
     return {
       outcome: 'OK',
-      value: await resolve(this.world.responses?.[key], args),
+      value,
+      /* The same rendering `replay` uses, so evidence quoting a call replays to a match. */
+      excerpt: JSON.stringify(value),
       call,
       mutations: [] as readonly MutationEvent[],
     };

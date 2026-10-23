@@ -2799,7 +2799,7 @@ export class Kernel {
           for (const mutation of callResult.mutations) {
             journal.run('mutation', mutation, { stage, dispatchId, agent: role });
           }
-          return { outcome: 'OK', value: callResult.value };
+          return { outcome: 'OK', value: callResult.value, excerpt: callResult.excerpt };
         }
         if (callResult.outcome === 'REFUSED') {
           const isSecurity = callResult.refusal === 'security_violation';
@@ -3172,7 +3172,7 @@ export class Kernel {
           stageMutating: false,
         });
         log('adapter_call', call.call, 'RESOLUTION');
-        if (call.outcome === 'OK') return { outcome: 'OK', value: call.value };
+        if (call.outcome === 'OK') return { outcome: 'OK', value: call.value, excerpt: call.excerpt };
         if (call.outcome === 'REFUSED') {
           return {
             outcome: 'REFUSED',
@@ -3450,7 +3450,7 @@ export class Kernel {
           for (const mutation of call.mutations) {
             journal.run('mutation', mutation, { stage, dispatchId, agent: role });
           }
-          return { outcome: 'OK', value: call.value };
+          return { outcome: 'OK', value: call.value, excerpt: call.excerpt };
         }
         if (call.outcome === 'REFUSED') {
           const isSecurity = call.refusal === 'security_violation';
@@ -3839,7 +3839,7 @@ export class Kernel {
         }
         const call = await this.ports.adapters.call(grant.adapter, grant.op, toolArgs, callContext);
         journal.run('adapter_call', call.call, { stage, dispatchId, agent: role });
-        if (call.outcome === 'OK') return { outcome: 'OK', value: call.value };
+        if (call.outcome === 'OK') return { outcome: 'OK', value: call.value, excerpt: call.excerpt };
         if (call.outcome === 'REFUSED') {
           return {
             outcome: 'REFUSED',

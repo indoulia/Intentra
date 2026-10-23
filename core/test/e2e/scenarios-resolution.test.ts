@@ -1,11 +1,11 @@
 import { test, describe, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { fixtures as fx, type Assertion, type ContextPackage, type Event, type Evidence, type Scope } from '@intentra/contracts';
+import { fixtures as fx, type Assertion, type ContextPackage, type Event, type Evidence, type Scope, type ToolInvocationResult } from '@intentra/contracts';
 import { loadPolicies } from '@intentra/policies';
 import { checkTypeEvidence } from '../../src/admission.js';
 import { PredicateEvaluator } from '../../src/predicates.js';
 import { decomposeEnvelope, triageEnvelope } from '../../src/orchestration.js';
-import { FixedClock, FixtureDiscovery, README_CONTENT } from '../doubles.js';
+import { FixedClock, FixtureDiscovery, README_CONTENT, type ScriptedResponse } from '../doubles.js';
 import { scratchWorld, type ScratchWorld } from './world.js';
 import {
   assertReadOnlyAndDurable,
@@ -1119,6 +1119,156 @@ describe('a resolution envelope with no usable proposals is refused, not thrown'
       );
       assert.equal(outcome.result.workItemId, null);
       assert.deepEqual([...outcome.built.store.listWorkItems()], []);
+    });
+  }
+});
+
+/* ===================================================== the excerpt the agent was shown ==== */
+
+/* WP-8 smoke-1: replay compared the agent's excerpt with one the agent was never shown, so honest evidence could not verify. */
+describe('resolution evidence quotes the excerpt its call showed, and admission replays exactly that', () => {
+  const LISTED = { adapter: 'repo', op: 'list_paths', args: {} } as const;
+  const TASK = {
+    type: 'TASK',
+    intent: 'MODIFY_ARTIFACT',
+    title: 'Fix typo in README',
+    desiredOutcome: 'the misspelling in README.md is corrected',
+    scopePaths: ['README.md'],
+    cites: ['E-01'],
+  } as const;
+
+  function prologue(outcome: Awaited<ReturnType<typeof work>>): readonly Event[] {
+    return outcome.built.store.readIntakeLog('in_0001').records;
+  }
+
+  /** Lists the worktree through the granted tool, then cites the listing as `quote` renders what it showed; `undefined` omits the excerpt. */
+  function citing(
+    quote: (shown: string) => unknown,
+    shownTo: string[] = [],
+    readme: string = README_CONTENT,
+  ): ScriptedResponse {
+    return {
+      kind: 'CALLS_THEN_ENVELOPE',
+      calls: [{ tool: 'repo__list_paths', args: {} }],
+      envelope: (results) => {
+        const [listed] = results as readonly ToolInvocationResult[];
+        assert.equal(listed?.outcome, 'OK', 'the listing was answered at resolution');
+        const shown = listed?.outcome === 'OK' ? listed.excerpt : '';
+        shownTo.push(shown);
+        const cited: Record<string, unknown> = {
+          ...fx.evidence({ id: 'E-02', kind: 'file', locator: { ...LISTED, args: {} }, ref: 'worktree root', reproducible: true }),
+          excerpt: quote(shown),
+        };
+        if (cited['excerpt'] === undefined) delete cited['excerpt'];
+        const envelope = resolution({
+          ...TASK,
+          evidence: [fileEvidence('E-01', 'README.md', readme), cited as unknown as Evidence],
+        });
+        /* A HIGH finding is always verified, so E-02's replay does not depend on the sampler. */
+        return { ...envelope, findings: [fx.finding({ id: 'F-01', severity: 'HIGH', evidence: ['E-02'] })] };
+      },
+    };
+  }
+
+  function admittedRun(step: ScriptedResponse): readonly ScriptedResponse[] {
+    const evidence = fileEvidence('E-01', 'README.md', README_CONTENT);
+    const script = investigationScript(
+      investigationGraph({
+        resolution: resolution({ ...TASK, evidence: [evidence] }),
+        evidence: [evidence],
+        paths: ['README.md'],
+        cause: 'the file was written with the wrong capitalization',
+      }),
+      ['README.md'],
+    );
+    return [step, ...script.slice(1)];
+  }
+
+  function verificationOf(log: readonly Event[]) {
+    const [verification] = eventsOf(log, 'evidence_verification');
+    assert.ok(verification !== undefined, 'admission replayed the resolution evidence');
+    return verification.data;
+  }
+
+  test('quoted as shown: the shown excerpt is the replayed one, it verifies, and the Work Item is admitted', async () => {
+    const world = newWorld();
+    const shown: string[] = [];
+    const outcome = await work({ world, raw: 'Fix typo in README.', script: admittedRun(citing((s) => s, shown)) });
+
+    const replayed = await outcome.built.framework.replay(LISTED, {
+      workItemId: 'in_0001',
+      runId: 'in_0001',
+      dispatchId: 'd_res',
+      mandate: { in_scope: ['README.md'], out_of_scope: [] },
+      grantsHeld: [],
+      stageMutating: false,
+    });
+    assert.equal(replayed.outcome, 'OK');
+    assert.equal(shown[0], replayed.outcome === 'OK' ? replayed.excerpt : null, 'adapter, kernel and substrate carried one string');
+
+    const verification = verificationOf(prologue(outcome));
+    const listed = verification.results.find((r) => r.evidence_id === 'E-02');
+    assert.equal(listed?.status, 'VERIFIED');
+    assert.equal(listed?.selected_because, 'ALWAYS_CRITICAL_FINDING');
+    assert.equal(verification.mismatch_count, 0);
+
+    assert.notEqual(outcome.result.workItemId, null, 'the Work Item was admitted');
+    assert.deepEqual(outcome.after, outcome.before, 'and the repository is byte-identical');
+  });
+
+  test('mismatched: a quote that differs from what was shown is MISMATCH and withdrawn, never verified', async () => {
+    const world = newWorld();
+    const outcome = await work({
+      world,
+      raw: 'Fix typo in README.',
+      script: admittedRun(citing((s) => `${s}\nsrc/invented.ts`)),
+    });
+
+    const verification = verificationOf(prologue(outcome));
+    assert.equal(verification.results.find((r) => r.evidence_id === 'E-02')?.status, 'MISMATCH');
+    assert.equal(verification.mismatch_count, 1);
+    const schema = outcome.result.checks.find((c) => c.check === 'schema_and_confidence');
+    assert.match(schema?.detail ?? '', /1 withdrawn as unconfirmed/);
+    assert.deepEqual(outcome.after, outcome.before);
+  });
+
+  test('fabricated twice over: the envelope is rejected, re-dispatched once, refused, and nothing runs after it', async () => {
+    const world = newWorld();
+    const fabricated = citing(() => 'src/billing/invoice.ts', [], `${README_CONTENT} (as remembered)`);
+    const outcome = await work({ world, raw: 'Fix typo in README.', script: [fabricated, fabricated] });
+
+    const log = prologue(outcome);
+    const verification = verificationOf(log);
+    assert.equal(verification.mismatch_count, 2);
+    assert.deepEqual(
+      eventsOf(log, 'dispatch_intent').map((e) => e.stage),
+      ['RESOLUTION', 'RESOLUTION'],
+      'one re-dispatch, and no dispatch past resolution',
+    );
+    assert.equal(outcome.result.outcome, 'REFUSED');
+    assert.match(outcome.result.detail, /resolution was refused twice/);
+    assert.equal(outcome.result.workItemId, null);
+    assert.deepEqual(outcome.log, [], 'no run was started');
+    assert.deepEqual(outcome.after, outcome.before);
+  });
+
+  const unusable: readonly { readonly name: string; readonly quote: (shown: string) => unknown }[] = [
+    { name: 'missing: the evidence has no excerpt', quote: () => undefined },
+    { name: 'malformed: the excerpt is not a string', quote: () => 42 },
+  ];
+
+  for (const shape of unusable) {
+    test(`${shape.name}: refused at the schema, before any replay`, async () => {
+      const world = newWorld();
+      const outcome = await work({ world, raw: 'Fix typo in README.', script: [citing(shape.quote)] });
+
+      const log = prologue(outcome);
+      assert.equal(eventsOf(log, 'evidence_verification').length, 0, 'nothing was replayed');
+      assert.equal(eventsOf(log, 'dispatch_intent').length, 1, 'no re-dispatch and no audit');
+      assert.equal(outcome.result.outcome, 'REFUSED');
+      assert.match(outcome.result.detail, /does not satisfy its schema/);
+      assert.equal(outcome.result.workItemId, null);
+      assert.deepEqual(outcome.after, outcome.before);
     });
   }
 });

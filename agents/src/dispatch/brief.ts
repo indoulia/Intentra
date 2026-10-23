@@ -37,6 +37,12 @@ const UNIVERSAL_OBLIGATIONS: readonly string[] = [
   + 'arguments that reproduce the observation. The kernel replays evidence. Evidence that '
   + 'does not replay downgrades the assertion resting on it, and two mismatches in one '
   + 'envelope reject the whole envelope.',
+  'Every tool result that succeeds ends with a line "evidence excerpt (JSON string): " '
+  + 'followed by a JSON string. That string is what the kernel\'s replay of the call returns, '
+  + 'and the excerpt of evidence citing the call is that JSON string copied whole and '
+  + 'unchanged, with a locator naming the same operation and arguments. The replay is '
+  + 'compared after normalizing only whitespace and line order, so a fragment, a paraphrase '
+  + 'or another call\'s excerpt is a mismatch.',
   'The verification block on evidence is written only by the kernel. An envelope arriving '
   + 'with one populated is a contract violation.',
   'coverage is mandatory and is reconciled mechanically against the adapter call log for this '

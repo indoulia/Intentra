@@ -200,15 +200,16 @@ export class RecordedAdapterRegistry implements AdapterRegistry {
     );
     const key = argsKey(args);
     const value = recorded?.results?.[key] ?? recorded?.results?.['*'];
+    const excerpt = recorded?.excerpts?.[key] ?? recorded?.excerpts?.['*'];
 
-    if (recorded === undefined || value === undefined) {
+    if (recorded === undefined || value === undefined || excerpt === undefined) {
       const call = recordedCall(
         this.#callNumber, adapter, op, args, context, 'ERROR', at,
       );
       return Promise.resolve({
         outcome: 'ERROR',
         message:
-          `the fixture records no result for ${adapter}.${op} with these arguments. A replay `
+          `the fixture records no result and excerpt for ${adapter}.${op} with these arguments. A replay `
           + 'answers from the recording or not at all',
         call,
         /* A recording that says nothing about a resource establishes nothing about it. */
@@ -219,6 +220,7 @@ export class RecordedAdapterRegistry implements AdapterRegistry {
     return Promise.resolve({
       outcome: 'OK',
       value,
+      excerpt,
       call: recordedCall(this.#callNumber, adapter, op, args, context, 'OK', at),
       /* A replay performs no mutation, so it emits no mutation events. */
       mutations: [],

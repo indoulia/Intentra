@@ -277,8 +277,8 @@ describe('dispatch refuses before it reaches anything', () => {
 /* ---------------------------------------------------------------- the adapter-only reach -- */
 
 describe('the only reach is the injected invoker', () => {
-  test('a granted call is forwarded verbatim and its value returned', async () => {
-    const invoker = new RecordingInvoker(() => ({ outcome: 'OK', value: { lines: 3 } }));
+  test('a granted call is forwarded verbatim and its value and excerpt returned', async () => {
+    const invoker = new RecordingInvoker(() => ({ outcome: 'OK', value: { lines: 3 }, excerpt: 'one\ntwo\nthree' }));
     const { substrate, transport } = substrateOver([[
       { kind: 'surface' },
       { kind: 'call', tool: 'repo__read_file', args: { path: 'src/a.ts' } },
@@ -288,6 +288,7 @@ describe('the only reach is the injected invoker', () => {
     assert.equal(result.outcome, 'ENVELOPE');
     assert.deepEqual(invoker.calls, [{ tool: 'repo__read_file', args: { path: 'src/a.ts' } }]);
     assert.equal(transport.sessions[0]?.calls[0]?.result.ok, true);
+    assert.equal(transport.sessions[0]?.calls[0]?.result.excerpt, 'one\ntwo\nthree', 'the excerpt reached the transport unchanged');
   });
 
   test('a tool the dispatch was not granted is refused and never reaches an adapter', async () => {

@@ -199,6 +199,7 @@ export class AdapterFramework implements AdapterRegistry {
         return {
           outcome: 'OK',
           value: performed.value,
+          excerpt: performed.excerpt,
           call: performed.call,
           mutations: performed.mutations,
         };

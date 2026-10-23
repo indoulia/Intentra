@@ -34,7 +34,7 @@ export interface TransportTool {
 }
 
 export type TransportToolResult =
-  | { readonly ok: true; readonly value: unknown }
+  | { readonly ok: true; readonly value: unknown; readonly excerpt: string }
   | { readonly ok: false; readonly message: string };
 
 export interface TransportRequest {

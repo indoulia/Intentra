@@ -32,6 +32,9 @@
           "content": "Intentra is an operating system for agents."
         }
       },
+      "excerpts": {
+        "*": "Intentra is an operating system for agents."
+      },
       "replay": {
         "outcome": "OK",
         "value": {

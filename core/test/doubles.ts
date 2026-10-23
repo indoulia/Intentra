@@ -271,6 +271,8 @@ export class FixtureAdapters implements AdapterRegistry {
     return {
       outcome: 'OK',
       value: file?.content ?? null,
+      /* What `replay` below returns for the same file. */
+      excerpt: file?.content ?? 'null',
       call,
       mutations: [] as readonly MutationEvent[],
     };

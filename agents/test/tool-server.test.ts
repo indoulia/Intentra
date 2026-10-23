@@ -61,7 +61,7 @@ interface Harness {
 
 async function harness(
   answer: (tool: string, args: Readonly<Record<string, unknown>>) => TransportToolResult
-  = () => ({ ok: true, value: { ok: true } }),
+  = () => ({ ok: true, value: { ok: true }, excerpt: 'ok' }),
 ): Promise<Harness> {
   const wire = new Wire();
   const calls: { tool: string; args: Readonly<Record<string, unknown>> }[] = [];
@@ -151,7 +151,7 @@ describe('the in-process tool server', () => {
 
   test('tools/list advertises nothing when nothing was granted', async () => {
     const wire = new Wire();
-    const server = new AdapterToolServer('agentos', [], () => Promise.resolve({ ok: true, value: null }));
+    const server = new AdapterToolServer('agentos', [], () => Promise.resolve({ ok: true, value: null, excerpt: 'null' }));
     await server.connect(wire);
     wire.onmessage?.({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
     await Promise.resolve();
@@ -160,14 +160,27 @@ describe('the in-process tool server', () => {
   });
 
   test('tools/call forwards the arguments verbatim and returns the value', async () => {
-    const h = await harness((_tool, args) => ({ ok: true, value: { read: args['path'] } }));
+    const h = await harness((_tool, args) => ({ ok: true, value: { read: args['path'] }, excerpt: 'a' }));
     const payload = result(await h.request('tools/call', {
       name: 'repo__read_file',
       arguments: { path: 'src/a.ts' },
     }));
     assert.deepEqual(h.calls, [{ tool: 'repo__read_file', args: { path: 'src/a.ts' } }]);
     assert.equal(payload['isError'], false);
-    assert.deepEqual(payload['content'], [{ type: 'text', text: '{"read":"src/a.ts"}' }]);
+    assert.deepEqual((payload['content'] as unknown[])[0], { type: 'text', text: '{"read":"src/a.ts"}' });
+  });
+
+  /* WP-8 smoke-1: the excerpt replay compares against was never shown, so no evidence could quote it. */
+  test('tools/call returns the evidence excerpt beside the value, as a JSON string that copies exactly', async () => {
+    const excerpt = 'abc123\u001fA Dev\n  "quoted" line\n\nlast';
+    const h = await harness(() => ({ ok: true, value: { commits: 1 }, excerpt }));
+    const payload = result(await h.request('tools/call', { name: 'repo__read_file', arguments: {} }));
+    assert.deepEqual(payload['content'], [
+      { type: 'text', text: '{"commits":1}' },
+      { type: 'text', text: `evidence excerpt (JSON string): ${JSON.stringify(excerpt)}` },
+    ]);
+    const shown = (payload['content'] as { text: string }[])[1]?.text ?? '';
+    assert.equal(JSON.parse(shown.slice(shown.indexOf(': ') + 2)), excerpt, 'decoding the shown text gives back every byte');
   });
 
   test('a refusal comes back as a tool error, not as a value', async () => {
@@ -249,7 +262,7 @@ describe('the in-process tool server', () => {
 
   test('closing the server closes the transport', async () => {
     const wire = new Wire();
-    const server = new AdapterToolServer('agentos', TOOLS, () => Promise.resolve({ ok: true, value: null }));
+    const server = new AdapterToolServer('agentos', TOOLS, () => Promise.resolve({ ok: true, value: null, excerpt: 'null' }));
     await server.connect(wire);
     await server.close();
     assert.equal(wire.closed, true);

@@ -220,6 +220,14 @@ describe('the brief renders the specification and nothing else', () => {
     );
   });
 
+  /* WP-8 smoke-1: every excerpt mismatched because no dispatch was told where the replayed excerpt is shown. */
+  test('every dispatch is told its evidence excerpt is the one its tool result showed, copied whole', () => {
+    const rendered = renderSystemSpecification(buildInputPackage(request()), undefined);
+    assert.match(rendered, /evidence excerpt \(JSON string\)/);
+    assert.match(rendered, /copied whole and unchanged/);
+    assert.match(rendered, /same operation and arguments/);
+  });
+
   test('a role this package does not specify still gets the universal obligations', () => {
     const input = buildInputPackage(request());
     const rendered = renderSystemSpecification({ ...input, agent: 'implementer' }, undefined);
