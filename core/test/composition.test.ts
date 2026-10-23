@@ -1,7 +1,7 @@
 import { test, describe, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Connector } from '@intentra/adapters';
@@ -15,6 +15,7 @@ import {
 } from '../src/composition/index.js';
 import { sourceLocatorFor } from '../src/cli/main.js';
 import { compareSourceDrift, recordIntake } from '../src/intake.js';
+import { removeTemporaryRoot } from './temporary-root.js';
 
 /**
  * The composition root, at the seam where the intake becomes a hash.
@@ -34,8 +35,8 @@ import { compareSourceDrift, recordIntake } from '../src/intake.js';
  */
 
 const roots: string[] = [];
-after(() => {
-  for (const root of roots) rmSync(root, { recursive: true, force: true });
+after(async () => {
+  for (const root of roots) await removeTemporaryRoot(root);
 });
 
 interface World {
