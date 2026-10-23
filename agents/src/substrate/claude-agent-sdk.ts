@@ -57,6 +57,14 @@ import type {
  *    as SKILL_AND_MODEL_SELECTION asks for on exactly this rule: no grant may carry a
  *    spawning name, `canUseTool` denies any name outside the allowlist, and the conformance
  *    check refuses a surface that advertises any agent at all.
+ *
+ *    That last rule is only tenable because of `DISABLE_BUILTIN_AGENTS` below: the harness
+ *    publishes its own built-in agent roster in `init.agents` whether or not anything can
+ *    reach an entry, so a session that did not disable them advertises five names and fails
+ *    a check that is right to refuse them. The answer is to disable the roster at its source
+ *    rather than to teach the check which names are currently benign — Intentra does not
+ *    track Claude Code's built-in agent names, and a harness upgrade that adds one changes
+ *    nothing here.
  * 3. **A startup conformance check asserts the effective tool list equals the adapter set**,
  *    and it is performed against what the SDK *reports*, not against what was asked for. The
  *    `system`/`init` message (sdk.d.ts 5084) carries `tools`, `agents`, `mcp_servers`,
@@ -78,8 +86,45 @@ import type {
  * checks that exist to catch a tidy-looking lie.
  */
 
+/**
+ * The SDK control that empties the harness's built-in agent roster, and the value it reads.
+ *
+ * `init.agents` is not curated metadata: it is `activeAgents.map(a => a.agentType)`, the same
+ * list the harness resolves a subagent launch against. Under `settingSources: []` that list is
+ * whatever the build compiles in — five names in 0.3.260 (`claude`, `Explore`,
+ * `general-purpose`, `Plan`, `statusline-setup`), each behind an independent internal flag, so
+ * it is neither stable across versions nor derivable from one. Pinning it would make Intentra
+ * responsible for tracking Claude Code's internals; disabling it makes the question not arise.
+ *
+ * The variable is parsed as a boolean, not read for truthiness — `0` and `false` leave the
+ * roster populated — so the value matters and is asserted by the tests. The control applies
+ * only to a non-interactive host, which every Intentra dispatch is.
+ *
+ * Verified by running the installed 0.3.260 binary under this file's own options: unset, `0`
+ * and `false` each advertise the five; `1` and `true` each advertise none.
+ */
+const DISABLE_BUILTIN_AGENTS = { name: 'CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS', value: '1' } as const;
+
+/**
+ * The environment one dispatch's harness subprocess runs under.
+ *
+ * A function rather than an inline literal so that what reaches the subprocess can be asserted
+ * without starting one: the two things this boundary depends on are that the roster is disabled
+ * and that the configuration directory is the sandbox, and both are properties of this value.
+ */
+export function dispatchEnvironment(configHome: string): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    CLAUDE_CONFIG_DIR: configHome,
+    [DISABLE_BUILTIN_AGENTS.name]: DISABLE_BUILTIN_AGENTS.value,
+  };
+}
+
 /** How long a conformance probe is allowed to take before it is treated as unobservable. */
 const CONFORMANCE_PROBE_MS = 120_000;
+
+/** SDK 0.3.260 rejects `--max-budget-usd 0` before `system`/`init`; smallest positive value. */
+const CONFORMANCE_PROBE_BUDGET_USD = 0.01;
 
 const ZERO_COST: TransportCost = { input_tokens: 0, output_tokens: 0, usd: null };
 
@@ -112,9 +157,9 @@ export class ClaudeAgentSdkSubstrate implements AgentSubstrate {
    * substrate reports, and close before a turn happens.
    *
    * The probe spends nothing — it is closed at the init message, before the first request,
-   * and `maxBudgetUsd: 0` is the backstop if the close ever races. What it costs is one
-   * subprocess start, once, in exchange for the difference between asserting a configuration
-   * and observing its effect.
+   * and `CONFORMANCE_PROBE_BUDGET_USD` is the backstop if the close ever races. What it costs
+   * is one subprocess start, once, in exchange for the difference between asserting a
+   * configuration and observing its effect.
    */
   async conformance(grants: readonly ToolGrant[]): Promise<ToolSurfaceReport> {
     let observed: ObservedSurface | null = null;
@@ -132,7 +177,7 @@ export class ClaudeAgentSdkSubstrate implements AgentSubstrate {
         prompt: CONFORMANCE_PROMPT,
         tools: toolsOf(grants),
         maxTurns: 1,
-        maxBudgetUsd: 0,
+        maxBudgetUsd: CONFORMANCE_PROBE_BUDGET_USD,
         invoke: refuseEverything,
       });
       for await (const event of session) {
@@ -690,8 +735,13 @@ class ClaudeCodeSession implements TransportSession {
       /* `env` REPLACES the subprocess environment rather than merging, so the parent's is
        * spread deliberately: the harness needs PATH, a home directory and whatever
        * credential the host is configured with, and stripping those would fail the run for
-       * reasons that look like model unavailability. */
-      env: { ...process.env, CLAUDE_CONFIG_DIR: configHome },
+       * reasons that look like model unavailability.
+       *
+       * Both assignments come after the spread and therefore win: an operator who exported
+       * `CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS=0` cannot re-enable the built-in agents for
+       * a dispatch, any more than one who exported `CLAUDE_CONFIG_DIR` can move the session
+       * back onto their own configuration. */
+      env: dispatchEnvironment(configHome),
       /* Rule 1. Every built-in tool absent rather than forbidden. */
       tools: [],
       /* Exactly the granted adapter operations, auto-allowed without prompting. */

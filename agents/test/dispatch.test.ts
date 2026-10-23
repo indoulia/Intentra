@@ -247,6 +247,87 @@ describe('the surface comparison, on its own', () => {
     assert.deepEqual([...report.missing], ['repo__list_files', 'repo__read_file']);
     assert.deepEqual([...report.effective], []);
   });
+
+  /* A-18. Every advertised name is refused, so there is no roster to get out of date. */
+  const observed = (agents: readonly string[], tools = ['repo__list_files', 'repo__read_file']) =>
+    ({ tools, agents, detail: '' });
+
+  test('each of the four dispatch surfaces conforms with no agent advertised', () => {
+    const descriptors = [fx.operationDescriptor()];
+    assert.equal(MVP_ROLE_SPECS.length, 4);
+    for (const spec of MVP_ROLE_SPECS) {
+      const view = catalog.spec(spec.role, spec.mandate_name);
+      assert.ok(view !== undefined, `${spec.role}/${spec.mandate_name}`);
+      const roleGrants = grantsFor(view, descriptors);
+      const label = `${spec.role}/${spec.mandate_name}`;
+
+      const clean = evaluateSurface({
+        substrate: 'x',
+        grants: roleGrants,
+        observed: { tools: roleGrants.map((g) => g.tool_name), agents: [], detail: '' },
+        qualify: (n) => n,
+      });
+      assert.equal(clean.verdict, 'CONFORMS', label);
+      assert.deepEqual([...clean.unexpected], [], label);
+
+      /* And the same surface with one agent advertised fails, on every role alike. */
+      const advertised = evaluateSurface({
+        substrate: 'x',
+        grants: roleGrants,
+        observed: { tools: roleGrants.map((g) => g.tool_name), agents: ['claude'], detail: '' },
+        qualify: (n) => n,
+      });
+      assert.equal(advertised.verdict, 'UNEXPECTED_TOOLS', label);
+      assert.deepEqual([...advertised.unexpected], ['agent:claude'], label);
+    }
+  });
+
+  test('no name is privileged: the comparison holds no allowlist and matches no pattern', () => {
+    /* Names a Claude-specific allowlist or a prefix/case/fragment rule would have admitted. */
+    const names = [
+      'claude', 'Explore', 'general-purpose', 'Plan', 'statusline-setup', 'output-style-setup',
+      'General-Purpose', 'general-purpose-2', 'general', 'claude-code-guide', 'web-fetch', '',
+    ];
+    for (const name of names) {
+      const report = evaluateSurface({
+        substrate: 'x', grants, observed: observed([name]), qualify: (n) => n,
+      });
+      assert.equal(report.verdict, 'UNEXPECTED_TOOLS', name);
+      assert.deepEqual([...report.unexpected], [`agent:${name}`], name);
+    }
+  });
+
+  test('an advertised name never rescues, and is never rescued by, the tool comparison', () => {
+    /* An unexpected effective tool is still refused when nothing is advertised, ... */
+    const widened = evaluateSurface({
+      substrate: 'x',
+      grants,
+      observed: observed([], ['repo__read_file', 'repo__list_files', 'Read']),
+      qualify: (n) => n,
+    });
+    assert.equal(widened.verdict, 'UNEXPECTED_TOOLS');
+    assert.deepEqual([...widened.unexpected], ['Read']);
+
+    /* ... a spawning tool is still refused on its own, ... */
+    const spawning = evaluateSurface({
+      substrate: 'x',
+      grants,
+      observed: observed([], ['repo__read_file', 'repo__list_files', 'Task']),
+      qualify: (n) => n,
+    });
+    assert.equal(spawning.verdict, 'UNEXPECTED_TOOLS');
+    assert.ok(spawning.unexpected.includes('Task'));
+
+    /* ... and both halves are reported together rather than one masking the other. */
+    const both = evaluateSurface({
+      substrate: 'x',
+      grants,
+      observed: observed(['claude'], ['repo__read_file', 'repo__list_files', 'Task']),
+      qualify: (n) => n,
+    });
+    assert.equal(both.verdict, 'UNEXPECTED_TOOLS');
+    assert.deepEqual([...both.unexpected], ['Task', 'agent:claude']);
+  });
 });
 
 describe('the boundary runs end to end with no model', () => {

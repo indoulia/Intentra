@@ -62,6 +62,11 @@ a **subtraction** problem, and subtraction fails open. So:
 - **No subagent or task-spawning tool is ever exposed**, in four layers: no grant may carry a
   spawning name, no subagent is defined, the permission callback denies anything off the
   allowlist, and the conformance check refuses a surface advertising any agent at all.
+- **The harness's own built-in agents are disabled at source** (freeze A-18), by setting
+  `CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS=1` in the dispatch environment. `init.agents` is the
+  live list a subagent launch resolves against, not curated metadata, and its contents vary by
+  harness version and internal flag. Emptying it is why the check above can refuse every
+  advertised name without Intentra maintaining a list of Claude Code's agent names.
 - **The conformance check reads the surface the substrate reports**, not the configuration it
   was given, and `UNVERIFIABLE` fails closed. An SDK upgrade that adds a tool breaks the
   check rather than passing quietly.

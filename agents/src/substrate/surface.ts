@@ -11,11 +11,18 @@ import { isSpawningToolName } from '../dispatch/tool-grants.js';
  * means the rule survives a change of substrate — the substrate supplies what it observed
  * and how it names things, and the verdict is computed the same way either side of the swap.
  *
- * Three properties matter more than the code:
+ * Four properties matter more than the code:
  *
  * - **`UNVERIFIABLE` fails closed.** A surface that could not be observed is not a surface
  *   that is fine. The verdict exists so that "we could not check" is a distinct, refusable
  *   answer rather than an absence of complaint.
+ * - **An advertised agent is refused without being called reach** (D-2, A-18). A name in the
+ *   observed roster is not evidence that spawning is reachable — that question is answered by
+ *   the effective tool list, and a session with no spawning tool cannot spawn whatever the
+ *   roster says. It is refused because an Intentra session disables the harness's built-in
+ *   roster at source, so a name arriving anyway means the surface is not the one that was
+ *   configured, and a surface that is not the one that was configured is not one to dispatch
+ *   into. The comparison learns no substrate's names to make that judgement.
  * - **An unmappable effective name appears verbatim.** A name the substrate cannot account
  *   for is reported as it was seen, never normalized into something recognizable, because
  *   normalizing is how an unexpected tool becomes an expected one.
@@ -26,7 +33,7 @@ import { isSpawningToolName } from '../dispatch/tool-grants.js';
 export interface ObservedSurface {
   /** Every tool the substrate reports as effective for the session, as it names them. */
   readonly tools: readonly string[];
-  /** Every subagent the substrate reports as available. Any at all is a violation. */
+  /** Every agent the substrate advertises. Any at all contradicts the configuration. */
   readonly agents: readonly string[];
   /** Whatever else the substrate saw that a human reading the report would want. */
   readonly detail: string;
@@ -81,10 +88,14 @@ export function evaluateSurface(comparison: SurfaceComparison): ToolSurfaceRepor
   }
 
   /*
-   * A subagent is not a tool and has no place in either set, so it is reported as an
-   * unexpected entry under a prefix that cannot collide with a tool name. Invariant W5 —
-   * no agent may invoke another agent — is violated by the mere availability, whether or
-   * not anything was ever invoked.
+   * An advertised agent is not a tool and has no place in either set, so it is reported as an
+   * unexpected entry under a prefix that cannot collide with a tool name. A-18: this is not
+   * where W5 is held — the four spawning layers hold it, and an advertised name is metadata
+   * the harness publishes about itself rather than a capability offered to the dispatch. It
+   * is refused because an Intentra session asks the harness for no built-in agents at all, so
+   * any name here contradicts the configuration the surface was supposed to have. Refusing
+   * the whole set keeps this comparison free of every substrate's naming: there is no roster
+   * to match against, no pattern, and nothing that a harness upgrade can age out of date.
    */
   for (const agent of dedupe(observed.agents)) unexpected.push(`agent:${agent}`);
 

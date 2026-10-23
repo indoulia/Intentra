@@ -10,6 +10,7 @@ import {
   ClaudeAgentSdkSubstrate,
   ClaudeCodeTransport,
   discardSandbox,
+  dispatchEnvironment,
   permitTool,
 } from '../src/substrate/claude-agent-sdk.js';
 import { FakeTransport, GRANTS, RecordingInvoker, grant, type ScriptStep } from './doubles.js';
@@ -107,6 +108,59 @@ describe('conformance: the effective surface is observed, not assumed', () => {
     const report = await substrate.conformance(GRANTS);
     assert.equal(report.verdict, 'UNEXPECTED_TOOLS');
     assert.deepEqual([...report.unexpected], ['agent:general-purpose']);
+  });
+
+  /* A-18. The roster is disabled at the source, so the conforming surface advertises none. */
+  test('a surface advertising no agent conforms, and says so', async () => {
+    const { substrate } = substrateOver([[{ kind: 'surface', agents: [] }]]);
+    const report = await substrate.conformance(GRANTS);
+    assert.equal(report.verdict, 'CONFORMS');
+    assert.deepEqual([...report.unexpected], []);
+  });
+
+  test('an agent advertised despite the disable fails, whichever name it carries', async () => {
+    /* Including the five 0.3.260 advertises when the control is absent. Nothing about these
+     * names is known to the comparison; that is the property under test. */
+    for (const name of ['claude', 'Explore', 'general-purpose', 'Plan', 'statusline-setup', 'db-migrator']) {
+      const { substrate } = substrateOver([[{ kind: 'surface', agents: [name] }]]);
+      const report = await substrate.conformance(GRANTS);
+      assert.equal(report.verdict, 'UNEXPECTED_TOOLS', name);
+      assert.deepEqual([...report.unexpected], [`agent:${name}`]);
+    }
+  });
+
+  test('the disable control is set on the dispatch environment, by name and by value', () => {
+    const env = dispatchEnvironment('/sandbox/config');
+    /* Parsed as a boolean by the harness: `0` and `false` would leave the roster populated,
+     * so the value is asserted and not only the presence of the name. */
+    assert.equal(env.CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS, '1');
+    assert.equal(env.CLAUDE_CONFIG_DIR, '/sandbox/config');
+  });
+
+  test('an exported value cannot re-enable the built-in agents for a dispatch', () => {
+    const before = process.env.CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS;
+    process.env.CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS = '0';
+    try {
+      assert.equal(dispatchEnvironment('/sandbox/config').CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS, '1');
+    } finally {
+      if (before === undefined) delete process.env.CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS;
+      else process.env.CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS = before;
+    }
+  });
+
+  test('the environment still carries what the harness needs to start', () => {
+    /* Not `PATH`: Windows stores it as `Path`, and the spread keeps the real casing, so the
+     * assertion would test the platform rather than the pass-through. */
+    process.env.INTENTRA_TEST_INHERITED = 'inherited';
+    try {
+      const env = dispatchEnvironment('/sandbox/config');
+      assert.equal(env.INTENTRA_TEST_INHERITED, 'inherited');
+      /* A credential the harness needs would arrive the same way; stripping the parent's
+       * environment would fail the run for reasons that look like model unavailability. */
+      assert.ok(Object.keys(env).length > 2);
+    } finally {
+      delete process.env.INTENTRA_TEST_INHERITED;
+    }
   });
 
   test('a spawning tool on the surface is refused even under a granted-looking name', async () => {

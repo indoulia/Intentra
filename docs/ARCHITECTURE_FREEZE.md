@@ -139,9 +139,16 @@ So the condition:
   every built-in tool is absent rather than forbidden.
 - **No subagent or task-spawning tool is ever exposed.** Undetermined spawning behaviour
   counts as spawning, which the design already states.
+- **The harness's own built-in agents are disabled at the source of the session**, by the
+  execution host's own supported control, so that an Intentra session advertises none. The
+  substrate sets it; nothing downstream may unset it (A-18).
 - **A startup conformance check asserts the effective tool list equals the adapter set**, and
   fails the run — loudly, before dispatch — if it does not. An SDK upgrade that adds a tool
-  must break this check rather than pass quietly.
+  must break this check rather than pass quietly. It refuses an advertised agent name too —
+  not as evidence that spawning became reachable, which the effective tool list answers, but
+  because a session that asked for no built-in agents and was given some is not the session
+  that was configured. Intentra never holds a list of the host's built-in agent names to make
+  that judgement: the check refuses the whole set, so no name can age out of date (A-18).
 
 The exact configuration surface must be read from the Agent SDK documentation
 (`code.claude.com/docs/en/agent-sdk`) when WP-5 is built and not assumed from recollection;
@@ -327,3 +334,37 @@ oversights:
   documented as "the probe or dispatch that produced this assertion". Every assertion naming its
   source is what makes the confidence discipline auditable; an optional `probe` would have made
   the most important assertions — the resolution's — the ones with no provenance.
+
+### 2026-09-06 — WP-8 pilot, amendment A-18
+
+One amendment, raised by the first dispatch against a live substrate. It changes no normative
+decision and touches neither the kernel boundary, the dependency rule, the stage vocabulary, the
+confidence or absence vocabularies, nor the gate set, so it does not require a v0.4.
+
+**No contract version bumped.** `ToolSurfaceReport` and the `tool_surface_conformance` event are
+unchanged, and the conformance comparison is unchanged: an advertised agent is still refused.
+
+| # | Document · section | Contradiction | Amendment |
+|---|---|---|---|
+| A-18 | ARCHITECTURE_FREEZE · 4 D-2 | D-2 requires that no subagent be exposed and that the conformance check refuse a surface advertising any agent. The pilot's first dispatch was refused with five `agent:*` entries. None was reachable — `tools: []` removed the Task tool, so the effective tool list was exactly the 48 granted operations and the harness never even told the model an agent type existed. But the harness publishes its built-in roster in `init.agents` regardless, so D-2 as configured could not produce a conforming session at all: every dispatch would fail, and a condition that refuses all honest work is one that gets relaxed by whoever meets it next. | D-2 gains a fourth condition: the built-in agent roster is **disabled at the source of the session**, using the execution host's own supported control, so that a conforming session advertises none. The conformance check is unchanged and still refuses any advertised name — now as a contradiction of the configuration rather than as a claim about reachability. Intentra maintains no list of the host's built-in agent names. |
+
+The amendment does not say the host's built-in agents are allowed. It says the correct place to
+answer them is the session's configuration, not a list of currently-benign names carried in the
+kernel. Two facts established against the installed harness drove that choice, and both are
+recorded because either alone would have been enough:
+
+- **`init.agents` is not curated metadata.** It is `activeAgents.map(a => a.agentType)` — the
+  same list a subagent launch resolves against. Reading it as an inert publication would have
+  been reading it as something it is not.
+- **The roster is not a stable set to pin.** Its five members in SDK 0.3.260 each sit behind an
+  independent internal flag — a UI setting, safe mode, an explore/plan switch, a policy check,
+  the entrypoint string — so it varies without an SDK upgrade. A pinned list would have been a
+  reverse-engineered snapshot that looked authoritative and drifted silently. The rejected draft
+  of this amendment carried exactly that list, and it was already wrong: it named
+  `output-style-setup`, which does not exist in 0.3.260, and omitted `claude`, which does.
+
+W5 is unchanged and is held where it always was — by the four mechanisms that make spawning
+unreachable: no grant may carry a spawning name, no subagent is ever defined, the permission
+callback denies anything off the allowlist, and the conformance check refuses a spawning tool on
+the effective surface however it got there. A-18 adds a fifth mechanism in front of them and
+removes none.

@@ -1068,3 +1068,38 @@ Alongside them a few exported helpers in `core/src` have no caller at all — `a
 `expectedCriteria` in `dod.ts`, `observedCoverage` in `reconciliation.ts`, `pathInScope` in
 `proposals.ts`, and `booleanValue` in `discovery/src/reconciliation.ts`. Those are dead
 exports rather than disconnected mechanisms, and removing them is tidying rather than repair.
+
+### I-39 · Built-in agents are disabled by the dispatch environment, not filtered by a roster
+
+Freeze A-18 requires an Intentra session to advertise no built-in agents. The control is the
+harness's own: `ClaudeCodeTransport` sets `CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS=1` in the
+environment it hands the SDK, in `dispatchEnvironment()` alongside `CLAUDE_CONFIG_DIR`. Both
+assignments follow the `...process.env` spread, so an exported value cannot override either —
+the same reason the sandbox's configuration directory is set there and not merged.
+
+The value is load-bearing. The variable is parsed as a boolean rather than read for truthiness:
+`1`, `true`, `yes` and `on` disable the roster, and `0`, `false` and empty leave it populated.
+An operator who exports it as `0` expecting a disable would get the opposite, which is why the
+name and the value are one constant and the tests assert both.
+
+The alternative — pinning the built-in names and admitting them — was implemented first and
+rejected, for two reasons found by reading the installed 0.3.260 binary rather than the docs:
+
+- `init.agents` is `activeAgents.map(a => a.agentType)`, the same list a subagent launch
+  resolves `subagent_type` against. It is not a separate metadata publication, so treating it
+  as one would have been a comfortable misreading rather than a fact.
+- The roster is assembled per session from independent internal flags (`disableAgentView`,
+  `CLAUDE_CODE_SAFE_MODE`, `CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS`, a web-fetch policy check,
+  the entrypoint string). It varies without an SDK upgrade, so a pinned list is a snapshot that
+  drifts silently while looking authoritative — and the drafted one already did, naming
+  `output-style-setup`, absent from this build, and omitting `claude`, present in it.
+
+So `surface.ts` keeps the rule it had before A-18 — every advertised name is `UNEXPECTED_TOOLS`
+under the `agent:` prefix — and learns no substrate's names at all. What changed is why: not
+"an advertised agent is reachable spawning", which is false, but "a session that asked for no
+built-in agents and was handed some is not the session that was configured". The check stays
+fail-closed and stays substrate-independent, and a harness upgrade that adds a built-in agent
+requires no edit here.
+
+**Reversed by:** the SDK withdrawing the control, or an execution host with no equivalent. Then
+the question returns and the answer is a configuration one again, not a name list.
