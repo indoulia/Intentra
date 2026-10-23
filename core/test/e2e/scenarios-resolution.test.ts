@@ -1062,4 +1062,63 @@ describe('a resolution envelope with no usable proposals is refused, not thrown'
     );
     assert.notEqual(outcome.result.workItemId, null, 'and the Work Item was admitted');
   });
+
+  /* WP-8 attempt 2: unvalidated, these threw past the log or were admitted as though complete. */
+  function validResolution(): Record<string, unknown> {
+    return structuredClone(resolution({
+      type: 'TASK',
+      intent: 'MODIFY_ARTIFACT',
+      title: 'Fix typo in README',
+      desiredOutcome: 'the misspelling in README.md is corrected',
+      scopePaths: ['README.md'],
+      evidence: [fileEvidence('E-01', 'README.md', README_CONTENT)],
+      cites: ['E-01'],
+    })) as unknown as Record<string, unknown>;
+  }
+
+  function proposalsOf(envelope: Record<string, unknown>): Record<string, unknown> {
+    return envelope['proposals'] as Record<string, unknown>;
+  }
+
+  function workItemOf(envelope: Record<string, unknown>): Record<string, unknown> {
+    return proposalsOf(envelope)['work_item'] as Record<string, unknown>;
+  }
+
+  const invalid: readonly {
+    readonly name: string;
+    readonly mutate: (envelope: Record<string, unknown>) => void;
+  }[] = [
+    { name: 'malformed: the proposal is a string', mutate: (e) => { proposalsOf(e)['work_item'] = 'TASK'; } },
+    { name: 'malformed: an assertion has the wrong type', mutate: (e) => { workItemOf(e)['title'] = 'Fix typo'; } },
+    { name: 'incomplete: the proposal has no external_identity', mutate: (e) => { delete workItemOf(e)['external_identity']; } },
+    { name: 'incomplete: a valid proposal with no coverage', mutate: (e) => { delete e['coverage']; } },
+    { name: 'incomplete: a valid proposal with no findings', mutate: (e) => { delete e['findings']; } },
+    { name: 'unexpected: a field the contract does not define', mutate: (e) => { workItemOf(e)['priority'] = 'P0'; } },
+  ];
+
+  for (const shape of invalid) {
+    test(`${shape.name}: refused with the schema errors named, and nothing runs after it`, async () => {
+      const envelope = validResolution();
+      shape.mutate(envelope);
+      const outcome = await work({
+        world: newWorld(),
+        raw: 'Fix typo in README.',
+        script: [{ kind: 'ENVELOPE', stage: 'RESOLUTION', envelope }],
+      });
+
+      const log = prologue(outcome);
+      assert.equal(eventsOf(log, 'dispatch_intent').length, 1, 'no re-dispatch and no audit');
+      const results = eventsOf(log, 'dispatch_result');
+      assert.equal(results.length, 1, 'the dispatch was answered');
+      assert.match(results[0]?.data.detail ?? '', /does not satisfy its schema/);
+
+      assert.equal(outcome.result.outcome, 'REFUSED');
+      assert.match(
+        outcome.result.detail,
+        /no admissible proposal: the resolution envelope does not satisfy its schema/,
+      );
+      assert.equal(outcome.result.workItemId, null);
+      assert.deepEqual([...outcome.built.store.listWorkItems()], []);
+    });
+  }
 });

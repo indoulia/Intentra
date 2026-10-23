@@ -1,4 +1,4 @@
-import type { InputPackage } from '@intentra/contracts';
+import { SCHEMA_ID, SCHEMAS, type InputPackage, type JsonSchema } from '@intentra/contracts';
 import type { RoleSpec } from '../roles/specs.js';
 
 /**
@@ -110,7 +110,71 @@ export function renderSystemSpecification(
     ),
   );
 
+  if (spec?.proposal !== undefined) {
+    const { key, output } = spec.proposal;
+    lines.push(
+      '',
+      'Your proposal',
+      indent(
+        `This mandate's deliverable is proposals.${key}, the only place the kernel reads it `
+        + `from, and an envelope without it is refused. outputs.${output} is the string `
+        + '"inline": the proposal is written once, in proposals, and never copied into outputs.',
+      ),
+    );
+  }
+
+  lines.push(
+    '',
+    'Response schema',
+    indent(
+      'Your envelope must validate against this JSON Schema, which is the one the kernel checks '
+      + 'it with. Each line is one schema labelled with its absolute id, and a $ref resolves '
+      + 'against the document in the label of the line it appears on. An envelope that does '
+      + 'not validate is rejected whole: nothing in it is repaired, defaulted or admitted.',
+    ),
+    ...RESPONSE_SCHEMA.map(([label, schema]) => indent(`${label} ${JSON.stringify(schema)}`)),
+  );
+
   return lines.join('\n');
+}
+
+/** The HandoffEnvelope schema `validators.handoffEnvelope` applies, with every fragment it references. */
+export function responseSchema(): readonly (readonly [string, JsonSchema])[] {
+  return RESPONSE_SCHEMA;
+}
+
+const RESPONSE_SCHEMA = closure(SCHEMA_ID['handoff-envelope']);
+
+/** Each referenced fragment once, under `document#pointer`; a document is shown without its `$defs`. */
+function closure(rootId: string): readonly (readonly [string, JsonSchema])[] {
+  const shown = new Map<string, JsonSchema>();
+  const visit = (ref: string, base: string): void => {
+    const hash = ref.indexOf('#');
+    const uri = hash === -1 ? ref : ref.slice(0, hash);
+    const document = uri === '' ? base : new URL(uri, base).href;
+    const label = `${document}#${hash === -1 ? '' : ref.slice(hash + 1)}`;
+    if (shown.has(label)) return;
+    const schema = withoutDefs(SCHEMAS.deref(ref, base));
+    shown.set(label, schema);
+    for (const inner of refsIn(schema)) visit(inner, document);
+  };
+  visit(rootId, rootId);
+  return Object.freeze([...shown]);
+}
+
+function withoutDefs(schema: JsonSchema): JsonSchema {
+  if (typeof schema === 'boolean' || !('$defs' in schema)) return schema;
+  const { $defs: _defs, ...rest } = schema;
+  return rest;
+}
+
+function refsIn(node: unknown): string[] {
+  if (node === null || typeof node !== 'object') return [];
+  const own = (node as { $ref?: unknown }).$ref;
+  return [
+    ...(typeof own === 'string' ? [own] : []),
+    ...Object.values(node).flatMap((child) => refsIn(child)),
+  ];
 }
 
 /**

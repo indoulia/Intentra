@@ -1,6 +1,12 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { fixtures as fx, type ContextSectionName, type InputPackage } from '@intentra/contracts';
+import {
+  fixtures as fx,
+  SCHEMA_ID,
+  SCHEMAS,
+  type ContextSectionName,
+  type InputPackage,
+} from '@intentra/contracts';
 import { loadPolicies } from '@intentra/policies';
 import {
   buildInputPackage,
@@ -9,7 +15,11 @@ import {
   type DispatchRequest,
 } from '../src/dispatch/input-package.js';
 import { parseEnvelope } from '../src/dispatch/envelope.js';
-import { renderDispatchBrief, renderSystemSpecification } from '../src/dispatch/brief.js';
+import {
+  renderDispatchBrief,
+  renderSystemSpecification,
+  responseSchema,
+} from '../src/dispatch/brief.js';
 import { evaluateSurface } from '../src/substrate/surface.js';
 import { MvpAgentCatalog } from '../src/roles/catalog.js';
 import { MVP_ROLE_SPECS } from '../src/roles/specs.js';
@@ -65,6 +75,15 @@ function request(overrides: Partial<DispatchRequest> = {}): DispatchRequest {
     budget: { max_usd: 5, max_turns: 40, max_wall_clock_ms: 900_000 },
     ...overrides,
   };
+}
+
+function refsIn(node: unknown): string[] {
+  if (node === null || typeof node !== 'object') return [];
+  const own = (node as { $ref?: unknown }).$ref;
+  return [
+    ...(typeof own === 'string' ? [own] : []),
+    ...Object.values(node).flatMap((child) => refsIn(child)),
+  ];
 }
 
 describe('only the required sections are materialized', () => {
@@ -156,6 +175,49 @@ describe('the brief renders the specification and nothing else', () => {
     assert.match(rendered, /Do not propose architecture/);
     assert.match(rendered, /one JSON object and nothing else/);
     assert.match(rendered, /verification block on evidence is written only by the kernel/);
+  });
+
+  test('every dispatch is shown the schema the kernel validates its answer against', () => {
+    const input = buildInputPackage(request());
+    const spec = MVP_ROLE_SPECS.find((candidate) => candidate.mandate_name === 'audit');
+    const rendered = renderSystemSpecification(input, spec);
+    const [root] = responseSchema();
+    /* The parser's schema itself, not a description of it: WP-8 attempt 1 was told field names only. */
+    assert.equal(root?.[0], `${SCHEMA_ID['handoff-envelope']}#`);
+    const { $defs: _defs, ...envelope } = SCHEMAS.get(SCHEMA_ID['handoff-envelope']);
+    assert.deepEqual(root[1], envelope);
+    for (const [label, schema] of responseSchema()) {
+      assert.ok(rendered.includes(`${label} ${JSON.stringify(schema)}`), `${label} reaches the agent`);
+    }
+    assert.doesNotMatch(rendered, /Your proposal/, 'and the audit mandate owes no proposal');
+  });
+
+  test('the schema shown is closed: every $ref names a fragment that was also shown', () => {
+    const labels = new Set(responseSchema().map(([label]) => label));
+    for (const [label, schema] of responseSchema()) {
+      const document = label.slice(0, label.indexOf('#'));
+      for (const ref of refsIn(schema)) {
+        const hash = ref.indexOf('#');
+        const uri = hash === -1 ? ref : ref.slice(0, hash);
+        const target = `${uri === '' ? document : new URL(uri, document).href}#`
+          + (hash === -1 ? '' : ref.slice(hash + 1));
+        assert.ok(labels.has(target), `${label} refers to ${ref}, which the agent was never shown`);
+      }
+    }
+  });
+
+  test('the resolution mandate is told its deliverable is proposals.work_item', () => {
+    const spec = catalog.spec('context-discovery', 'resolution');
+    assert.ok(spec !== undefined);
+    const input = buildInputPackage(request({ spec, stage: 'RESOLUTION', workflow: null }));
+    const role = MVP_ROLE_SPECS.find((candidate) => candidate.mandate_name === 'resolution');
+    const rendered = renderSystemSpecification(input, role);
+    assert.match(rendered, /deliverable is proposals\.work_item/);
+    assert.match(rendered, /outputs\.proposed_work_item is the string "inline"/);
+    assert.ok(
+      responseSchema().some(([label]) => label === `${SCHEMA_ID['work-item']}#/$defs/proposedWorkItem`),
+      'and the shape of a proposed Work Item is part of the schema shown',
+    );
   });
 
   test('a role this package does not specify still gets the universal obligations', () => {

@@ -1,4 +1,5 @@
 import {
+  formatErrors,
   runId as makeRunId,
   sequentialId,
   validators,
@@ -3223,13 +3224,20 @@ export class Kernel {
      */
     const unvalidated = result.envelope as Partial<HandoffEnvelope> | null;
     const proposal = unvalidated?.proposals?.work_item ?? null;
+    /* WP-8 attempt 2: receipt never sees this envelope, so its schema step is taken here, before any field is read. */
+    const schema = proposal === null ? null : validators.handoffEnvelope.check(result.envelope);
+    const invalid = schema !== null && !schema.valid
+      ? `does not satisfy its schema. A malformed envelope is never repaired:\n${formatErrors(schema.errors)}`
+      : null;
     log(
       'dispatch_result',
       {
         outcome: 'ENVELOPE',
         envelope_id: envelope?.envelope_id ?? null,
         failure_reason: null,
-        detail: proposal === null ? 'the envelope carried no work_item proposal' : '',
+        detail: proposal === null
+          ? 'the envelope carried no work_item proposal'
+          : invalid === null ? '' : `the envelope ${invalid}`,
         cost: {
           input_tokens: result.cost.input_tokens,
           output_tokens: result.cost.output_tokens,
@@ -3239,6 +3247,9 @@ export class Kernel {
       'RESOLUTION',
     );
 
+    if (invalid !== null) {
+      return { proposal: null, envelope: null, detail: `the resolution envelope ${invalid}` };
+    }
     return {
       proposal,
       envelope,

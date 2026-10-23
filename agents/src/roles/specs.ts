@@ -35,6 +35,8 @@ export interface RoleSpec {
   readonly required_outputs: readonly string[];
   readonly hard_limits: readonly string[];
   readonly must_declare: readonly string[];
+  /** The proposal this mandate's deliverable is, and the required output that points at it. */
+  readonly proposal?: { readonly key: ProposalKey; readonly output: string };
   readonly model_requirement: {
     readonly context: 'small' | 'medium' | 'large';
     readonly reasoning: 'shallow' | 'mid' | 'deep';
@@ -86,6 +88,8 @@ const RESOLUTION: RoleSpec = {
     'Every alternative reading you considered and why you rejected each, with what Intentra '
     + 'would do under each — that list is what a question to a human is built from.',
   ],
+  /* WP-8 attempt 1: told only `proposed_work_item`, the agent's proposal never reached the one key the kernel reads. */
+  proposal: { key: 'work_item', output: 'proposed_work_item' },
   model_requirement: {
     context: 'medium',
     reasoning: 'mid',
