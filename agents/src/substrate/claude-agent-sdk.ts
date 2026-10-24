@@ -126,7 +126,16 @@ const CONFORMANCE_PROBE_MS = 120_000;
 /** SDK 0.3.260 rejects `--max-budget-usd 0` before `system`/`init`; smallest positive value. */
 const CONFORMANCE_PROBE_BUDGET_USD = 0.01;
 
-const ZERO_COST: TransportCost = { input_tokens: 0, output_tokens: 0, usd: null };
+/**
+ * The two costs a dispatch can report without a figure from the SDK (WP-8 Prompt 4).
+ *
+ * `usd: 0` asserts that no session was opened, so nothing could have been charged; the kernel
+ * releases the dispatch's reservation on it. `usd: null` asserts nothing: a session may have
+ * run, and the kernel keeps the whole reservation. A figure the SDK does report is its own
+ * `total_cost_usd` estimate, not an invoice.
+ */
+const NOT_DISPATCHED: TransportCost = { input_tokens: 0, output_tokens: 0, usd: 0 };
+const UNKNOWN_COST: TransportCost = { input_tokens: 0, output_tokens: 0, usd: null };
 
 export interface ClaudeAgentSdkSubstrateOptions {
   /**
@@ -217,7 +226,7 @@ export class ClaudeAgentSdkSubstrate implements AgentSubstrate {
         + 'dispatch that arrives without a selection has nothing to run on, and choosing one '
         + 'here would be the substrate making a decision the kernel records',
         null,
-        ZERO_COST,
+        NOT_DISPATCHED,
         null,
       );
     }
@@ -241,7 +250,7 @@ export class ClaudeAgentSdkSubstrate implements AgentSubstrate {
             'refused before the session was opened, so no surface was observed and none had '
             + 'to be',
         },
-        ZERO_COST,
+        NOT_DISPATCHED,
         model,
       );
     }
@@ -294,15 +303,21 @@ export class ClaudeAgentSdkSubstrate implements AgentSubstrate {
     };
 
     const spec = this.#specs.get(`${input.agent}/${input.mandate_name}`);
-    const session = this.#transport.open({
-      model,
-      systemPrompt: renderSystemSpecification(input, spec),
-      prompt: renderDispatchBrief(input),
-      tools: toolsOf(grants),
-      maxTurns: input.budget.max_turns,
-      maxBudgetUsd: input.budget.max_usd,
-      invoke,
-    });
+    let session: TransportSession;
+    try {
+      session = this.#transport.open({
+        model,
+        systemPrompt: renderSystemSpecification(input, spec),
+        prompt: renderDispatchBrief(input),
+        tools: toolsOf(grants),
+        maxTurns: input.budget.max_turns,
+        maxBudgetUsd: input.budget.max_usd,
+        invoke,
+      });
+    } catch (error) {
+      /* WP-8 Prompt 4: a transport that threw on open may already have started something. */
+      return failure('SUBSTRATE_ERROR', messageOf(error), null, UNKNOWN_COST, model);
+    }
 
     const timer = setTimeout(() => {
       guard.timedOut = true;
@@ -341,7 +356,7 @@ export class ClaudeAgentSdkSubstrate implements AgentSubstrate {
       await closeQuietly(session);
     }
 
-    const cost = result?.cost ?? ZERO_COST;
+    const cost = result?.cost ?? UNKNOWN_COST;
     const ran = result?.model ?? model;
 
     if (guard.securityViolation !== null) {
@@ -369,6 +384,11 @@ export class ClaudeAgentSdkSubstrate implements AgentSubstrate {
         cost,
         ran,
       );
+    }
+
+    if (surface === null && result !== null && result.failure !== null && result.cost.usd === 0) {
+      /* WP-8 Prompt 4: the transport confirmed it started nothing, so there was no surface to observe. */
+      return failure(mapFailure(result.failure), result.detail, null, cost, ran);
     }
 
     if (surface === null) {
@@ -692,7 +712,7 @@ class ClaudeCodeSession implements TransportSession {
   async *#run(): AsyncGenerator<TransportEvent, void> {
     const schemaProblem = checkToolSchemas(this.#request.tools);
     if (schemaProblem !== null) {
-      yield errorResult(schemaProblem);
+      yield errorResult(schemaProblem, null, NOT_DISPATCHED);
       return;
     }
 
@@ -834,7 +854,7 @@ class ClaudeCodeSession implements TransportSession {
         text: '',
         failure: classify(messageOf(error)),
         detail: messageOf(error),
-        cost: ZERO_COST,
+        cost: UNKNOWN_COST,
         model: this.#model,
       };
     }
@@ -938,7 +958,13 @@ function costOf(message: SDKResultMessage): TransportCost {
     input += usage.inputTokens;
     output += usage.outputTokens;
   }
-  return { input_tokens: input, output_tokens: output, usd: message.total_cost_usd };
+  /* WP-8 Prompt 4: a figure that is not a finite non-negative number is no figure at all. */
+  const usd: unknown = message.total_cost_usd;
+  return {
+    input_tokens: input,
+    output_tokens: output,
+    usd: typeof usd === 'number' && Number.isFinite(usd) && usd >= 0 ? usd : null,
+  };
 }
 
 /**
@@ -965,8 +991,12 @@ function classify(detail: string): TransportFailure {
   return NO_MODEL_PATTERNS.some((pattern) => pattern.test(detail)) ? 'NO_MODEL' : 'ERROR';
 }
 
-function errorResult(detail: string, model: string | null = null): TransportEvent {
-  return { kind: 'RESULT', text: '', failure: 'ERROR', detail, cost: ZERO_COST, model };
+function errorResult(
+  detail: string,
+  model: string | null = null,
+  cost: TransportCost = UNKNOWN_COST,
+): TransportEvent {
+  return { kind: 'RESULT', text: '', failure: 'ERROR', detail, cost, model };
 }
 
 /* ------------------------------------------------------- the in-process tool server ---- */
