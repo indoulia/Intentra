@@ -1,4 +1,4 @@
-import type { BudgetPolicy, ConsumedBudget, Cost } from '@intentra/contracts';
+import type { BudgetPolicy, ConsumedBudget, Cost, Event } from '@intentra/contracts';
 
 /**
  * Budget and loop accounting.
@@ -40,6 +40,141 @@ export function addCost(consumed: ConsumedBudget, cost: Cost): ConsumedBudget {
     output_tokens: consumed.output_tokens + cost.output_tokens,
     dispatches: consumed.dispatches + 1,
   };
+}
+
+/* ------------------------------------------------------------- dispatch spend ---- */
+
+/** Integer micro-dollars, so a cap comparison is exact rather than a float's best guess. */
+export const MICROS_PER_USD = 1_000_000;
+
+/** A dollar figure as micro-dollars, or `null` when it is not a finite, non-negative amount. */
+export function toMicros(usd: number): number | null {
+  if (!Number.isFinite(usd) || usd < 0) return null;
+  const micros = Math.round(usd * MICROS_PER_USD);
+  return Number.isSafeInteger(micros) ? micros : null;
+}
+
+/**
+ * What the log says dispatches have committed, known and unknown kept apart (WP-8 Prompt 4).
+ *
+ * An unknown cost is never zero. A dispatch with an intent and no result, or a result whose
+ * `usd` is `null`, holds its whole `max_usd` for as long as the log says nothing more about
+ * it — and no event the contract has can say more: a timeout, an abort, a kill, a rollback
+ * or the run ending do not.
+ */
+export interface DispatchSpend {
+  /** What the substrate reported: the SDK's own estimate, never an invoice. */
+  readonly knownMicros: number;
+  /** The whole `max_usd` of every dispatch whose cost is unknown. */
+  readonly reservedMicros: number;
+  /** Billable attempts, one per `dispatch_intent`. A retry or an escalation is another. */
+  readonly attempts: number;
+  /** The dispatches holding a reservation, for the block report. */
+  readonly unknown: readonly string[];
+  /** Unknown costs with no intent to take a reservation from. The gate refuses while any exist. */
+  readonly unreservable: number;
+}
+
+export const NO_SPEND: DispatchSpend = {
+  knownMicros: 0,
+  reservedMicros: 0,
+  attempts: 0,
+  unknown: [],
+  unreservable: 0,
+};
+
+export function addSpend(a: DispatchSpend, b: DispatchSpend): DispatchSpend {
+  return {
+    knownMicros: a.knownMicros + b.knownMicros,
+    reservedMicros: a.reservedMicros + b.reservedMicros,
+    attempts: a.attempts + b.attempts,
+    unknown: [...a.unknown, ...b.unknown],
+    unreservable: a.unreservable + b.unreservable,
+  };
+}
+
+/** An intent no result has answered. */
+export interface OpenDispatch {
+  /** The frame's `dispatch_id`, or the input package's where the prologue wrote `null`. */
+  readonly dispatchId: string;
+  readonly maxMicros: number;
+  readonly label: string;
+}
+
+/**
+ * Pairs every `dispatch_result` with the intent it answers, in log order.
+ *
+ * A result closes the most recent open intent written under the same frame `dispatch_id`. The
+ * prologue writes `null` there for every dispatch and runs them one at a time, so for it log
+ * order is the pairing. A result whose cost carries no `usd` key was written without calling
+ * the substrate — no model, no mandate, a budget denial — and since the intent is always
+ * written before the substrate is called, a record with no intent reached no model: it closes
+ * nothing and costs nothing.
+ */
+export function pairDispatches(events: readonly Event[]): {
+  readonly spend: DispatchSpend;
+  readonly open: readonly OpenDispatch[];
+} {
+  const open: (OpenDispatch & { readonly key: string | null })[] = [];
+  let knownMicros = 0;
+  let reservedMicros = 0;
+  let attempts = 0;
+  let unreservable = 0;
+  const unknown: string[] = [];
+
+  for (const event of events) {
+    if (event.event === 'dispatch_intent') {
+      attempts += 1;
+      const pkg = event.data.input_package;
+      const dispatchId = event.dispatch_id ?? pkg.dispatch_id;
+      open.push({
+        key: event.dispatch_id,
+        dispatchId,
+        /* A max that cannot be represented reserves everything rather than nothing. */
+        maxMicros: toMicros(pkg.budget.max_usd) ?? Number.MAX_SAFE_INTEGER,
+        label: `${dispatchId} attempt ${event.data.attempt} at ${event.stage ?? 'no stage'} (seq ${event.seq})`,
+      });
+      continue;
+    }
+    if (event.event !== 'dispatch_result') continue;
+
+    const cost = event.data.cost;
+    if (!('usd' in cost)) continue;
+    const usd = cost.usd ?? null;
+    const micros = usd === null ? null : toMicros(usd);
+
+    let index = -1;
+    for (let i = open.length - 1; i >= 0; i -= 1) {
+      if (open[i]?.key === event.dispatch_id) { index = i; break; }
+    }
+    if (index === -1) {
+      if (micros !== null) knownMicros += micros;
+      else unreservable += 1;
+      continue;
+    }
+    const [answered] = open.splice(index, 1);
+    if (answered === undefined) continue;
+    if (micros !== null) {
+      knownMicros += micros;
+    } else {
+      reservedMicros += answered.maxMicros;
+      unknown.push(`${answered.label}: the result reported no cost`);
+    }
+  }
+
+  for (const pending of open) {
+    reservedMicros += pending.maxMicros;
+    unknown.push(`${pending.label}: no result was recorded`);
+  }
+
+  return {
+    spend: { knownMicros, reservedMicros, attempts, unknown, unreservable },
+    open: open.map(({ dispatchId, maxMicros, label }) => ({ dispatchId, maxMicros, label })),
+  };
+}
+
+export function spendOf(events: readonly Event[]): DispatchSpend {
+  return pairDispatches(events).spend;
 }
 
 export function incrementLoop(consumed: ConsumedBudget, name: string): ConsumedBudget {

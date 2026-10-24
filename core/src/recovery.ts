@@ -15,7 +15,7 @@ import {
   type TemplateStage,
 } from '@intentra/contracts';
 import type { RunStore } from '@intentra/state';
-import { ZERO_BUDGET } from './budgets.js';
+import { ZERO_BUDGET, pairDispatches, type DispatchSpend } from './budgets.js';
 import { blastRadius, hasNonReversibleMutation } from './reconciliation.js';
 
 /**
@@ -41,7 +41,10 @@ export interface Projection {
   readonly preBlockStage: Stage | null;
   readonly cursor: readonly StageCursorEntry[];
   readonly loopCounters: Readonly<Record<string, number>>;
+  /** Known spend only. What is unknown is reserved in `spend`, never counted here as zero. */
   readonly consumedBudget: ConsumedBudget;
+  /** Known and reserved dispatch spend, kept apart (WP-8 Prompt 4). */
+  readonly spend: DispatchSpend;
   readonly envelopeIds: readonly string[];
   readonly openBlockers: RunRecord['open_blockers'];
   readonly pendingAuthorizations: readonly string[];
@@ -83,8 +86,6 @@ export function project(events: readonly Event[]): Projection {
 
   const mutationsByDispatch = new Map<string, MutationEvent[]>();
   const callsByDispatch = new Map<string, CallRecord[]>();
-  const dispatchIntents = new Set<string>();
-  const dispatchResults = new Set<string>();
   const rolledBack = new Set<string>();
   const completedPriorStages: Stage[] = [];
 
@@ -156,20 +157,18 @@ export function project(events: readonly Event[]): Projection {
         break;
       }
 
-      case 'dispatch_intent':
-        if (event.dispatch_id !== null) dispatchIntents.add(event.dispatch_id);
-        break;
-
-      case 'dispatch_result':
-        if (event.dispatch_id !== null) dispatchResults.add(event.dispatch_id);
+      case 'dispatch_result': {
+        /* Known spend only: a null usd adds nothing here and is reserved in `spend`. */
+        const usd = event.data.cost.usd;
         consumedBudget = {
           ...consumedBudget,
           input_tokens: consumedBudget.input_tokens + event.data.cost.input_tokens,
           output_tokens: consumedBudget.output_tokens + event.data.cost.output_tokens,
-          usd: consumedBudget.usd + (event.data.cost.usd ?? 0),
+          usd: consumedBudget.usd + (typeof usd === 'number' ? usd : 0),
           dispatches: consumedBudget.dispatches + 1,
         };
         break;
+      }
 
       case 'envelope_received':
         envelopeIds.push(event.data.envelope_id);
@@ -228,10 +227,12 @@ export function project(events: readonly Event[]): Projection {
   /*
    * A dispatch with an intent and no result was interrupted mid-flight. The intent was
    * written before the agent was invoked precisely so that this is detectable rather than
-   * invisible. A dispatch already rolled back is not interrupted any more.
+   * invisible. A dispatch already rolled back is not interrupted any more — but its cost is
+   * still unknown, so its reservation stays in `spend`. The prologue's intents carry a null
+   * frame id and are paired in log order, so an interrupted resolution is found too.
    */
-  const interruptedDispatches = [...dispatchIntents]
-    .filter((id) => !dispatchResults.has(id))
+  const paired = pairDispatches(events);
+  const interruptedDispatches = [...new Set(paired.open.map((o) => o.dispatchId))]
     .filter((id) => !rolledBack.has(id));
 
   if (currentStage === 'BLOCKED' && openBlockers.length === 0) {
@@ -247,6 +248,7 @@ export function project(events: readonly Event[]): Projection {
     cursor,
     loopCounters,
     consumedBudget,
+    spend: paired.spend,
     envelopeIds,
     openBlockers,
     pendingAuthorizations: [...pendingAuthorizations],
