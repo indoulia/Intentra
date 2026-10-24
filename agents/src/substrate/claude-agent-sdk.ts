@@ -1,11 +1,13 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import type {
   McpSdkServerConfigWithInstance,
   Options,
   PermissionResult,
-  Query,
+  SDKMessage,
   SDKResultMessage,
   SDKSystemMessage,
 } from '@anthropic-ai/claude-agent-sdk';
@@ -112,11 +114,13 @@ const DISABLE_BUILTIN_AGENTS = { name: 'CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS'
  * without starting one: the two things this boundary depends on are that the roster is disabled
  * and that the configuration directory is the sandbox, and both are properties of this value.
  */
-export function dispatchEnvironment(configHome: string): NodeJS.ProcessEnv {
+export function dispatchEnvironment(configHome: string, tempDir?: string): NodeJS.ProcessEnv {
   return {
     ...process.env,
     CLAUDE_CONFIG_DIR: configHome,
     [DISABLE_BUILTIN_AGENTS.name]: DISABLE_BUILTIN_AGENTS.value,
+    /* WP-8 Prompt 4: the harness's own temporary files stay inside the protected folder. */
+    ...(tempDir === undefined ? {} : { TEMP: tempDir, TMP: tempDir, TMPDIR: tempDir }),
   };
 }
 
@@ -648,12 +652,258 @@ export async function discardSandbox(sandbox: string): Promise<string | null> {
   }
 }
 
+/* -------------------------------------------------------------- the dispatch folder ---- */
+
+/*
+ * WP-8 Prompt 4. The configuration home is where the harness writes its session key, and on
+ * Windows a folder made by `mkdtemp` under `%TEMP%` inherits `%TEMP%`'s ACL — in the pilot,
+ * Modify for a sandbox group, an unresolved domain SID and an AppContainer — while the SDK's
+ * mode 0600 means nothing there. So every session folder is made inside one root that inherits
+ * nothing and names only the user and SYSTEM; the root and then the session tree are read back
+ * by SID and judged; and the harness starts only when both pass. Any failure before that is a
+ * dispatch that opened no session, reported at a cost of exactly zero.
+ */
+
+const SYSTEM_SID = 'S-1-5-18';
+/** `FileSystemRights.FullControl`, which is what removing the folder afterwards needs. */
+const FULL_CONTROL = 0x1f01ff;
+const SID_PATTERN = /^S-1-\d+(?:-\d+)+$/;
+/** `d-<pid>-<six>`: the owning process is in the name, so a sweep can tell a live session. */
+const SESSION_NAME = /^d-(\d+)-[A-Za-z0-9]{6}$/;
+/** How many stale folders one sweep removes, each under `discardSandbox`'s own deadline. */
+const SWEEP_LIMIT = 8;
+
+export interface AclEntry {
+  readonly sid: string;
+  readonly allow: boolean;
+  readonly rights: number;
+  readonly inherited: boolean;
+  /** Applies only to children, not to the folder itself. */
+  readonly inheritOnly: boolean;
+}
+
+/** A folder's security descriptor as SIDs, so nothing turns on resolving a name. */
+export interface AclSnapshot {
+  readonly path: string;
+  readonly owner: string;
+  /** Inheritance from the parent is blocked. */
+  readonly protected: boolean;
+  readonly rules: readonly AclEntry[];
+}
+
+/** The four operations the folder's protection rests on, injectable so each can be made to fail. */
+export interface FolderSecurity {
+  currentUser(): Promise<string>;
+  /** Blocks inheritance, grants exactly the user and SYSTEM full control, and makes the user owner. */
+  protect(path: string, user: string): Promise<void>;
+  /** Makes the user the owner of a tree: an elevated process's new folders belong to Administrators. */
+  own(path: string, user: string): Promise<void>;
+  describe(paths: readonly string[]): Promise<readonly AclSnapshot[]>;
+}
+
+/**
+ * Whether a dispatch folder may hold a session key: `null` if so, the reason if not.
+ *
+ * Owned by the user; every entry an allow for the user or SYSTEM; the user holding full
+ * control of the folder itself, which is what lets the session be removed afterwards. The
+ * root must also inherit nothing. A session folder inherits from that root, so its entries
+ * may be inherited, and are held to the same two principals.
+ */
+export function judgeFolderAcl(acl: AclSnapshot, user: string, root: boolean): string | null {
+  if (!SID_PATTERN.test(user)) return `the current user ${user} is not a SID`;
+  if (acl.owner !== user) return `${acl.path} is owned by ${acl.owner}, not by ${user}`;
+  if (root && !acl.protected) return `${acl.path} inherits permissions from its parent`;
+  for (const rule of acl.rules) {
+    if (!rule.allow) return `${acl.path} carries a deny entry for ${rule.sid}, which nothing here sets`;
+    if (rule.sid !== user && rule.sid !== SYSTEM_SID) {
+      return `${acl.path} grants ${rule.sid}, which is neither ${user} nor SYSTEM`;
+    }
+    if (root && rule.inherited) return `${acl.path} carries an entry inherited from its parent`;
+  }
+  const full = acl.rules.some((rule) => rule.sid === user && !rule.inheritOnly
+    && (rule.rights & FULL_CONTROL) === FULL_CONTROL);
+  return full ? null : `${acl.path} does not give ${user} full control, so it could not be cleaned up`;
+}
+
+const execFileAsync = promisify(execFile);
+
+function system32(...path: string[]): string {
+  return join(process.env['SystemRoot'] ?? 'C:\\Windows', 'System32', ...path);
+}
+
+/** Reads each path's owner, protection and entries as SIDs. Paths arrive in the environment, never in the script. */
+const DESCRIBE_ACL = [
+  "$ErrorActionPreference = 'Stop'",
+  '$type = [System.Security.Principal.SecurityIdentifier]',
+  "$out = @(foreach ($p in ($env:INTENTRA_ACL_PATHS -split '\\|')) {",
+  '  $acl = Get-Acl -LiteralPath $p',
+  '  [pscustomobject]@{ path = $p; owner = $acl.GetOwner($type).Value; protected = $acl.AreAccessRulesProtected;',
+  '    rules = @($acl.GetAccessRules($true, $true, $type) | ForEach-Object { [pscustomobject]@{',
+  "      sid = $_.IdentityReference.Value; allow = ($_.AccessControlType -eq 'Allow');",
+  '      rights = [int64]$_.FileSystemRights; inherited = $_.IsInherited;',
+  '      inheritOnly = (($_.PropagationFlags -band 2) -ne 0) } }) }',
+  '})',
+  'ConvertTo-Json -InputObject $out -Depth 4 -Compress',
+].join('\n');
+
+function isAclSnapshot(value: unknown): value is AclSnapshot {
+  if (!isRecord(value)) return false;
+  const rules = value['rules'];
+  return typeof value['path'] === 'string' && typeof value['owner'] === 'string'
+    && typeof value['protected'] === 'boolean' && Array.isArray(rules)
+    && rules.every((rule: unknown) => isRecord(rule) && typeof rule['sid'] === 'string'
+      && typeof rule['allow'] === 'boolean' && typeof rule['rights'] === 'number'
+      && typeof rule['inherited'] === 'boolean' && typeof rule['inheritOnly'] === 'boolean');
+}
+
+/** The Windows implementation: `whoami`, `icacls` and `Get-Acl`, each from System32 and without a shell. */
+export class WindowsFolderSecurity implements FolderSecurity {
+  async currentUser(): Promise<string> {
+    const { stdout } = await execFileAsync(system32('whoami.exe'), ['/user', '/fo', 'csv', '/nh'], {
+      windowsHide: true, timeout: 30_000,
+    });
+    const sid = /"(S-1-[\d-]+)"\s*$/.exec(stdout.trim())?.[1];
+    if (sid === undefined || !SID_PATTERN.test(sid)) throw new Error('whoami reported no SID for the current user');
+    return sid;
+  }
+
+  async protect(path: string, user: string): Promise<void> {
+    /* Grant before anything else could leave the list empty, then take ownership. */
+    await this.#icacls([path, '/inheritance:r', '/grant:r', `*${user}:(OI)(CI)F`, `*${SYSTEM_SID}:(OI)(CI)F`]);
+    await this.#icacls([path, '/setowner', `*${user}`]);
+  }
+
+  async own(path: string, user: string): Promise<void> {
+    await this.#icacls([path, '/setowner', `*${user}`, '/T', '/Q']);
+  }
+
+  async describe(paths: readonly string[]): Promise<readonly AclSnapshot[]> {
+    const { stdout } = await execFileAsync(
+      system32('WindowsPowerShell', 'v1.0', 'powershell.exe'),
+      ['-NoProfile', '-NonInteractive', '-Command', DESCRIBE_ACL],
+      { windowsHide: true, timeout: 60_000, env: { ...process.env, INTENTRA_ACL_PATHS: paths.join('|') } },
+    );
+    const parsed: unknown = JSON.parse(stdout);
+    if (!Array.isArray(parsed) || parsed.length !== paths.length || !parsed.every(isAclSnapshot)) {
+      throw new Error('the security descriptors could not be read back as SIDs');
+    }
+    return parsed;
+  }
+
+  async #icacls(args: readonly string[]): Promise<void> {
+    await execFileAsync(system32('icacls.exe'), [...args], { windowsHide: true, timeout: 30_000 });
+  }
+}
+
+/** Whether a process with this id is running. `EPERM` means it is, and belongs to someone else. */
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/**
+ * Removes session folders whose process has ended, at most `limit` of them.
+ *
+ * Only `d-<pid>-<six>` directories directly in the root are candidates, never a link. A folder
+ * whose process is this one or is still running is kept, whatever its age: a reused process id
+ * keeps a dead folder, which is the safe way to be wrong. Each removal is bounded by
+ * `discardSandbox`, and a failure is reported and left.
+ */
+export async function sweepStaleSessions(
+  root: string,
+  options: { readonly limit?: number; readonly isAlive?: (pid: number) => boolean } = {},
+): Promise<{ readonly removed: readonly string[]; readonly kept: readonly string[]; readonly failed: readonly string[] }> {
+  const limit = options.limit ?? SWEEP_LIMIT;
+  const isAlive = options.isAlive ?? processAlive;
+  const removed: string[] = [];
+  const kept: string[] = [];
+  const failed: string[] = [];
+  let entries;
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch {
+    return { removed, kept, failed };
+  }
+  for (const entry of entries) {
+    const match = SESSION_NAME.exec(entry.name);
+    if (match === null || !entry.isDirectory() || entry.isSymbolicLink()) continue;
+    const pid = Number(match[1]);
+    const path = join(root, entry.name);
+    if (pid === process.pid || isAlive(pid)) {
+      kept.push(path);
+      continue;
+    }
+    if (removed.length + failed.length >= limit) break;
+    if (await discardSandbox(path) === null) removed.push(path);
+    else failed.push(path);
+  }
+  return { removed, kept, failed };
+}
+
+/** Raised before the harness starts; it becomes a result that says no session was opened. */
+class FolderRefusal extends Error {}
+
+/** The default root: Windows protects one per user; elsewhere `mkdtemp`'s 0700 already does. */
+function defaultDispatchRoot(): string | null {
+  if (process.platform !== 'win32') return tmpdir();
+  const local = process.env['LOCALAPPDATA'];
+  return local === undefined || local === '' ? null : join(local, 'Intentra', 'dispatch');
+}
+
+/** Starts the harness; the Agent SDK's `query` unless a test passes a double. */
+export type HarnessStarter = (request: { readonly prompt: string; readonly options: Options }) =>
+  AsyncIterable<SDKMessage> & { close(): void };
+
+export interface ClaudeCodeTransportOptions {
+  readonly serverName?: string;
+  /** Where session folders are made. `null` means no protected root exists, and nothing starts. */
+  readonly dispatchRoot?: string | null;
+  /** Defaults to `WindowsFolderSecurity` on Windows and to none elsewhere. */
+  readonly security?: FolderSecurity | null;
+  readonly startHarness?: HarnessStarter;
+}
+
+/** What one session needs to make its folder, shared by every session of one transport. */
+interface DispatchPlace {
+  readonly root: string | null;
+  readonly security: FolderSecurity | null;
+  readonly startHarness: HarnessStarter | null;
+  /** Runs the stale sweep once per transport, after the root has passed its check. */
+  sweepOnce(root: string): Promise<void>;
+}
+
+/** The three directories a session runs in, all inside its checked folder. */
+interface PreparedFolder {
+  readonly cwd: string;
+  readonly configHome: string;
+  readonly tempDir: string;
+}
+
 export class ClaudeCodeTransport implements DispatchTransport {
   readonly name = 'claude-agent-sdk';
   readonly #serverName: string;
+  readonly #place: DispatchPlace;
 
-  constructor(options: { readonly serverName?: string } = {}) {
+  constructor(options: ClaudeCodeTransportOptions = {}) {
     this.#serverName = options.serverName ?? SERVER_NAME;
+    let swept: Promise<void> | null = null;
+    this.#place = {
+      root: options.dispatchRoot === undefined ? defaultDispatchRoot() : options.dispatchRoot,
+      security: options.security === undefined
+        ? (process.platform === 'win32' ? new WindowsFolderSecurity() : null)
+        : options.security,
+      startHarness: options.startHarness ?? null,
+      sweepOnce: (root) => {
+        swept ??= sweepStaleSessions(root).then((outcome) => {
+          for (const path of outcome.failed) process.emitWarning(`${path} could not be swept`, 'IntentraSandboxLeak');
+        });
+        return swept;
+      },
+    };
   }
 
   qualify(toolName: string): string {
@@ -661,7 +911,7 @@ export class ClaudeCodeTransport implements DispatchTransport {
   }
 
   open(request: TransportRequest): TransportSession {
-    return new ClaudeCodeSession(request, this.#serverName);
+    return new ClaudeCodeSession(request, this.#serverName, this.#place);
   }
 }
 
@@ -684,9 +934,66 @@ class ClaudeCodeSession implements TransportSession {
    */
   cleanupFailure: string | null = null;
 
-  constructor(request: TransportRequest, serverName: string) {
+  readonly #place: DispatchPlace;
+
+  constructor(request: TransportRequest, serverName: string, place: DispatchPlace) {
     this.#request = request;
     this.#serverName = serverName;
+    this.#place = place;
+  }
+
+  /**
+   * Makes this session's folder and proves it fit to hold a session key, or throws a refusal.
+   *
+   * The root is checked before anything is made in it, and the session tree after it is made
+   * and owned, and nothing is written into it until both checks pass. A folder made and then
+   * refused is removed by the caller, since `#sandbox` is set the moment it exists.
+   */
+  async #prepare(): Promise<PreparedFolder> {
+    const { root, security } = this.#place;
+    if (root === null) {
+      throw new FolderRefusal(
+        'no protected dispatch root is available: LOCALAPPDATA is not set, and a session key is '
+        + 'not written anywhere less protected',
+      );
+    }
+    let user: string | null = null;
+    if (security !== null) {
+      user = await security.currentUser();
+      if ((await mkdir(root, { recursive: true })) !== undefined) await security.protect(root, user);
+      const [rootAcl] = await security.describe([root]);
+      const problem = rootAcl === undefined
+        ? `${root} could not be read back`
+        : judgeFolderAcl(rootAcl, user, true);
+      if (problem !== null) throw new FolderRefusal(problem);
+      await this.#place.sweepOnce(root);
+    }
+
+    const sandbox = await mkdtemp(join(root, security === null ? 'intentra-dispatch-' : `d-${process.pid}-`));
+    this.#sandbox = sandbox;
+    const cwd = join(sandbox, 'cwd');
+    const configHome = join(sandbox, 'config');
+    const tempDir = join(sandbox, 'tmp');
+    for (const dir of [cwd, configHome, tempDir]) await mkdir(dir, { recursive: true });
+
+    if (security !== null && user !== null) {
+      await security.own(sandbox, user);
+      const tree = [sandbox, cwd, configHome, tempDir];
+      const acls = await security.describe(tree);
+      for (const path of tree) {
+        const acl = acls.find((candidate) => candidate.path === path);
+        const problem = acl === undefined ? `${path} could not be read back` : judgeFolderAcl(acl, user, false);
+        if (problem !== null) throw new FolderRefusal(problem);
+      }
+    }
+    return { cwd, configHome, tempDir };
+  }
+
+  /** Removes a folder this session made before its harness could start. */
+  async #abandon(): Promise<void> {
+    const sandbox = this.#sandbox;
+    this.#sandbox = null;
+    if (sandbox !== null) this.cleanupFailure = await discardSandbox(sandbox);
   }
 
   [Symbol.asyncIterator](): AsyncIterator<TransportEvent> {
@@ -716,8 +1023,6 @@ class ClaudeCodeSession implements TransportSession {
       return;
     }
 
-    const sdk = await import('@anthropic-ai/claude-agent-sdk');
-
     /*
      * One directory per dispatch, and it is both the working directory and the harness's
      * configuration home. The working directory is empty because the agent's reach to a
@@ -725,18 +1030,29 @@ class ClaudeCodeSession implements TransportSession {
      * configuration home is per-dispatch so that no session state can outlive the dispatch
      * that produced it even if a future SDK wrote some despite `persistSession: false`.
      */
-    const sandbox = await mkdtemp(join(tmpdir(), 'intentra-dispatch-'));
-    this.#sandbox = sandbox;
-    const cwd = join(sandbox, 'cwd');
-    const configHome = join(sandbox, 'config');
-    await mkdir(cwd, { recursive: true });
-    await mkdir(configHome, { recursive: true });
+    let folder: PreparedFolder;
+    try {
+      folder = await this.#prepare();
+    } catch (error) {
+      await this.#abandon();
+      yield errorResult(`the dispatch folder was refused: ${messageOf(error)}`, null, NOT_DISPATCHED);
+      return;
+    }
+    const { cwd, configHome, tempDir } = folder;
 
     if (this.#closed) {
-      /* Nulled before the removal rather than after it, so that a `close()` arriving during
-       * the retries cannot start a second removal of the same directory. */
-      this.#sandbox = null;
-      this.cleanupFailure = await discardSandbox(sandbox);
+      /* `#abandon` nulls the sandbox before removing it, so a `close()` arriving during the
+       * retries cannot start a second removal of the same directory. */
+      await this.#abandon();
+      yield errorResult('the session was closed before its harness started', null, NOT_DISPATCHED);
+      return;
+    }
+
+    let start: HarnessStarter;
+    try {
+      start = this.#place.startHarness ?? (await import('@anthropic-ai/claude-agent-sdk')).query;
+    } catch (error) {
+      yield errorResult(messageOf(error), null, NOT_DISPATCHED);
       return;
     }
 
@@ -761,7 +1077,7 @@ class ClaudeCodeSession implements TransportSession {
        * `CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS=0` cannot re-enable the built-in agents for
        * a dispatch, any more than one who exported `CLAUDE_CONFIG_DIR` can move the session
        * back onto their own configuration. */
-      env: dispatchEnvironment(configHome),
+      env: dispatchEnvironment(configHome, tempDir),
       /* Rule 1. Every built-in tool absent rather than forbidden. */
       tools: [],
       /* Exactly the granted adapter operations, auto-allowed without prompting. */
@@ -823,11 +1139,12 @@ class ClaudeCodeSession implements TransportSession {
       options.model = this.#request.model;
     }
 
-    let stream: Query;
+    let stream: ReturnType<HarnessStarter>;
     try {
-      stream = sdk.query({ prompt: this.#request.prompt, options });
+      stream = start({ prompt: this.#request.prompt, options });
       this.#stream = stream;
     } catch (error) {
+      /* A start that threw may already have spawned the harness, so its cost is not known to be zero. */
       yield errorResult(messageOf(error));
       return;
     }
