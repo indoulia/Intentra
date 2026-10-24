@@ -162,7 +162,9 @@ const BOOTSTRAP: AdapterCallContext = {
 };
 
 export async function buildKernel(options: KernelBuildOptions): Promise<BuiltKernel> {
-  const policies = options.policies ?? loadPolicies();
+  /* WP-8 Prompt 4: a launcher's ceiling, which may lower a configured cost cap and nothing else. */
+  const policies = options.policies
+    ?? loadPolicies(undefined, { overrides: (options.env ?? process.env)['AGENTOS_POLICY_OVERRIDES'] });
   const clock = options.clock ?? new SystemClock();
   const store = options.store ?? new RunStore(options.stateRoot);
   const worktreeRoot = resolve(options.repositoryPath);

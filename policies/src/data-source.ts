@@ -66,6 +66,11 @@ export class PolicyDataSource {
     return existsSync(this.#confine(relativePath));
   }
 
+  /** The full path a relative policy path resolves to, for a report. */
+  locate(relativePath: string): string {
+    return this.#confine(relativePath);
+  }
+
   readText(relativePath: string): string {
     const full = this.#confine(relativePath);
     if (!existsSync(full)) {

@@ -30,7 +30,7 @@ import type {
   WorkflowFloor,
   WorkflowTemplate,
 } from '@intentra/contracts';
-import { PolicyDataSource } from './data-source.js';
+import { PolicyDataError, PolicyDataSource } from './data-source.js';
 import {
   checkWellFormed,
   dominates,
@@ -88,6 +88,8 @@ export interface PolicySet {
   readonly agents: AgentPolicy;
   readonly execution: ExecutionPolicy;
   readonly securityFloor: string;
+  /** The tighten-only cost override `budgets` reflects, or `null` when none was supplied. */
+  readonly budgetCaps: BudgetCapsApplied | null;
 
   /** Templates whose `applies_to` admits this work item type. */
   admissibleTemplates(type: WorkItemType): readonly WorkflowTemplate[];
@@ -99,7 +101,98 @@ export interface PolicySet {
   suppliableCriteria(stages: readonly TemplateStage[]): ReadonlySet<DodCriterionId>;
 }
 
-export function loadPolicies(root?: string): PolicySet {
+/** What a `budget-caps.json` changed, for the build report. */
+export interface BudgetCapsApplied {
+  readonly source: string;
+  readonly tightened: readonly { readonly field: string; readonly from: number; readonly to: number }[];
+}
+
+export interface LoadOptions {
+  /** A folder holding `budget-caps.json`, whose cost caps may lower `budgets.json` and nothing else. */
+  readonly overrides?: string;
+}
+
+const BUDGET_CAPS_FILE = 'budget-caps.json';
+const CAPPED_COST_FIELDS = ['run_usd', 'work_item_usd', 'dispatch_usd'] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * A launcher's cost ceiling, applied only if every field of it lowers or keeps a configured
+ * cap (WP-8 Prompt 4).
+ *
+ * It names a ceiling and proves nothing about who authorized it: matching it to an external
+ * authorization is the launcher's job. Anything malformed — a raised cap, a string, a field
+ * that is not one of the three cost caps, a figure finer than a micro-dollar — is a problem
+ * that refuses the whole policy set, because a half-applied ceiling is one nobody chose.
+ */
+function applyBudgetCaps(
+  folder: string,
+  base: BudgetPolicy,
+  fail: (file: string, rule: string, message: string) => void,
+): { readonly budgets: BudgetPolicy; readonly applied: BudgetCapsApplied } | null {
+  if (folder.trim() === '') {
+    throw new PolicyDataError('the budget-caps folder named is empty; name a folder or none at all');
+  }
+  const source = new PolicyDataSource(folder);
+  const shown = source.locate(BUDGET_CAPS_FILE);
+  const raw = source.readJson(BUDGET_CAPS_FILE);
+  const refusals: string[] = [];
+  const problem = (message: string, rule = 'budget-caps'): null => {
+    refusals.push(message);
+    fail(shown, rule, message);
+    return null;
+  };
+
+  if (!isRecord(raw)) return problem('must be an object with version and cost');
+  const extra = Object.keys(raw).filter((key) => key !== 'version' && key !== 'cost');
+  if (extra.length > 0) return problem(`names ${extra.join(', ')}; only version and cost may be set`);
+  if (raw['version'] !== '1.0') return problem('version must be "1.0"');
+  const cost = raw['cost'];
+  if (!isRecord(cost) || Object.keys(cost).length === 0) {
+    return problem(`cost must name at least one of ${CAPPED_COST_FIELDS.join(', ')}`);
+  }
+
+  const caps: Partial<Record<(typeof CAPPED_COST_FIELDS)[number], number>> = {};
+  for (const [key, value] of Object.entries(cost)) {
+    const field = CAPPED_COST_FIELDS.find((name) => name === key);
+    if (field === undefined) {
+      problem(`cost.${key} is not a cap; one of ${CAPPED_COST_FIELDS.join(', ')}`);
+      continue;
+    }
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+      problem(`cost.${key} must be a non-negative number of US dollars`);
+      continue;
+    }
+    const micros = value * 1_000_000;
+    if (!Number.isSafeInteger(Math.round(micros)) || Math.abs(micros - Math.round(micros)) > 1e-3) {
+      problem(`cost.${key} must be a whole number of micro-dollars`);
+      continue;
+    }
+    if (value > base.cost[field]) {
+      problem(
+        `cost.${key} is ${value}, above the configured ${base.cost[field]}. An override may only `
+        + 'lower a cap',
+        'budget-caps-tighten-only',
+      );
+      continue;
+    }
+    caps[field] = value;
+  }
+  if (refusals.length > 0) return null;
+
+  const tightened = CAPPED_COST_FIELDS
+    .filter((field) => caps[field] !== undefined && caps[field] < base.cost[field])
+    .map((field) => ({ field: `cost.${field}`, from: base.cost[field], to: caps[field] ?? base.cost[field] }));
+  return {
+    budgets: { ...base, cost: { ...base.cost, ...caps } },
+    applied: { source: shown, tightened },
+  };
+}
+
+export function loadPolicies(root?: string, options: LoadOptions = {}): PolicySet {
   const source = new PolicyDataSource(root);
   const problems: PolicyProblem[] = [];
 
@@ -651,6 +744,10 @@ export function loadPolicies(root?: string): PolicySet {
     }
   }
 
+  const capped = options.overrides === undefined
+    ? null
+    : applyBudgetCaps(options.overrides, budgets, fail);
+
   if (problems.length > 0) throw new PolicyLoadError(problems);
 
   const templatesByType = new Map<WorkItemType, WorkflowTemplate[]>();
@@ -671,13 +768,14 @@ export function loadPolicies(root?: string): PolicySet {
     workItems,
     intake,
     evidence,
-    budgets,
+    budgets: capped?.budgets ?? budgets,
     paths,
     gates,
     dod,
     agents,
     execution,
     securityFloor,
+    budgetCaps: capped?.applied ?? null,
     admissibleTemplates: (type) => templatesByType.get(type) ?? [],
     descriptor: (stage) => {
       const descriptor = descriptors.get(stage);

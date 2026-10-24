@@ -196,13 +196,68 @@ export type BudgetVerdict =
     readonly report: readonly string[];
   };
 
-/** Would one more dispatch exceed a cap? Checked before dispatching, not after. */
+/** What the gate weighs: this run's spend and, once one exists, the work item's. */
+export interface MeteredState {
+  /** This run's dispatches so far, the prologue's included. */
+  readonly run: DispatchSpend;
+  /** Every run of the work item, this one included; `null` before a work item is admitted. */
+  readonly workItem: DispatchSpend | null;
+  readonly runStartedAt: string;
+}
+
+function usd(micros: number): number {
+  return micros / MICROS_PER_USD;
+}
+
+/** Whether a dispatch reserving `reservationMicros` would pass a cost cap, and the report if so. */
+function costVerdict(
+  spend: DispatchSpend,
+  capUsd: number,
+  reservationMicros: number,
+  scope: 'run' | 'work_item',
+): BudgetVerdict {
+  const counter = scope === 'run' ? 'cost.run_usd' : 'cost.work_item_usd';
+  const capMicros = toMicros(capUsd) ?? 0;
+  const committed = spend.knownMicros + spend.reservedMicros + reservationMicros;
+  if (spend.unreservable === 0 && committed <= capMicros) return { within: true };
+  return {
+    within: false,
+    counter,
+    scope,
+    value: usd(committed),
+    cap: capUsd,
+    report: [
+      `this ${scope === 'run' ? 'run' : 'work item'} has ${usd(spend.knownMicros).toFixed(6)} USD `
+      + `known spend (SDK estimates) and ${usd(spend.reservedMicros).toFixed(6)} USD reserved for `
+      + `${spend.unknown.length} dispatch(es) whose cost is unknown`,
+      ...spend.unknown.slice(0, 5),
+      ...(spend.unreservable === 0 ? [] : [
+        `${spend.unreservable} cost record(s) report an unknown cost with no intent to reserve `
+        + 'against, so no amount can be shown to fit',
+      ]),
+      `the next dispatch reserves ${usd(reservationMicros).toFixed(6)} USD, which would commit `
+      + `${usd(committed).toFixed(6)} against a ceiling of ${capUsd.toFixed(6)}`,
+      'an unknown cost is never zero, and continuing past a cost ceiling is a decision, which '
+      + 'is why it is a gate',
+    ],
+  };
+}
+
+/**
+ * Would one more dispatch pass a cap? Checked before every billable attempt (WP-8 Prompt 4).
+ *
+ * The next dispatch is counted at its whole `max_usd` before it starts, alongside everything
+ * already known and everything still reserved, so a run near its ceiling cannot start a
+ * full-size call. Equal to a cap is within it. The SDK enforces `max_usd` between turns and
+ * can overshoot by one, so this bounds what is committed, not what a provider may bill.
+ */
 export function checkDispatchBudget(
-  state: BudgetState,
+  state: MeteredState,
   budgets: BudgetPolicy,
   now: Date,
+  reservationMicros: number,
 ): BudgetVerdict {
-  const runDispatches = state.run.dispatches + 1;
+  const runDispatches = state.run.attempts + 1;
   if (runDispatches > budgets.dispatches.per_run) {
     return {
       within: false,
@@ -211,54 +266,37 @@ export function checkDispatchBudget(
       value: runDispatches,
       cap: budgets.dispatches.per_run,
       report: [
-        `this run has dispatched ${state.run.dispatches} time(s) against a cap of `
+        `this run has dispatched ${state.run.attempts} time(s) against a cap of `
         + `${budgets.dispatches.per_run}`,
         'a run that keeps dispatching without converging is a run a human should look at',
       ],
     };
   }
-  const workItemDispatches = state.workItem.dispatches + 1;
-  if (workItemDispatches > budgets.dispatches.per_work_item) {
-    return {
-      within: false,
-      counter: 'dispatches',
-      scope: 'work_item',
-      value: workItemDispatches,
-      cap: budgets.dispatches.per_work_item,
-      report: [
-        `this work item has dispatched ${state.workItem.dispatches} time(s) across all runs, `
-        + `against a cap of ${budgets.dispatches.per_work_item}`,
-        'the per-work-item cap is what stops a budget resetting on every attempt',
-      ],
-    };
+  if (state.workItem !== null) {
+    const workItemDispatches = state.workItem.attempts + 1;
+    if (workItemDispatches > budgets.dispatches.per_work_item) {
+      return {
+        within: false,
+        counter: 'dispatches',
+        scope: 'work_item',
+        value: workItemDispatches,
+        cap: budgets.dispatches.per_work_item,
+        report: [
+          `this work item has dispatched ${state.workItem.attempts} time(s) across all runs, `
+          + `against a cap of ${budgets.dispatches.per_work_item}`,
+          'the per-work-item cap is what stops a budget resetting on every attempt',
+        ],
+      };
+    }
   }
 
-  if (state.run.usd >= budgets.cost.run_usd) {
-    return {
-      within: false,
-      counter: 'cost.run_usd',
-      scope: 'run',
-      value: state.run.usd,
-      cap: budgets.cost.run_usd,
-      report: [
-        `this run has spent ${state.run.usd.toFixed(2)} against a ceiling of `
-        + budgets.cost.run_usd.toFixed(2),
-        'continuing past a cost ceiling is a decision, which is why it is a gate',
-      ],
-    };
-  }
-  if (state.workItem.usd >= budgets.cost.work_item_usd) {
-    return {
-      within: false,
-      counter: 'cost.work_item_usd',
-      scope: 'work_item',
-      value: state.workItem.usd,
-      cap: budgets.cost.work_item_usd,
-      report: [
-        `this work item has spent ${state.workItem.usd.toFixed(2)} across all runs against a `
-        + `ceiling of ${budgets.cost.work_item_usd.toFixed(2)}`,
-      ],
-    };
+  const run = costVerdict(state.run, budgets.cost.run_usd, reservationMicros, 'run');
+  if (!run.within) return run;
+  if (state.workItem !== null) {
+    const workItem = costVerdict(
+      state.workItem, budgets.cost.work_item_usd, reservationMicros, 'work_item',
+    );
+    if (!workItem.within) return workItem;
   }
 
   const elapsed = now.getTime() - Date.parse(state.runStartedAt);

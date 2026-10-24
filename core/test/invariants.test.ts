@@ -58,7 +58,7 @@ import { computeEntryStage } from '../src/entry-stage.js';
 import { computeDod } from '../src/dod.js';
 import { checkCrossFields } from '../src/crossfield.js';
 import { decideAction } from '../src/state-machine.js';
-import { checkDispatchBudget, ZERO_BUDGET } from '../src/budgets.js';
+import { checkDispatchBudget, NO_SPEND } from '../src/budgets.js';
 import { PredicateEvaluator } from '../src/predicates.js';
 import { project, recover } from '../src/recovery.js';
 import { recordIntake } from '../src/intake.js';
@@ -1706,9 +1706,10 @@ describe('the invariant suite', () => {
     assert.equal(sweep.outcome, 'ENTRY');
 
     const budget = checkDispatchBudget(
-      { run: ZERO_BUDGET, workItem: ZERO_BUDGET, runStartedAt: fx.T1 },
+      { run: NO_SPEND, workItem: NO_SPEND, runStartedAt: fx.T1 },
       policies.budgets,
       new Date(fx.T1),
+      policies.budgets.cost.dispatch_usd * 1_000_000,
     );
     assert.equal(budget.within, true, 'and the budget arithmetic is arithmetic');
   });

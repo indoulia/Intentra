@@ -104,6 +104,7 @@ const USAGE = [
   '            2 usage, 3 unusable fixture, 4 policy did not load, 5 contract violation.',
   '',
   'state is read from and written to AGENTOS_STATE, or ./state.',
+  'AGENTOS_POLICY_OVERRIDES names a folder whose budget-caps.json may lower cost caps, never raise them.',
   'models and host skills are declared in AGENTOS_MODELS and AGENTOS_SKILLS as JSON arrays.',
   'With no model declared every dispatch reports NO_MODEL and the run blocks on an external',
   'dependency, having advanced nothing.',
@@ -402,6 +403,13 @@ function reportBuild(built: BuiltKernel, io: CliIo): void {
   const models = built.models.filter((entry) => entry.availability.state === 'AVAILABLE');
   io.out(`models      ${models.length} available of ${built.models.length} enumerated`);
   io.out(`skills      ${built.skills.length} enumerated`);
+  const cost = built.policies.budgets.cost;
+  io.out(`cost caps   ${cost.run_usd} run, ${cost.work_item_usd} work item, ${cost.dispatch_usd} dispatch (USD)`);
+  const caps = built.policies.budgetCaps;
+  if (caps !== null) {
+    io.out(`  tightened by ${caps.source}: `
+      + (caps.tightened.map((t) => `${t.field} ${t.from} -> ${t.to}`).join(', ') || 'nothing lower'));
+  }
   for (const problem of built.problems) io.err(`  ${problem.variable}: ${problem.detail}`);
   io.out('');
 }

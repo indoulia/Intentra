@@ -7,7 +7,7 @@
  * mid-run.
  */
 export { loadPolicies, checkFloor, PolicyLoadError } from './load.js';
-export type { PolicySet, PolicyProblem } from './load.js';
+export type { BudgetCapsApplied, LoadOptions, PolicySet, PolicyProblem } from './load.js';
 export {
   checkWellFormed,
   dominates,

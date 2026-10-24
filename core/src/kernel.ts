@@ -41,8 +41,10 @@ import {
   type Stage,
   type StageCursorEntry,
   type StageDescriptor,
+  type SubstrateResult,
   type TemplateStage,
   type ToolGrant,
+  type ToolInvoker,
   type Violation,
   type WorkItem,
   type WorkflowProposal,
@@ -69,7 +71,11 @@ import {
   dispatchBudget,
   incrementLoop,
   reresolutionAllowed,
+  spendOf,
+  toMicros,
+  type BudgetVerdict,
 } from './budgets.js';
+import { workItemSpend } from './metering.js';
 import { climbLadder, type LadderResult } from './ladder.js';
 import { classifyGates, previouslyDenied, recordRequest } from './authorization.js';
 import {
@@ -237,6 +243,36 @@ type PrologueLogger = <K extends Event['event']>(
 ) => void;
 
 /**
+ * Where a dispatch path reads what is already committed, fresh before every attempt.
+ *
+ * The run's events are the prologue's own until a run exists, then the run log the prologue
+ * was replayed into, so resolution spend counts against the run cap from its first call. The
+ * work item's are recovered from every log it has, crashed runs' included; before admission
+ * there is no work item and only the run cap applies.
+ */
+interface Meter {
+  readonly runEvents: () => readonly Event[];
+  readonly workItemId: string | null;
+  readonly runStartedAt: string;
+}
+
+/** Writes the gate's own records under the dispatch's stage and frame. */
+type DispatchWriter = <K extends 'dispatch_intent' | 'budget' | 'gate_fired'>(
+  kind: K,
+  data: Extract<Event, { event: K }>['data'],
+) => void;
+
+type MeteredOutcome =
+  | { readonly outcome: 'DENIED'; readonly verdict: Extract<BudgetVerdict, { readonly within: false }> }
+  | { readonly outcome: 'DISPATCHED'; readonly result: SubstrateResult };
+
+/** A budget refusal, in the words every path's block report uses. */
+function deniedDetail(verdict: Extract<BudgetVerdict, { readonly within: false }>, what: string): string {
+  return `BUDGET_EXHAUSTED: ${verdict.counter} would be passed per ${verdict.scope} before ${what} `
+    + `could be dispatched: ${verdict.report.join('; ')}`;
+}
+
+/**
  * What a graph run produced, plus the one thing that cannot be settled inside it.
  *
  * A run that ended `RERESOLVED` has to hand the re-resolution *outward*, because step 3 starts
@@ -264,6 +300,8 @@ interface DispatchOutcome {
   readonly action: KernelAction | null;
   readonly failed: boolean;
   readonly detail: string;
+  /** Set when the budget gate refused the attempt before any session started. */
+  readonly denied?: string;
 }
 
 /** What a resolution dispatch answered. */
@@ -431,7 +469,12 @@ export class Kernel {
       'RESOLUTION',
     );
 
-    const resolution = await this.dispatchResolution(record, orientation, logPrologue);
+    const prologueMeter: Meter = {
+      runEvents: () => prologue,
+      workItemId: null,
+      runStartedAt: record.received_at,
+    };
+    const resolution = await this.dispatchResolution(record, orientation, logPrologue, prologueMeter);
     if (resolution.blockerKind !== null) {
       return this.block(
         prologue,
@@ -529,6 +572,7 @@ export class Kernel {
         record,
         orientation,
         logPrologue,
+        prologueMeter,
         admission.violations,
       );
       if (second.blockerKind !== null) {
@@ -1681,39 +1725,10 @@ export class Kernel {
         );
       }
 
-      const budgetVerdict = checkDispatchBudget(
-        { run: budget.run, workItem: budget.workItem, runStartedAt },
-        policies.budgets,
-        clock.now(),
-      );
-      if (!budgetVerdict.within) {
-        journal.run('budget', {
-          kind: 'EXCEEDED',
-          counter: budgetVerdict.counter,
-          scope: budgetVerdict.scope,
-          value: budgetVerdict.value,
-          cap: budgetVerdict.cap,
-          tried: budgetVerdict.report,
-        }, { stage });
-        journal.run('gate_fired', {
-          gate: 'COST_CEILING_EXCEEDED',
-          target: `${state.workItem.work_item_id} :: ${runId}`,
-          trigger: 'kernel_accounting',
-          classifier_id: 'budget_exhausted',
-          classification: null,
-          request_id: null,
-        }, { stage });
-        return this.end(
-          journal, state.workItem, runId, 'BLOCKED',
-          `${budgetVerdict.counter} exhausted per ${budgetVerdict.scope}: `
-          + budgetVerdict.report.join('; '),
-          state.workItem.lifecycle, state.checks,
-        );
-      }
-
       dispatchNumber += 1;
       attemptInStage += 1;
 
+      /* WP-8 Prompt 4: the budget is checked inside, before every attempt, retries included. */
       const outcome = await this.dispatchStage({
         stage: stage as TemplateStage,
         descriptor,
@@ -1724,7 +1739,14 @@ export class Kernel {
         envelopes,
         loopCounters,
         budget,
+        runStartedAt,
       });
+      if (outcome.denied !== undefined) {
+        return this.end(
+          journal, state.workItem, runId, 'BLOCKED', outcome.denied,
+          state.workItem.lifecycle, state.checks, 'BUDGET_EXHAUSTED',
+        );
+      }
 
       if (outcome.envelope !== null) {
         envelopes.push(outcome.envelope);
@@ -2439,6 +2461,7 @@ export class Kernel {
     });
     const events: Event[] = [];
     let seq = 0;
+    /* WP-8 Prompt 4: written as it happens, so the intent is durable before the session starts. */
     const log: PrologueLogger = (kind, data, stage) => {
       seq += 1;
       events.push({
@@ -2452,6 +2475,12 @@ export class Kernel {
         event: kind,
         data,
       } as Event);
+      journal.workItem(kind, data as never, { stage });
+    };
+    const meter: Meter = {
+      runEvents: () => events,
+      workItemId: args.workItem.work_item_id,
+      runStartedAt: clock.now().toISOString(),
     };
 
     const violations: Violation[] = [{
@@ -2466,11 +2495,8 @@ export class Kernel {
     }];
 
     const resolution = await this.dispatchResolution(
-      args.intake, args.orientation, log, violations,
+      args.intake, args.orientation, log, meter, violations,
     );
-    for (const event of events) journal.workItem(event.event as never, event.data as never, {
-      stage: event.stage,
-    });
 
     if (resolution.proposal === null) {
       journal.workItem('note', {
@@ -2715,6 +2741,7 @@ export class Kernel {
     readonly envelopes: readonly HandoffEnvelope[];
     readonly loopCounters: Readonly<Record<string, number>>;
     readonly budget: { readonly run: WorkItem['consumed_budget']; readonly workItem: WorkItem['consumed_budget'] };
+    readonly runStartedAt: string;
   }): Promise<DispatchOutcome> {
     const { policies, clock, store } = this.ports;
     const { state, stage, descriptor } = args;
@@ -2797,56 +2824,62 @@ export class Kernel {
 
     /* Write before act. The intent is on disk and flushed before the agent is invoked, so a
      * crash mid-agent is detectable rather than invisible. */
-    journal.run('dispatch_intent', {
-      input_package: inputPackage,
+    const metered = await this.meteredDispatch({
+      inputPackage,
       attempt: args.attemptInStage,
-    }, { stage, dispatchId, agent: role });
-
-    const result = await this.ports.substrate.dispatch(inputPackage, {
-      invoke: async (toolName, toolArgs) => {
-        const grant = tools.find((t) => t.tool_name === toolName);
-        if (grant === undefined) {
-          return {
-            outcome: 'REFUSED',
-            refusal: 'unknown_tool',
-            message:
-              `${toolName} is not in this dispatch's granted tool set. The effective tool `
-              + 'surface is an allowlist, and a tool outside it is absent rather than forbidden',
-            abortDispatch: true,
-          };
-        }
-        const callResult = await this.ports.adapters.call(
-          grant.adapter, grant.op, toolArgs, this.callContext(state, dispatchId, mandateScope),
-        );
-        journal.run('adapter_call', callResult.call, { stage, dispatchId, agent: role });
-        if (callResult.outcome === 'OK') {
-          for (const mutation of callResult.mutations) {
-            journal.run('mutation', mutation, { stage, dispatchId, agent: role });
+      meter: this.runMeter(state.workItem.work_item_id, runId, args.runStartedAt),
+      write: (kind, data) => { journal.run(kind, data as never, { stage, dispatchId, agent: role }); },
+      invoker: {
+        invoke: async (toolName, toolArgs) => {
+          const grant = tools.find((t) => t.tool_name === toolName);
+          if (grant === undefined) {
+            return {
+              outcome: 'REFUSED',
+              refusal: 'unknown_tool',
+              message:
+                `${toolName} is not in this dispatch's granted tool set. The effective tool `
+                + 'surface is an allowlist, and a tool outside it is absent rather than forbidden',
+              abortDispatch: true,
+            };
           }
-          return { outcome: 'OK', value: callResult.value, excerpt: callResult.excerpt };
-        }
-        if (callResult.outcome === 'REFUSED') {
-          const isSecurity = callResult.refusal === 'security_violation';
-          journal.run(isSecurity ? 'security_violation' : 'scope_violation', {
-            adapter: grant.adapter,
-            op: grant.op,
-            requested: typeof toolArgs['path'] === 'string' ? toolArgs['path'] : grant.op,
-            resolved: null,
-            rule: isSecurity ? 'deny_list' : 'mandate_in_scope',
-            deny_list_entry: null,
-            aborted_dispatch: isSecurity,
-            detail: callResult.message,
-          }, { stage, dispatchId, agent: role });
-          return {
-            outcome: 'REFUSED',
-            refusal: callResult.refusal,
-            message: callResult.message,
-            abortDispatch: isSecurity,
-          };
-        }
-        return { outcome: 'ERROR', message: callResult.message };
+          const callResult = await this.ports.adapters.call(
+            grant.adapter, grant.op, toolArgs, this.callContext(state, dispatchId, mandateScope),
+          );
+          journal.run('adapter_call', callResult.call, { stage, dispatchId, agent: role });
+          if (callResult.outcome === 'OK') {
+            for (const mutation of callResult.mutations) {
+              journal.run('mutation', mutation, { stage, dispatchId, agent: role });
+            }
+            return { outcome: 'OK', value: callResult.value, excerpt: callResult.excerpt };
+          }
+          if (callResult.outcome === 'REFUSED') {
+            const isSecurity = callResult.refusal === 'security_violation';
+            journal.run(isSecurity ? 'security_violation' : 'scope_violation', {
+              adapter: grant.adapter,
+              op: grant.op,
+              requested: typeof toolArgs['path'] === 'string' ? toolArgs['path'] : grant.op,
+              resolved: null,
+              rule: isSecurity ? 'deny_list' : 'mandate_in_scope',
+              deny_list_entry: null,
+              aborted_dispatch: isSecurity,
+              detail: callResult.message,
+            }, { stage, dispatchId, agent: role });
+            return {
+              outcome: 'REFUSED',
+              refusal: callResult.refusal,
+              message: callResult.message,
+              abortDispatch: isSecurity,
+            };
+          }
+          return { outcome: 'ERROR', message: callResult.message };
+        },
       },
     });
+    if (metered.outcome === 'DENIED') {
+      const detail = deniedDetail(metered.verdict, `the ${stage} agent`);
+      return { envelope: null, action: null, failed: true, detail, denied: detail };
+    }
+    const result = metered.result;
 
     journal.run('tool_surface_conformance', {
       substrate: this.ports.substrate.name,
@@ -3100,12 +3133,82 @@ export class Kernel {
     return decideAction(envelope, context);
   }
 
+  /* ------------------------------------------------------- the metered dispatch ==== */
+
+  /**
+   * The one way the kernel reaches a model (WP-8 Prompt 4).
+   *
+   * Before every billable attempt — a first dispatch, a retry, a model escalation — what the
+   * run and the work item have committed is read from the durable logs, known spend and every
+   * open reservation alike, and this attempt's whole `max_usd` is added. An attempt that would
+   * pass a cap is refused before any session exists. Otherwise its intent is written and
+   * fsynced first; a write that fails throws, so the substrate is never reached without one.
+   *
+   * What this does not do: the SDK checks `max_usd` between turns and can overshoot by one, so
+   * the reservation bounds what is committed, not what a provider may bill. And no port
+   * carries a stop signal, so a run stopped from outside is stopped by a kill, after which the
+   * intent on disk keeps the reservation.
+   */
+  private async meteredDispatch(args: {
+    readonly inputPackage: InputPackage;
+    readonly attempt: number;
+    readonly meter: Meter;
+    readonly write: DispatchWriter;
+    readonly invoker: ToolInvoker;
+  }): Promise<MeteredOutcome> {
+    const { policies, clock, store } = this.ports;
+    const { inputPackage, meter } = args;
+    const verdict = checkDispatchBudget(
+      {
+        run: spendOf(meter.runEvents()),
+        workItem: meter.workItemId === null ? null : workItemSpend(store, meter.workItemId),
+        runStartedAt: meter.runStartedAt,
+      },
+      policies.budgets,
+      clock.now(),
+      toMicros(inputPackage.budget.max_usd) ?? Number.MAX_SAFE_INTEGER,
+    );
+    if (!verdict.within) {
+      args.write('budget', {
+        kind: 'EXCEEDED',
+        counter: verdict.counter,
+        scope: verdict.scope,
+        value: verdict.value,
+        cap: verdict.cap,
+        tried: verdict.report,
+      });
+      args.write('gate_fired', {
+        gate: 'COST_CEILING_EXCEEDED',
+        target: `${inputPackage.work_item_id} :: ${inputPackage.run_id}`,
+        trigger: 'kernel_accounting',
+        classifier_id: 'budget_exhausted',
+        classification: null,
+        request_id: null,
+      });
+      return { outcome: 'DENIED', verdict };
+    }
+
+    /* Write before act. A substrate that throws leaves this intent unanswered, which keeps it reserved. */
+    args.write('dispatch_intent', { input_package: inputPackage, attempt: args.attempt });
+    return { outcome: 'DISPATCHED', result: await this.ports.substrate.dispatch(inputPackage, args.invoker) };
+  }
+
+  /** A graph run's meter: its own log, and its work item's logs. */
+  private runMeter(workItemId: string, runId: string, runStartedAt: string): Meter {
+    return {
+      runEvents: () => this.ports.store.readRunLog(workItemId, runId).records,
+      workItemId,
+      runStartedAt,
+    };
+  }
+
   /* --------------------------------------------------------- the prologue ==== */
 
   private async dispatchResolution(
     intake: IntakeRecord,
     orientation: ContextPackage,
     log: PrologueLogger,
+    meter: Meter,
     priorViolations: readonly Violation[] = [],
   ): Promise<ResolutionAnswer & {
       /** Set when every attempt the FAILED rule allows answered malformed: a block, not a refusal. */
@@ -3116,8 +3219,11 @@ export class Kernel {
     let failedModel: string | null = null;
     for (let attempt = 1; ; attempt += 1) {
       const outcome = await this.dispatchResolutionAttempt(
-        intake, orientation, log, priorViolations, attempt, escalated, failedModel,
+        intake, orientation, log, meter, priorViolations, attempt, escalated, failedModel,
       );
+      if (outcome.denied) {
+        return { proposal: null, envelope: null, detail: outcome.detail, blockerKind: 'BUDGET_EXHAUSTED' };
+      }
       if (!outcome.malformed) {
         return { proposal: outcome.proposal, envelope: outcome.envelope, detail: outcome.detail, blockerKind: null };
       }
@@ -3144,11 +3250,16 @@ export class Kernel {
     intake: IntakeRecord,
     orientation: ContextPackage,
     log: PrologueLogger,
+    meter: Meter,
     priorViolations: readonly Violation[],
     attempt: number,
     escalate: boolean,
     previousModel: string | null,
-  ): Promise<ResolutionAnswer & { readonly malformed: boolean; readonly model: string | null }> {
+  ): Promise<ResolutionAnswer & {
+      readonly malformed: boolean;
+      readonly model: string | null;
+      readonly denied: boolean;
+    }> {
     const spec = this.ports.agents.spec('context-discovery', 'resolution');
     if (spec === undefined) {
       return {
@@ -3157,6 +3268,7 @@ export class Kernel {
         detail: 'no Context Discovery resolution mandate is registered',
         malformed: false,
         model: null,
+        denied: false,
       };
     }
 
@@ -3173,7 +3285,9 @@ export class Kernel {
         },
         'RESOLUTION',
       );
-      return { proposal: null, envelope: null, detail: 'no model available for resolution', malformed: false, model };
+      return {
+        proposal: null, envelope: null, detail: 'no model available for resolution', malformed: false, model, denied: false,
+      };
     }
 
     const dispatchId = 'd_res';
@@ -3212,40 +3326,55 @@ export class Kernel {
       budget: dispatchBudget(this.ports.policies.budgets),
     };
 
-    log('dispatch_intent', { input_package: inputPackage, attempt }, 'RESOLUTION');
-
-    const result = await this.ports.substrate.dispatch(inputPackage, {
-      invoke: async (toolName, toolArgs) => {
-        const grant = inputPackage.tools_granted.find((t) => t.tool_name === toolName);
-        if (grant === undefined) {
-          return {
-            outcome: 'REFUSED',
-            refusal: 'unknown_tool',
-            message: `${toolName} is not granted to this dispatch`,
-            abortDispatch: true,
-          };
-        }
-        const call = await this.ports.adapters.call(grant.adapter, grant.op, toolArgs, {
-          workItemId: intake.intake_id,
-          runId: intake.intake_id,
-          dispatchId,
-          mandate: { in_scope: [], out_of_scope: [] },
-          grantsHeld: [],
-          stageMutating: false,
-        });
-        log('adapter_call', call.call, 'RESOLUTION');
-        if (call.outcome === 'OK') return { outcome: 'OK', value: call.value, excerpt: call.excerpt };
-        if (call.outcome === 'REFUSED') {
-          return {
-            outcome: 'REFUSED',
-            refusal: call.refusal,
-            message: call.message,
-            abortDispatch: call.refusal === 'security_violation',
-          };
-        }
-        return { outcome: 'ERROR', message: call.message };
+    const metered = await this.meteredDispatch({
+      inputPackage,
+      attempt,
+      meter,
+      write: (kind, data) => { log(kind, data as never, 'RESOLUTION'); },
+      invoker: {
+        invoke: async (toolName, toolArgs) => {
+          const grant = inputPackage.tools_granted.find((t) => t.tool_name === toolName);
+          if (grant === undefined) {
+            return {
+              outcome: 'REFUSED',
+              refusal: 'unknown_tool',
+              message: `${toolName} is not granted to this dispatch`,
+              abortDispatch: true,
+            };
+          }
+          const call = await this.ports.adapters.call(grant.adapter, grant.op, toolArgs, {
+            workItemId: intake.intake_id,
+            runId: intake.intake_id,
+            dispatchId,
+            mandate: { in_scope: [], out_of_scope: [] },
+            grantsHeld: [],
+            stageMutating: false,
+          });
+          log('adapter_call', call.call, 'RESOLUTION');
+          if (call.outcome === 'OK') return { outcome: 'OK', value: call.value, excerpt: call.excerpt };
+          if (call.outcome === 'REFUSED') {
+            return {
+              outcome: 'REFUSED',
+              refusal: call.refusal,
+              message: call.message,
+              abortDispatch: call.refusal === 'security_violation',
+            };
+          }
+          return { outcome: 'ERROR', message: call.message };
+        },
       },
     });
+    if (metered.outcome === 'DENIED') {
+      return {
+        proposal: null,
+        envelope: null,
+        detail: deniedDetail(metered.verdict, 'resolution'),
+        malformed: false,
+        model,
+        denied: true,
+      };
+    }
+    const result = metered.result;
 
     if (result.outcome === 'FAILED') {
       log(
@@ -3269,6 +3398,7 @@ export class Kernel {
         detail: result.detail,
         malformed: result.failure === 'MALFORMED_ENVELOPE',
         model,
+        denied: false,
       };
     }
 
@@ -3316,7 +3446,9 @@ export class Kernel {
     );
 
     if (invalid !== null) {
-      return { proposal: null, envelope: null, detail: `the resolution envelope ${invalid}`, malformed: true, model };
+      return {
+        proposal: null, envelope: null, detail: `the resolution envelope ${invalid}`, malformed: true, model, denied: false,
+      };
     }
     return {
       proposal,
@@ -3324,6 +3456,7 @@ export class Kernel {
       detail: proposal === null ? 'the resolution envelope carried no work_item proposal' : '',
       malformed: false,
       model,
+      denied: false,
     };
   }
 
@@ -3403,27 +3536,6 @@ export class Kernel {
       );
     }
 
-    const verdict = checkDispatchBudget(
-      { run: args.budget.run, workItem: args.budget.workItem, runStartedAt: args.runStartedAt },
-      policies.budgets,
-      clock.now(),
-    );
-    if (!verdict.within) {
-      journal.run('budget', {
-        kind: 'EXCEEDED',
-        counter: verdict.counter,
-        scope: verdict.scope,
-        value: verdict.value,
-        cap: verdict.cap,
-        tried: verdict.report,
-      }, { stage, dispatchId, agent: role });
-      return blocked(
-        'BUDGET_EXHAUSTED',
-        `BUDGET_EXHAUSTED: ${verdict.counter} exhausted per ${verdict.scope} before the context `
-        + `mandate could be dispatched: ${verdict.report.join('; ')}`,
-      );
-    }
-
     const model = await this.chooseModel(spec, journal, stage, false, null);
     if (model === null) {
       /*
@@ -3495,55 +3607,59 @@ export class Kernel {
       budget: dispatchBudget(policies.budgets),
     };
 
-    /* Write before act, as everywhere else: the intent is on disk before the agent is invoked. */
-    journal.run('dispatch_intent', {
-      input_package: inputPackage,
+    const metered = await this.meteredDispatch({
+      inputPackage,
       attempt: 1,
-    }, { stage, dispatchId, agent: role });
-
-    const result = await this.ports.substrate.dispatch(inputPackage, {
-      invoke: async (toolName, toolArgs) => {
-        const grant = tools.find((t) => t.tool_name === toolName);
-        if (grant === undefined) {
-          return {
-            outcome: 'REFUSED',
-            refusal: 'unknown_tool',
-            message:
-              `${toolName} is not in this dispatch's granted tool set. The effective tool `
-              + 'surface is an allowlist, and a tool outside it is absent rather than forbidden',
-            abortDispatch: true,
-          };
-        }
-        const call = await this.ports.adapters.call(grant.adapter, grant.op, toolArgs, callContext);
-        journal.run('adapter_call', call.call, { stage, dispatchId, agent: role });
-        if (call.outcome === 'OK') {
-          for (const mutation of call.mutations) {
-            journal.run('mutation', mutation, { stage, dispatchId, agent: role });
+      meter: this.runMeter(workItem.work_item_id, runId, args.runStartedAt),
+      write: (kind, data) => { journal.run(kind, data as never, { stage, dispatchId, agent: role }); },
+      invoker: {
+        invoke: async (toolName, toolArgs) => {
+          const grant = tools.find((t) => t.tool_name === toolName);
+          if (grant === undefined) {
+            return {
+              outcome: 'REFUSED',
+              refusal: 'unknown_tool',
+              message:
+                `${toolName} is not in this dispatch's granted tool set. The effective tool `
+                + 'surface is an allowlist, and a tool outside it is absent rather than forbidden',
+              abortDispatch: true,
+            };
           }
-          return { outcome: 'OK', value: call.value, excerpt: call.excerpt };
-        }
-        if (call.outcome === 'REFUSED') {
-          const isSecurity = call.refusal === 'security_violation';
-          journal.run(isSecurity ? 'security_violation' : 'scope_violation', {
-            adapter: grant.adapter,
-            op: grant.op,
-            requested: typeof toolArgs['path'] === 'string' ? toolArgs['path'] : grant.op,
-            resolved: null,
-            rule: isSecurity ? 'deny_list' : 'mandate_in_scope',
-            deny_list_entry: null,
-            aborted_dispatch: isSecurity,
-            detail: call.message,
-          }, { stage, dispatchId, agent: role });
-          return {
-            outcome: 'REFUSED',
-            refusal: call.refusal,
-            message: call.message,
-            abortDispatch: isSecurity,
-          };
-        }
-        return { outcome: 'ERROR', message: call.message };
+          const call = await this.ports.adapters.call(grant.adapter, grant.op, toolArgs, callContext);
+          journal.run('adapter_call', call.call, { stage, dispatchId, agent: role });
+          if (call.outcome === 'OK') {
+            for (const mutation of call.mutations) {
+              journal.run('mutation', mutation, { stage, dispatchId, agent: role });
+            }
+            return { outcome: 'OK', value: call.value, excerpt: call.excerpt };
+          }
+          if (call.outcome === 'REFUSED') {
+            const isSecurity = call.refusal === 'security_violation';
+            journal.run(isSecurity ? 'security_violation' : 'scope_violation', {
+              adapter: grant.adapter,
+              op: grant.op,
+              requested: typeof toolArgs['path'] === 'string' ? toolArgs['path'] : grant.op,
+              resolved: null,
+              rule: isSecurity ? 'deny_list' : 'mandate_in_scope',
+              deny_list_entry: null,
+              aborted_dispatch: isSecurity,
+              detail: call.message,
+            }, { stage, dispatchId, agent: role });
+            return {
+              outcome: 'REFUSED',
+              refusal: call.refusal,
+              message: call.message,
+              abortDispatch: isSecurity,
+            };
+          }
+          return { outcome: 'ERROR', message: call.message };
+        },
       },
     });
+    if (metered.outcome === 'DENIED') {
+      return blocked('BUDGET_EXHAUSTED', deniedDetail(metered.verdict, 'the context mandate'));
+    }
+    const result = metered.result;
 
     journal.run('tool_surface_conformance', {
       substrate: this.ports.substrate.name,
@@ -3796,32 +3912,6 @@ export class Kernel {
       return fallback;
     }
 
-    const verdict = checkDispatchBudget(
-      { run: args.budget.run, workItem: args.budget.workItem, runStartedAt: args.runStartedAt },
-      policies.budgets,
-      clock.now(),
-    );
-    if (!verdict.within) {
-      journal.run('budget', {
-        kind: 'EXCEEDED',
-        counter: verdict.counter,
-        scope: verdict.scope,
-        value: verdict.value,
-        cap: verdict.cap,
-        tried: verdict.report,
-      }, { stage, dispatchId, agent: role });
-      journal.run('dispatch_result', {
-        outcome: 'ABORTED',
-        envelope_id: null,
-        failure_reason: 'BUDGET_EXCEEDED',
-        detail:
-          `${verdict.counter} exhausted per ${verdict.scope} before the workflow proposal could `
-          + `be dispatched: ${verdict.report.join('; ')}. The fallback template applies`,
-        cost: { input_tokens: 0, output_tokens: 0 },
-      }, { stage, dispatchId, agent: role });
-      return fallback;
-    }
-
     const model = await this.chooseModel(spec, journal, stage, false, null);
     if (model === null) {
       journal.run('dispatch_result', {
@@ -3889,38 +3979,52 @@ export class Kernel {
       budget: dispatchBudget(policies.budgets),
     };
 
-    journal.run('dispatch_intent', {
-      input_package: inputPackage, attempt: 1,
-    }, { stage, dispatchId, agent: role });
-
-    const result = await this.ports.substrate.dispatch(inputPackage, {
-      invoke: async (toolName, toolArgs) => {
-        const grant = tools.find((t) => t.tool_name === toolName);
-        if (grant === undefined) {
-          return {
-            outcome: 'REFUSED',
-            refusal: 'unknown_tool',
-            message:
-              `${toolName} is not in this dispatch's granted tool set. The Orchestrator Agent `
-              + 'holds no adapters: the component that judges evidence must not also '
-              + 'manufacture it, so its effective tool surface is the empty set',
-            abortDispatch: true,
-          };
-        }
-        const call = await this.ports.adapters.call(grant.adapter, grant.op, toolArgs, callContext);
-        journal.run('adapter_call', call.call, { stage, dispatchId, agent: role });
-        if (call.outcome === 'OK') return { outcome: 'OK', value: call.value, excerpt: call.excerpt };
-        if (call.outcome === 'REFUSED') {
-          return {
-            outcome: 'REFUSED',
-            refusal: call.refusal,
-            message: call.message,
-            abortDispatch: call.refusal === 'security_violation',
-          };
-        }
-        return { outcome: 'ERROR', message: call.message };
+    const metered = await this.meteredDispatch({
+      inputPackage,
+      attempt: 1,
+      meter: this.runMeter(workItem.work_item_id, runId, args.runStartedAt),
+      write: (kind, data) => { journal.run(kind, data as never, { stage, dispatchId, agent: role }); },
+      invoker: {
+        invoke: async (toolName, toolArgs) => {
+          const grant = tools.find((t) => t.tool_name === toolName);
+          if (grant === undefined) {
+            return {
+              outcome: 'REFUSED',
+              refusal: 'unknown_tool',
+              message:
+                `${toolName} is not in this dispatch's granted tool set. The Orchestrator Agent `
+                + 'holds no adapters: the component that judges evidence must not also '
+                + 'manufacture it, so its effective tool surface is the empty set',
+              abortDispatch: true,
+            };
+          }
+          const call = await this.ports.adapters.call(grant.adapter, grant.op, toolArgs, callContext);
+          journal.run('adapter_call', call.call, { stage, dispatchId, agent: role });
+          if (call.outcome === 'OK') return { outcome: 'OK', value: call.value, excerpt: call.excerpt };
+          if (call.outcome === 'REFUSED') {
+            return {
+              outcome: 'REFUSED',
+              refusal: call.refusal,
+              message: call.message,
+              abortDispatch: call.refusal === 'security_violation',
+            };
+          }
+          return { outcome: 'ERROR', message: call.message };
+        },
       },
     });
+    if (metered.outcome === 'DENIED') {
+      /* Written without `usd`: no session was started, so this record closes no intent. */
+      journal.run('dispatch_result', {
+        outcome: 'ABORTED',
+        envelope_id: null,
+        failure_reason: 'BUDGET_EXCEEDED',
+        detail: `${deniedDetail(metered.verdict, 'the workflow proposal')}. The fallback template applies`,
+        cost: { input_tokens: 0, output_tokens: 0 },
+      }, { stage, dispatchId, agent: role });
+      return fallback;
+    }
+    const result = metered.result;
 
     journal.run('tool_surface_conformance', {
       substrate: this.ports.substrate.name,
