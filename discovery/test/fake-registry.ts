@@ -8,6 +8,7 @@ import type {
   CallRecord,
   Classification,
   Clock,
+  EvidenceKind,
   Locator,
   MutationEvent,
   ReplayResult,
@@ -140,6 +141,11 @@ export class FakeAdapters implements AdapterRegistry {
 
   descriptor(adapter: string, op: string): AdapterOperationDescriptor | undefined {
     return this.descriptors().find((d) => d.adapter === adapter && d.op === op);
+  }
+
+  /** Discovery never asks; a world that registers no kinds states none (Prompt 10). */
+  evidenceKind(): EvidenceKind | undefined {
+    return undefined;
   }
 
   availability(): readonly AdapterAvailability[] {

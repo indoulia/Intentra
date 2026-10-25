@@ -8,6 +8,7 @@ import type {
   ContextPackage,
   ContextSectionName,
   Evidence,
+  EvidenceKind,
   HandoffEnvelope,
   InputPackage,
   IntakeRecord,
@@ -160,6 +161,8 @@ export type AdapterCallOutcome =
 export interface AdapterRegistry {
   descriptors(): readonly AdapterOperationDescriptor[];
   descriptor(adapter: string, op: string): AdapterOperationDescriptor | undefined;
+  /** The kind a registered operation's output is cited as, or `undefined` where nothing registered says (Prompt 10). */
+  evidenceKind(adapter: string, op: string): EvidenceKind | undefined;
   availability(): readonly AdapterAvailability[];
   call(
     adapter: string,

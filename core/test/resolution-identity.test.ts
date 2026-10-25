@@ -269,6 +269,39 @@ describe('a resolution envelope\'s evidence decisions are journalled against its
       'a rejected envelope\'s violations are not merged; only the admitted one\'s are recorded');
   });
 
+  test('a re-dispatched proposal\'s relabelled quotation is a mismatch recorded against d_res_2 (Prompt 10)', async () => {
+    const base = resolutionEnvelope();
+    const relabelled: HandoffEnvelope = {
+      ...base,
+      evidence: [...base.evidence, fx.evidence({
+        id: 'R-01',
+        kind: 'command',
+        locator: { adapter: 'repo', op: 'read_file', args: { path: 'README.md' } },
+        ref: 'README.md',
+        excerpt: README_CONTENT,
+      })],
+      findings: [fx.finding({ id: 'F-01', severity: 'HIGH', evidence: ['R-01'] })],
+    };
+    const h = rig([
+      { kind: 'ENVELOPE', envelope: withFabricated('E-02', 'E-03') },
+      { kind: 'ENVELOPE', envelope: relabelled },
+      ...AFTER_ADMISSION,
+    ]);
+    const result = await new Kernel(h.ports).work(start());
+    assert.notEqual(result.workItemId, null, 'one mismatch is below the rejection threshold');
+
+    const log = prologue(h);
+    const second = integrity(log).filter((e) => e.dispatch_id === 'd_res_2');
+    assert.deepEqual(second.map((e) => [e.data.evidence_id, e.data.status, e.data.envelope_rejected]), [['R-01', 'MISMATCH', false]]);
+    const verification = log.find((e) => e.event === 'evidence_verification' && e.dispatch_id === 'd_res_2');
+    assert.match(
+      verification?.event === 'evidence_verification'
+        ? verification.data.results.find((r) => r.evidence_id === 'R-01')?.detail ?? ''
+        : '',
+      /declared command, and repo\.read_file produces file evidence/,
+    );
+  });
+
   test('a re-resolution\'s mismatch is recorded in the work item log against its own session', async () => {
     const misclassified = fx.envelope({
       envelope_id: 'env_misclassified',

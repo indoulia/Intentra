@@ -1,5 +1,7 @@
 import { test, describe, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { EOL, platform } from 'node:os';
+import { sep } from 'node:path';
 import { fixtures as fx, type Evidence, type Event, type HandoffEnvelope } from '@intentra/contracts';
 import { README_CONTENT, type ScriptedResponse } from '../doubles.js';
 import { scratchWorld, type ScratchWorld } from './world.js';
@@ -34,7 +36,7 @@ function fabricated(id: string): Evidence {
   return fileEvidence(id, 'README.md', 'Intentra restores the namespace after every restart.');
 }
 
-/** A screenshot citing the read the Auditor really made, with content nobody can compare. */
+/** The read the Auditor really made, labelled screenshot: no registered operation produces screenshots (Prompt 10). */
 function screenshot(id: string, excerpt = 'the restored namespace is shown after the restart'): Evidence {
   return fx.evidence({
     id,
@@ -156,36 +158,38 @@ describe('a fabricated quotation cannot lead to COMPLETE', () => {
   });
 });
 
-describe('screenshot evidence cannot independently support MET', () => {
-  test('a fabricated screenshot quote citing a real read: provenance VERIFIED, content never compared, not MET', async () => {
+/* A genuine screenshot is covered in evidence-provenance.test.ts: no registered operation produces one end to end. */
+describe('a read labelled screenshot is not a screenshot, and cannot support MET', () => {
+  test('a fabricated screenshot quote citing a real read: MISMATCH on its kind, content never compared, not MET', async () => {
     const outcome = await investigate([screenshot('S-01')]);
     const provenance = verificationOf(outcome.log, 'S-01');
-    assert.equal(provenance.status, 'VERIFIED', 'the producing call is in the log, which is all that was checked');
-    assert.match(provenance.detail, /content is not kernel-verifiable/);
+    assert.equal(provenance.status, 'MISMATCH', 'the read is in the log, and it produced file evidence (Prompt 10)');
+    assert.match(provenance.detail, /declared screenshot, and repo\.read_file produces file evidence/);
 
     const criterion = firstCriterion3(outcome.log);
     assert.equal(criterion.verdict, 'NOT_VALIDATED');
-    assert.match(criterion.reason ?? '', /S-01 is screenshot evidence, whose content is not kernel-verifiable/);
-    assert.notEqual(outcome.result.outcome, 'COMPLETE', 'critical criteria resting on a screenshot alone');
+    assert.match(criterion.reason ?? '', /S-01 came back MISMATCH/);
+    assert.notEqual(outcome.result.outcome, 'COMPLETE', 'critical criteria resting on a relabelled read');
     assert.equal(completionVerdict(outcome.log), 'INCOMPLETE');
   });
 
-  test('the provenance result is kept as recorded: nothing fabricates a content result', async () => {
+  test('the result is kept as recorded: nothing fabricates a content result or rewrites the claim', async () => {
     const outcome = await investigate([screenshot('S-01')]);
     const workItemId = outcome.result.workItemId ?? '';
     const runId = outcome.result.runId ?? '';
     const persisted = outcome.built.store.getEnvelope(workItemId, runId, 'env_audit');
     const item = persisted?.evidence.find((e) => e.id === 'S-01');
-    assert.equal(item?.verification?.status, 'VERIFIED');
+    assert.equal(item?.verification?.status, 'MISMATCH');
+    assert.equal(item?.kind, 'screenshot');
     assert.equal(item?.excerpt, 'the restored namespace is shown after the restart');
   });
 
-  test('a screenshot beside a content-verified item: the verified item carries MET, as the contract permits', async () => {
+  test('beside a content-verified item, the relabelled read disqualifies the MET both are cited for', async () => {
     const outcome = await investigate([screenshot('S-01'), GENUINE]);
-    assert.equal(verificationOf(outcome.log, 'S-01').status, 'VERIFIED');
+    assert.equal(verificationOf(outcome.log, 'S-01').status, 'MISMATCH');
     assert.equal(verificationOf(outcome.log, 'E-01').status, 'VERIFIED');
-    assert.equal(firstCriterion3(outcome.log).verdict, 'MET');
-    assert.equal(outcome.result.outcome, 'COMPLETE');
+    assert.equal(firstCriterion3(outcome.log).verdict, 'NOT_VALIDATED', 'a cited MISMATCH disqualifies the MET (Prompt 7A D1)');
+    assert.notEqual(outcome.result.outcome, 'COMPLETE');
   });
 });
 
@@ -207,6 +211,53 @@ function relabelled(id: string, kind: Evidence['kind']): Evidence {
   return { ...fileEvidence(id, 'README.md', README_CONTENT), kind };
 }
 
+/** What `host.platform` replays to on this machine: genuine command output. */
+function platformOutput(id: string): Evidence {
+  return fx.evidence({
+    id,
+    kind: 'command',
+    locator: { adapter: 'host', op: 'platform', args: {} },
+    ref: 'host.platform',
+    excerpt: `${platform()} ${sep} ${EOL === '\r\n' ? 'crlf' : 'lf'}`,
+    reproducible: true,
+  });
+}
+
+describe('a kind is the producing operation\'s, as the real adapter registered it (Prompt 10)', () => {
+  test('a genuine README quotation labelled command is MISMATCH, its MET is NOT_VALIDATED, and the run ends once', async () => {
+    const outcome = await investigate([relabelled('C-01', 'command')]);
+    const verification = verificationOf(outcome.log, 'C-01');
+    assert.equal(verification.status, 'MISMATCH');
+    assert.match(verification.detail, /declared command, and repo\.read_file produces file evidence/);
+    assert.ok(
+      eventsOf(outcome.log, 'evidence_integrity').some((e) => e.data.evidence_id === 'C-01' && e.data.status === 'MISMATCH'),
+      'logged against the producing agent and model',
+    );
+    const criterion = firstCriterion3(outcome.log);
+    assert.equal(criterion.verdict, 'NOT_VALIDATED');
+    assert.match(criterion.reason ?? '', /C-01 came back MISMATCH/);
+    assert.notEqual(outcome.result.outcome, 'COMPLETE');
+    assert.equal(completionVerdict(outcome.log), 'INCOMPLETE');
+    assert.equal(eventsOf(outcome.log, 'run_ended').length, 1);
+    const persisted = outcome.built.store.getEnvelope(outcome.result.workItemId ?? '', outcome.result.runId ?? '', 'env_audit');
+    assert.equal(persisted?.evidence.find((e) => e.id === 'C-01')?.kind, 'command', 'the claim is kept as made');
+  });
+
+  test('through the production substrate over a fake transport, the same', async () => {
+    const outcome = await investigate([relabelled('C-01', 'command')], true);
+    assert.equal(verificationOf(outcome.log, 'C-01').status, 'MISMATCH');
+    assert.equal(firstCriterion3(outcome.log).verdict, 'NOT_VALIDATED');
+    assert.notEqual(outcome.result.outcome, 'COMPLETE');
+  });
+
+  test('genuine command output, from an operation registered as command, carries MET and completes', async () => {
+    const outcome = await investigate([platformOutput('P-01')]);
+    assert.equal(verificationOf(outcome.log, 'P-01').status, 'VERIFIED');
+    assert.equal(firstCriterion3(outcome.log).verdict, 'MET');
+    assert.equal(outcome.result.outcome, 'COMPLETE');
+  });
+});
+
 describe('the agent is told the kinds the Definition of Done enforces, from the same profile (Prompt 9)', () => {
   test('the Auditor is shown the kinds of the profile the run completes against, and accepted evidence carries MET', async () => {
     const outcome = await investigate([GENUINE], true);
@@ -224,23 +275,23 @@ describe('the agent is told the kinds the Definition of Done enforces, from the 
     assert.equal(outcome.result.outcome, 'COMPLETE');
   });
 
-  test('evidence of a kind the prompt did not list is refused, though its content replays VERIFIED', async () => {
+  test('a read labelled a kind the prompt did not list is refused, as a relabel before the profile is consulted', async () => {
     const outcome = await investigate([relabelled('R-01', 'http')], true);
     assert.ok(
       !(shownKinds(briefing(outcome, 'AUDIT'), 3) ?? ['http']).includes('http'),
       'the Auditor was told http does not count for criterion 3',
     );
-    assert.equal(verificationOf(outcome.log, 'R-01').status, 'VERIFIED');
+    assert.equal(verificationOf(outcome.log, 'R-01').status, 'MISMATCH', 'repo.read_file produces file evidence (Prompt 10)');
     const criterion = firstCriterion3(outcome.log);
     assert.equal(criterion.verdict, 'NOT_VALIDATED');
-    assert.match(criterion.reason ?? '', /R-01 is http evidence, which profile \S+ does not accept for criterion 3/);
+    assert.match(criterion.reason ?? '', /R-01 came back MISMATCH/);
     assert.notEqual(outcome.result.outcome, 'COMPLETE');
   });
 
   test('a screenshot is described as unable to carry MET alone, and the kernel still refuses it alone', async () => {
     const outcome = await investigate([screenshot('S-01')], true);
     assert.match(briefing(outcome, 'AUDIT'), /screenshot evidence is VERIFIED when [^\n]*not what the item shows/);
-    assert.equal(verificationOf(outcome.log, 'S-01').status, 'VERIFIED');
+    assert.equal(verificationOf(outcome.log, 'S-01').status, 'MISMATCH', 'a read labelled screenshot (Prompt 10)');
     assert.equal(firstCriterion3(outcome.log).verdict, 'NOT_VALIDATED');
     assert.notEqual(outcome.result.outcome, 'COMPLETE');
   });

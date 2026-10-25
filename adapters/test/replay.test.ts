@@ -200,6 +200,21 @@ describe('what may be replayed', () => {
   });
 });
 
+describe('the kind an operation\'s output is cited as (Prompt 10)', () => {
+  test('is the kind it was registered with, whether or not it may be replayed', () => {
+    const instance = framework();
+    const kinds: Array<[string, EvidenceKind]> = [['safe_read', 'file'], ['tail_log', 'log'], ['capture_screen', 'screenshot']];
+    for (const [op, kind] of kinds) {
+      assert.equal(instance.evidenceKind('probe', op), kind);
+    }
+  });
+
+  test('is undefined for an operation nobody registered, so no kind is assumed for it', () => {
+    assert.equal(framework().evidenceKind('probe', 'unheard_of'), undefined);
+    assert.equal(framework().evidenceKind('elsewhere', 'safe_read'), undefined);
+  });
+});
+
 describe('the comparators, one per evidence kind', () => {
   const exact: readonly EvidenceKind[] = ['file', 'git', 'command', 'query', 'http'];
 

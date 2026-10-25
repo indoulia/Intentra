@@ -22,6 +22,7 @@ import {
   type CurrentReality,
   type DiscoveryPort,
   type Evidence,
+  type EvidenceKind,
   type HandoffEnvelope,
   type HostIdentity,
   type HumanChannel,
@@ -150,7 +151,16 @@ export interface FixtureAdapterOptions {
   readonly extraOperations?: readonly AdapterOperationDescriptor[];
   /** Refuse every replay, as an adapter would for an operation that is not observation_safe. */
   readonly refuseReplay?: boolean;
+  /** Evidence kinds keyed by `adapter.op`, beyond the defaults; an operation named nowhere has none (Prompt 10). */
+  readonly kinds?: ReadonlyMap<string, EvidenceKind>;
 }
+
+/** The kinds the real adapters register the default operations' output as (Prompt 10). */
+const DEFAULT_KINDS: ReadonlyMap<string, EvidenceKind> = new Map<string, EvidenceKind>([
+  ['repo.read_file', 'file'],
+  ['repo.list_paths', 'file'],
+  ['git.read_pr', 'http'],
+]);
 
 /**
  * A read-only adapter registry.
@@ -200,6 +210,11 @@ export class FixtureAdapters implements AdapterRegistry {
 
   descriptor(adapter: string, op: string): AdapterOperationDescriptor | undefined {
     return this.descriptors().find((d) => d.adapter === adapter && d.op === op);
+  }
+
+  evidenceKind(adapter: string, op: string): EvidenceKind | undefined {
+    const key = `${adapter}.${op}`;
+    return this.options.kinds?.get(key) ?? DEFAULT_KINDS.get(key);
   }
 
   availability(): readonly AdapterAvailability[] {

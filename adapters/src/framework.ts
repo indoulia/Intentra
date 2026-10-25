@@ -13,6 +13,7 @@ import type {
   CallRecord,
   Classification,
   Clock,
+  EvidenceKind,
   EvidencePolicy,
   ExecutionPolicy,
   IdempotencyLogEvent,
@@ -181,6 +182,10 @@ export class AdapterFramework implements AdapterRegistry {
 
   descriptor(adapter: string, op: string): AdapterOperationDescriptor | undefined {
     return this.#registry.get(adapter, op)?.descriptor;
+  }
+
+  evidenceKind(adapter: string, op: string): EvidenceKind | undefined {
+    return this.#registry.get(adapter, op)?.evidenceKind;
   }
 
   availability(): readonly AdapterAvailability[] {

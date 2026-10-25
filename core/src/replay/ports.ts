@@ -14,6 +14,7 @@ import {
   type ContextPackage,
   type DeepenRequest,
   type DiscoveryPort,
+  type EvidenceKind,
   type HostIdentity,
   type HumanChannel,
   type InputPackage,
@@ -181,6 +182,12 @@ export class RecordedAdapterRegistry implements AdapterRegistry {
 
   descriptor(adapter: string, op: string): AdapterOperationDescriptor | undefined {
     return this.descriptors().find((d) => d.adapter === adapter && d.op === op);
+  }
+
+  evidenceKind(adapter: string, op: string): EvidenceKind | undefined {
+    return this.fixture.adapters.operations.find(
+      (entry) => entry.descriptor.adapter === adapter && entry.descriptor.op === op,
+    )?.evidence_kind;
   }
 
   availability(): readonly AdapterAvailability[] {

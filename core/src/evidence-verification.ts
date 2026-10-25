@@ -267,6 +267,36 @@ export async function verifyEvidence(input: VerifyInput): Promise<VerificationRe
       continue;
     }
 
+    /* Prompt 10: the kind is the operation's as its adapter registered it, not the agent's label, which picks the comparator. */
+    const operation = `${evidence.locator.adapter}.${String(evidence.locator.op)}`;
+    const registered = adapters.evidenceKind(evidence.locator.adapter, String(evidence.locator.op));
+    if (registered !== undefined && registered !== evidence.kind) {
+      outcomes.push({
+        evidence_id: evidence.id,
+        status: 'MISMATCH',
+        selected_because: reason,
+        detail: `declared ${evidence.kind}, and ${operation} produces ${registered} evidence. The kind `
+          + 'is the producing operation\'s rather than a label, so it was not replayed as the kind claimed',
+      });
+      mismatchCount += 1;
+      if (reason === 'ALWAYS_AUTHORIZATION') authorizationMismatch = true;
+      downgrades.push({ evidence_id: evidence.id, to: 'UNKNOWN', reason: 'CONFLICTING' });
+      continue;
+    }
+    /* A registry that states no kind for the operation leaves the label unconfirmed: never VERIFIED on it. */
+    const unconfirmedKind = (): void => {
+      outcomes.push({
+        evidence_id: evidence.id,
+        status: 'UNREPLAYABLE',
+        selected_because: reason,
+        detail: `${operation} has no registered evidence kind, so the declared ${evidence.kind} `
+          + 'cannot be confirmed as what it produced',
+      });
+      mismatchCount += 1;
+      if (reason === 'ALWAYS_AUTHORIZATION') authorizationMismatch = true;
+      downgrades.push({ evidence_id: evidence.id, to: 'UNKNOWN', reason: 'UNAVAILABLE' });
+    };
+
     const comparator = comparators.get(evidence.kind);
     if (comparator?.comparator === 'not_kernel_verifiable') {
       /*
@@ -275,6 +305,10 @@ export async function verifyEvidence(input: VerifyInput): Promise<VerificationRe
        * log. The observation's provenance is verifiable even when its content is not.
        */
       const { produced, detail } = provenance(evidence, calls);
+      if (produced && registered === undefined) {
+        unconfirmedKind();
+        continue;
+      }
       outcomes.push({
         evidence_id: evidence.id,
         status: produced ? 'VERIFIED' : 'MISMATCH',
@@ -335,6 +369,10 @@ export async function verifyEvidence(input: VerifyInput): Promise<VerificationRe
     }
 
     const matched = compare(evidence, replay.excerpt, replay.value, comparator?.comparator);
+    if (matched && registered === undefined) {
+      unconfirmedKind();
+      continue;
+    }
     outcomes.push({
       evidence_id: evidence.id,
       status: matched ? 'VERIFIED' : 'MISMATCH',

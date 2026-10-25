@@ -1,6 +1,6 @@
 import { test, describe, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, cpSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, cpSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -148,6 +148,21 @@ describe('a replay fixture is untrusted input', () => {
       writeFileSync(join(root, 'context.json'), JSON.stringify({ meta: {} }), 'utf8');
     });
     assert.throws(() => loadFixture(work));
+  });
+
+  test('a recorded operation states the kind its output is, and one that is not a kind is refused (Prompt 10)', () => {
+    assert.equal(loadFixture(FIXTURE).adapters.operations[0]?.evidence_kind, 'file');
+    const work = brokenFixture((root) => {
+      const path = join(root, 'adapters.json');
+      const adapters = JSON.parse(readFileSync(path, 'utf8')) as { operations: Record<string, unknown>[] };
+      adapters.operations[0] = { ...adapters.operations[0], evidence_kind: 'transcript' };
+      writeFileSync(path, JSON.stringify(adapters), 'utf8');
+    });
+    assert.throws(
+      () => loadFixture(work),
+      (error: unknown) => error instanceof FixtureError
+        && /operations\[0\]\.evidence_kind is not an evidence kind/.test(error.message),
+    );
   });
 
   test('unparseable JSON says which file and why', () => {

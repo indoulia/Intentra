@@ -26,6 +26,7 @@
         },
         "gates": []
       },
+      "evidence_kind": "file",
       "results": {
         "*": {
           "path": "README.md",

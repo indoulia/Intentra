@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { digest, fixtures as fx, type CallRecord, type MutationEvent, type ReplayResult } from '@intentra/contracts';
+import { digest, fixtures as fx, type CallRecord, type EvidenceKind, type MutationEvent, type ReplayResult } from '@intentra/contracts';
 import { loadPolicies } from '@intentra/policies';
 import { reconcile, blastRadius, hasNonReversibleMutation, globToRegExp } from '../src/reconciliation.js';
 import { verifyEvidence, selectForVerification, normalizeExcerpt, evaluatePredicate } from '../src/evidence-verification.js';
@@ -198,6 +198,12 @@ const CONTEXT = {
   grantsHeld: [],
   stageMutating: false,
 };
+
+/** The screenshot and log operations cited below, with the kinds their adapters register (Prompt 10). */
+const KINDS = new Map<string, EvidenceKind>([
+  ['runtime.browser.screenshot', 'screenshot'],
+  ['runtime.logs.read_lines', 'log'],
+]);
 
 describe('evidence selection: what is always verified, and what is sampled', () => {
   test('every item supporting a CRITICAL or HIGH finding is always verified', () => {
@@ -495,7 +501,7 @@ describe('evidence verification and its consequences', () => {
   });
 
   test('a screenshot is not content-verifiable, and its provenance is', async () => {
-    const adapters = new FixtureAdapters();
+    const adapters = new FixtureAdapters({ kinds: KINDS });
     const screenshot = fx.evidence({
       id: 'E-1',
       kind: 'screenshot',
@@ -538,7 +544,7 @@ describe('evidence verification and its consequences', () => {
     const replays = new Map<string, ReplayResult>([
       ['runtime.logs.read_lines', { outcome: 'OK', value: { count: 0 }, excerpt: 'irrelevant' }],
     ]);
-    const adapters = new FixtureAdapters({ replays });
+    const adapters = new FixtureAdapters({ replays, kinds: KINDS });
     const report = await verifyEvidence({
       envelope: fx.envelope({
         findings: [fx.finding({ severity: 'CRITICAL', evidence: ['E-1'] })],
@@ -607,7 +613,7 @@ describe('a screenshot binds only to a successful call made with its own locator
         evidence: [fx.evidence({ id: 'E-1', kind: 'screenshot', locator: LOCATOR, excerpt })],
       }),
       policy: policies.evidence,
-      adapters: new FixtureAdapters(),
+      adapters: new FixtureAdapters({ kinds: KINDS }),
       callContext: CONTEXT,
       clock: new FixedClock(),
       calls,
