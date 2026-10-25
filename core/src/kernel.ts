@@ -241,6 +241,8 @@ type PrologueLogger = <K extends Event['event']>(
   kind: K,
   data: Extract<Event, { event: K }>['data'],
   stage: Stage,
+  /** The session a record is against, where it is one session's (Prompt 8). */
+  by?: { readonly dispatchId: string; readonly agent: AgentRole },
 ) => void;
 
 /**
@@ -296,6 +298,38 @@ function journalIntegrity(
   }
   if (rejected) return;
   for (const violation of verification.violations) write('contract_violation', violation);
+}
+
+/**
+ * A resolution envelope's verification, in the records every other envelope's gets, against
+ * the session and model that answered (Prompt 8). Its threshold rejection is admission's
+ * EVIDENCE_MISMATCH_THRESHOLD, so the envelope counts as rejected exactly when that fires.
+ */
+function journalResolutionVerification(
+  log: PrologueLogger,
+  answer: { readonly envelope: HandoffEnvelope | null; readonly dispatchId: string | null; readonly model: string | null },
+  verification: VerificationReport | null,
+): void {
+  const { envelope, dispatchId, model } = answer;
+  if (verification === null || envelope === null || dispatchId === null || model === null) return;
+  const by = { dispatchId, agent: 'context-discovery' } as const;
+  log('evidence_verification', {
+    envelope_id: envelope.envelope_id,
+    results: verification.outcomes.map((o) => ({
+      evidence_id: o.evidence_id,
+      status: o.status,
+      selected_because: o.selected_because,
+      detail: o.detail,
+    })),
+    mismatch_count: verification.mismatchCount,
+  }, 'RESOLUTION', by);
+  journalIntegrity(
+    (kind, data) => { log(kind, data as never, 'RESOLUTION', by); },
+    envelope.envelope_id,
+    model,
+    verification,
+    verification.rejectEnvelope,
+  );
 }
 
 type MeteredOutcome =
@@ -431,7 +465,7 @@ export class Kernel {
      */
     const prologue: Event[] = [];
     let prologueSeq = 0;
-    const logPrologue: PrologueLogger = (kind, data, stage) => {
+    const logPrologue: PrologueLogger = (kind, data, stage, by) => {
       prologueSeq += 1;
       const event = {
         seq: prologueSeq,
@@ -439,8 +473,8 @@ export class Kernel {
         work_item_id: intakeId,
         run_id: null,
         stage,
-        dispatch_id: null,
-        agent: null,
+        dispatch_id: by?.dispatchId ?? null,
+        agent: by?.agent ?? null,
         event: kind,
         data,
       } as Event;
@@ -542,26 +576,10 @@ export class Kernel {
      * believed â€” the same disbelief step every other envelope gets, applied to the envelope
      * that decides what the work *is*.
      */
-    const recordVerification = (
-      envelope: HandoffEnvelope | null,
-      verification: VerificationReport | null,
-    ): void => {
-      if (verification === null || envelope === null) return;
-      logPrologue('evidence_verification', {
-        envelope_id: envelope.envelope_id,
-        results: verification.outcomes.map((o) => ({
-          evidence_id: o.evidence_id,
-          status: o.status,
-          selected_because: o.selected_because,
-          detail: o.detail,
-        })),
-        mismatch_count: verification.mismatchCount,
-      }, 'RESOLUTION');
-    };
     const verification = await this.verifyResolution(
       resolution.envelope, resolution.proposal, record, prologue, resolution.dispatchId,
     );
-    recordVerification(resolution.envelope, verification);
+    journalResolutionVerification(logPrologue, resolution, verification);
 
     const registry = this.capabilityRegistry();
     logPrologue('note', {
@@ -638,7 +656,7 @@ export class Kernel {
       const secondVerification = await this.verifyResolution(
         second.envelope, second.proposal, record, prologue, second.dispatchId,
       );
-      recordVerification(second.envelope, secondVerification);
+      journalResolutionVerification(logPrologue, second, secondVerification);
       const retry = admitWorkItem({
         ...admissionInput,
         proposal: second.proposal,
@@ -2510,7 +2528,7 @@ export class Kernel {
     const events: Event[] = [];
     let seq = 0;
     /* WP-8 Prompt 4: written as it happens, so the intent is durable before the session starts. */
-    const log: PrologueLogger = (kind, data, stage) => {
+    const log: PrologueLogger = (kind, data, stage, by) => {
       seq += 1;
       events.push({
         seq,
@@ -2518,12 +2536,12 @@ export class Kernel {
         work_item_id: args.workItem.work_item_id,
         run_id: null,
         stage,
-        dispatch_id: null,
-        agent: null,
+        dispatch_id: by?.dispatchId ?? null,
+        agent: by?.agent ?? null,
         event: kind,
         data,
       } as Event);
-      journal.workItem(kind, data as never, { stage });
+      journal.workItem(kind, data as never, { stage, dispatchId: by?.dispatchId ?? null, agent: by?.agent ?? null });
     };
     const meter: Meter = {
       runEvents: () => events,
@@ -2572,6 +2590,7 @@ export class Kernel {
     const verification = await this.verifyResolution(
       resolution.envelope, resolution.proposal, args.intake, events, resolution.dispatchId,
     );
+    journalResolutionVerification(log, resolution, verification);
     const registry = this.capabilityRegistry();
 
     const admission = admitWorkItem({
@@ -3266,6 +3285,8 @@ export class Kernel {
       /** Set when every attempt the FAILED rule allows answered malformed: a block, not a refusal. */
       readonly blockerKind: BlockerKind | null;
       readonly lastAttempt: number;
+      /** The model the answering session ran on, which its integrity records are against. */
+      readonly model: string | null;
     }> {
     /* WP-8 smoke-2: a malformed answer is an agent-level failure (WORKFLOW_STATE_MACHINE 4.2), bounded by the graph's own rule. */
     let escalated = false;
@@ -3274,15 +3295,15 @@ export class Kernel {
       const outcome = await this.dispatchResolutionAttempt(
         intake, orientation, log, meter, priorViolations, attempt, escalated, failedModel,
       );
-      const { dispatchId } = outcome;
+      const { dispatchId, model } = outcome;
       if (outcome.denied) {
         return {
-          proposal: null, envelope: null, dispatchId, detail: outcome.detail, blockerKind: 'BUDGET_EXHAUSTED', lastAttempt: attempt,
+          proposal: null, envelope: null, dispatchId, detail: outcome.detail, blockerKind: 'BUDGET_EXHAUSTED', lastAttempt: attempt, model,
         };
       }
       if (!outcome.malformed) {
         return {
-          proposal: outcome.proposal, envelope: outcome.envelope, dispatchId, detail: outcome.detail, blockerKind: null, lastAttempt: attempt,
+          proposal: outcome.proposal, envelope: outcome.envelope, dispatchId, detail: outcome.detail, blockerKind: null, lastAttempt: attempt, model,
         };
       }
       const action = afterFailure(
@@ -3303,6 +3324,7 @@ export class Kernel {
           detail: `${outcome.detail}. ${action.reason}`,
           blockerKind: action.blockerKind,
           lastAttempt: attempt,
+          model,
         };
       }
       if (action.escalateModel) escalated = true;
