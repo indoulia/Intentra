@@ -15,6 +15,7 @@ import {
 import { main, sourceLocatorFor, type CliIo } from '../../src/cli/main.js';
 import { ScriptedSubstrate, type ScriptedResponse } from '../doubles.js';
 import { assertUnchanged, type ScratchWorld, type WorldFingerprint } from './world.js';
+import { ScriptedTransport } from './transport.js';
 
 /**
  * The end-to-end rig.
@@ -75,6 +76,8 @@ export interface WorkOptions {
   readonly registries?: Registries;
   /** The policy set, for scenarios that vary a budget such as `dispatch_retries`. */
   readonly policies?: PolicySet;
+  /** Answers through a fake transport under the production Claude substrate, not in its place. */
+  readonly viaTransport?: boolean;
 }
 
 export interface WorkOutcome {
@@ -105,7 +108,7 @@ export async function work(options: WorkOptions): Promise<WorkOutcome> {
     repositoryPath: options.world.repositoryPath,
     intake: { source, raw: options.raw, received_at: new Date().toISOString() },
     env: { AGENTOS_MODELS: JSON.stringify(options.models ?? [DECLARED_MODEL]) },
-    substrate,
+    ...(options.viaTransport === true ? { transport: new ScriptedTransport(substrate) } : { substrate }),
     projectManagement: options.projectManagement ?? null,
     runtime: options.runtime ?? null,
     ...(options.registries === undefined ? {} : { registries: options.registries }),

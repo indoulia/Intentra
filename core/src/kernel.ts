@@ -2668,8 +2668,9 @@ export class Kernel {
         journal.run('note', {
           topic: 'route back',
           detail:
-            `${routeBackTo} owes criteria ${dod.report.unmet_critical.join(', ')} and supplied `
-            + 'no verdict for them. The run routes back into the graph there rather than '
+            `${routeBackTo} owes criteria ${dod.report.unmet_critical.join(', ')} and has not `
+            + 'established them: no verdict, or a MET its cited evidence could not carry. The run '
+            + 'routes back into the graph there rather than '
             + 'ending: resumption is an optimization over work and has no authority over '
             + 'completion, so a wrong resume costs a lap and cannot manufacture a COMPLETE',
         }, { stage: 'COMPLETION' });

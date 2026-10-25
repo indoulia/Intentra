@@ -7,6 +7,7 @@ import type {
   DodProfileId,
   DodPolicySet,
   DodVerdict,
+  Evidence,
   HandoffEnvelope,
   SourceDrift,
   TemplateStage,
@@ -30,6 +31,8 @@ export interface CollectedVerdict extends CriterionVerdict {
   /** Which envelope supplied it, so the report can say who judged what. */
   readonly supplied_by_envelope: string;
   readonly owner_role: string;
+  /** The cited items as that envelope persisted them, verification results included. */
+  readonly cited_evidence: readonly Evidence[];
 }
 
 export interface DodInput {
@@ -66,10 +69,58 @@ export function collectVerdicts(input: DodInput): readonly CollectedVerdict[] {
         ...verdict,
         supplied_by_envelope: envelope.envelope_id,
         owner_role: owners.get(verdict.criterion) ?? envelope.agent,
+        cited_evidence: envelope.evidence.filter((item) => verdict.evidence.includes(item.id)),
       });
     }
   }
   return [...byCriterion.values()].sort((a, b) => a.criterion - b.criterion);
+}
+
+/**
+ * Why the evidence a `MET` cites cannot carry it, or `null` where it can (Prompt 7A D1).
+ *
+ * At least one cited item must have replayed `VERIFIED`, and none may be `MISMATCH` or
+ * `UNREPLAYABLE`. `VERIFIED` is only a mechanical match of the quotation against its replay,
+ * so this keeps an unchecked claim out of completion and does not make a checked one true.
+ */
+function metDeficiency(
+  verdict: CollectedVerdict,
+  /** Kinds whose content no comparator checks: their VERIFIED confirms only the producing call. */
+  provenanceOnly: ReadonlySet<string>,
+): string | null {
+  const reported = `the agent reported MET on evidence ${verdict.supplied_by_envelope} cannot carry`;
+  if (verdict.evidence.length === 0) return `the agent reported MET and cites no evidence`;
+
+  const byId = new Map(verdict.cited_evidence.map((item) => [item.id, item]));
+  const problems: string[] = [];
+  let qualifying = 0;
+  let disqualified = false;
+  for (const id of verdict.evidence) {
+    const item = byId.get(id);
+    const status = item?.verification?.status;
+    if (item === undefined) {
+      problems.push(`${id} is not in envelope ${verdict.supplied_by_envelope}`);
+    } else if (status === 'MISMATCH' || status === 'UNREPLAYABLE') {
+      disqualified = true;
+      problems.push(`${id} came back ${status}`);
+    } else if (!item.reproducible) {
+      problems.push(`${id} is reproducible: false, so it was never replayed`);
+    } else if (status === undefined) {
+      problems.push(`${id} carries no verification result`);
+    } else if (status !== 'VERIFIED') {
+      problems.push(`${id} came back ${status}`);
+    } else if (provenanceOnly.has(item.kind)) {
+      problems.push(
+        `${id} is ${item.kind} evidence, whose content is not kernel-verifiable: its VERIFIED `
+        + 'confirms the call that produced it, not what it shows',
+      );
+    } else {
+      qualifying += 1;
+    }
+  }
+  if (qualifying > 0 && !disqualified) return null;
+  return `${reported}: ${problems.join('; ')}. MET needs at least one cited item whose content `
+    + 'replayed VERIFIED and none MISMATCH or UNREPLAYABLE, so the verdict is NOT_VALIDATED';
 }
 
 /** Which stage owes a criterion, from the stage descriptors. */
@@ -115,6 +166,9 @@ export function computeDod(input: DodInput): DodComputation {
   );
   const critical = new Set(profile.critical_criteria);
   const owners = new Map(input.policies.dod.criteria.map((c) => [c.criterion, c]));
+  const provenanceOnly = new Set<string>(input.policies.evidence.comparators
+    .filter((c) => c.comparator === 'not_kernel_verifiable')
+    .map((c) => c.kind));
 
   const criteria: CompletionReport['criteria'][number][] = [];
   const rationale: string[] = [];
@@ -125,10 +179,11 @@ export function computeDod(input: DodInput): DodComputation {
     const ownerRole = owner?.owner_role ?? 'validator';
 
     if (supplied !== undefined) {
+      const deficiency = supplied.verdict === 'MET' ? metDeficiency(supplied, provenanceOnly) : null;
       criteria.push({
         criterion,
-        verdict: supplied.verdict,
-        reason: supplied.reason,
+        verdict: deficiency === null ? supplied.verdict : 'NOT_VALIDATED',
+        reason: deficiency ?? supplied.reason,
         evidence: supplied.evidence,
         owner_role: ownerRole,
         supplied_by_envelope: supplied.supplied_by_envelope,

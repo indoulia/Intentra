@@ -757,6 +757,11 @@ describe('entry-stage computation', () => {
 
 describe('DoD arithmetic', () => {
   const graph = investigationGraph();
+  /** Prompt 7A D1: a MET stands only on cited evidence whose replay the kernel recorded VERIFIED. */
+  const verified = [fx.evidence({
+    id: 'E-1',
+    verification: { status: 'VERIFIED', at: fx.T2, by: 'kernel', matches: true, detail: 'replayed and matched' },
+  })];
 
   function report(envelopes: readonly HandoffEnvelope[], completedPrior: readonly ('AUDIT' | 'ROOT_CAUSE' | 'COMPLETION')[] = []) {
     return computeDod({
@@ -777,11 +782,13 @@ describe('DoD arithmetic', () => {
       fx.envelope({
         agent: 'context-discovery',
         stage_in: 'CONTEXT_DISCOVERY',
+        evidence: verified,
         dod_verdicts: [fx.criterionVerdict({ criterion: 1, evidence: ['E-1'] })],
       }),
       fx.envelope({
         agent: 'auditor',
         stage_in: 'AUDIT',
+        evidence: verified,
         dod_verdicts: [
           fx.criterionVerdict({ criterion: 3, evidence: ['E-1'] }),
           fx.criterionVerdict({ criterion: 4, evidence: ['E-1'] }),
@@ -841,11 +848,13 @@ describe('DoD arithmetic', () => {
         fx.envelope({
           agent: 'context-discovery',
           stage_in: 'CONTEXT_DISCOVERY',
+          evidence: verified,
           dod_verdicts: [fx.criterionVerdict({ criterion: 1, evidence: ['E-1'] })],
         }),
         fx.envelope({
           agent: 'validator',
           stage_in: 'VALIDATION',
+          evidence: verified,
           dod_verdicts: [
             fx.criterionVerdict({ criterion: 5, evidence: ['E-1'] }),
             fx.criterionVerdict({ criterion: 12, evidence: ['E-1'] }),
@@ -941,6 +950,7 @@ describe('DoD arithmetic', () => {
         envelope_id: 'env_2',
         agent: 'auditor',
         stage_in: 'AUDIT',
+        evidence: verified,
         dod_verdicts: [fx.criterionVerdict({ criterion: 3, evidence: ['E-1'] })],
       }),
     ]);
