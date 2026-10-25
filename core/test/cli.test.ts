@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { main, type CliIo } from '../src/cli/main.js';
 import { FixtureError, loadFixture } from '../src/replay/fixture.js';
+import { RecordedAdapterRegistry } from '../src/replay/ports.js';
 import { replayFixture } from '../src/replay/run.js';
 
 /**
@@ -150,19 +151,16 @@ describe('a replay fixture is untrusted input', () => {
     assert.throws(() => loadFixture(work));
   });
 
-  test('a recorded operation states the kind its output is, and one that is not a kind is refused (Prompt 10)', () => {
-    assert.equal(loadFixture(FIXTURE).adapters.operations[0]?.evidence_kind, 'file');
+  test('a recorded operation\'s kind is its live registration\'s, not one the recording states (Prompt 11)', () => {
+    const clock = { now: () => new Date(0) };
+    assert.equal(new RecordedAdapterRegistry(loadFixture(FIXTURE), clock).evidenceKind('repo', 'read_file'), 'file');
     const work = brokenFixture((root) => {
       const path = join(root, 'adapters.json');
       const adapters = JSON.parse(readFileSync(path, 'utf8')) as { operations: Record<string, unknown>[] };
-      adapters.operations[0] = { ...adapters.operations[0], evidence_kind: 'transcript' };
+      adapters.operations[0] = { ...adapters.operations[0], evidence_kind: 'command' };
       writeFileSync(path, JSON.stringify(adapters), 'utf8');
     });
-    assert.throws(
-      () => loadFixture(work),
-      (error: unknown) => error instanceof FixtureError
-        && /operations\[0\]\.evidence_kind is not an evidence kind/.test(error.message),
-    );
+    assert.equal(new RecordedAdapterRegistry(loadFixture(work), clock).evidenceKind('repo', 'read_file'), 'file');
   });
 
   test('unparseable JSON says which file and why', () => {

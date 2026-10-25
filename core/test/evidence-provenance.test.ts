@@ -1,8 +1,13 @@
-import { test, describe } from 'node:test';
+import { test, describe, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   digest,
   fixtures as fx,
+  type AdapterRegistry,
   type CallRecord,
   type DodCriterionId,
   type Evidence,
@@ -14,6 +19,8 @@ import { loadPolicies } from '@intentra/policies';
 import { verifyEvidence } from '../src/evidence-verification.js';
 import { withVerification } from '../src/receipt.js';
 import { computeDod } from '../src/dod.js';
+import { loadFixture } from '../src/replay/fixture.js';
+import { RecordedAdapterRegistry } from '../src/replay/ports.js';
 import { FixtureAdapters, FixedClock } from './doubles.js';
 
 /** Prompt 10: a kind is the registered kind of the operation the locator names; provenance only, not that the claim is true. */
@@ -98,7 +105,7 @@ function validation(evidence: readonly Evidence[], verdicts: Readonly<Record<num
 }
 
 /** Receipt step 4 as the kernel runs it, and the envelope as it is then persisted. */
-async function receive(envelope: HandoffEnvelope, registry = adapters(), calls: readonly CallRecord[] = []) {
+async function receive(envelope: HandoffEnvelope, registry: AdapterRegistry = adapters(), calls: readonly CallRecord[] = []) {
   const report = await verifyEvidence({
     envelope,
     policy: policies.evidence,
@@ -370,5 +377,61 @@ describe('where the registry cannot say what an operation produces, nothing is v
       [call({ adapter: locator.adapter, op: locator.op, args_digest: digest(locator.args) })],
     );
     assert.notEqual(outcomeOf(report, 'S-05').status, 'VERIFIED');
+  });
+});
+
+describe('a replay recording takes each operation\'s kind from its live registration (Prompt 11)', () => {
+  const TYPO_README = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'test', 'fixtures', 'typo-readme');
+  const roots: string[] = [];
+  after(() => {
+    for (const root of roots) rmSync(root, { recursive: true, force: true });
+  });
+
+  const recorded = (directory = TYPO_README) => new RecordedAdapterRegistry(loadFixture(directory), new FixedClock());
+  const readme = (id: string, kind: EvidenceKind): Evidence => fx.evidence({
+    id, kind, locator: { adapter: 'repo', op: 'read_file', args: { path: 'README.md' } }, ref: 'README.md', excerpt: 'Intentra',
+  });
+
+  test('the committed recording states no kind, and its file quotation is VERIFIED as file', async () => {
+    assert.equal(recorded().evidenceKind('repo', 'read_file'), 'file');
+    const { report } = await receive(validation([readme('R-01', 'file')], { 3: ['R-01'] }), recorded());
+    assert.equal(outcomeOf(report, 'R-01').status, 'VERIFIED');
+  });
+
+  test('the same quotation labelled command is MISMATCH and does not carry criterion 12', async () => {
+    const { report, persisted } = await receive(validation([readme('R-02', 'command')], { 12: ['R-02'] }), recorded());
+    const outcome = outcomeOf(report, 'R-02');
+    assert.equal(outcome.status, 'MISMATCH');
+    assert.match(outcome.detail, /declared command, and repo\.read_file produces file evidence/);
+    assert.equal(verdictOf(persisted, 12).verdict, 'NOT_VALIDATED');
+  });
+
+  test('an operation no adapter registers is never VERIFIED, whatever kind the recording states for it', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'intentra-kind-'));
+    roots.push(root);
+    cpSync(TYPO_README, root, { recursive: true });
+    const path = join(root, 'adapters.json');
+    const adapters = JSON.parse(readFileSync(path, 'utf8')) as { operations: Array<{ descriptor: Record<string, unknown> }> };
+    adapters.operations.push({
+      descriptor: {
+        ...adapters.operations[0]?.descriptor,
+        adapter: 'host',
+        op: 'run_tests',
+        args_schema: { type: 'object', properties: { suite: { type: 'string' } }, required: ['suite'], additionalProperties: false },
+      },
+      evidence_kind: 'command',
+      results: { '*': PASSING },
+      excerpts: { '*': PASSING },
+      replay: { outcome: 'OK', value: PASSING, excerpt: PASSING },
+    } as { descriptor: Record<string, unknown> });
+    writeFileSync(path, JSON.stringify(adapters), 'utf8');
+
+    const registry = recorded(root);
+    assert.equal(registry.evidenceKind('host', 'run_tests'), undefined, 'a recording is not where a kind comes from');
+    const { report, persisted } = await receive(validation([testRun('R-03')], { 12: ['R-03'] }), registry);
+    const outcome = outcomeOf(report, 'R-03');
+    assert.equal(outcome.status, 'UNREPLAYABLE');
+    assert.match(outcome.detail, /host\.run_tests has no registered evidence kind/);
+    assert.equal(verdictOf(persisted, 12).verdict, 'NOT_VALIDATED');
   });
 });

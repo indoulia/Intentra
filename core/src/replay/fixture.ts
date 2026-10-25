@@ -1,7 +1,6 @@
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  EVIDENCE_KINDS,
   digest,
   validators,
   type AdapterAvailability,
@@ -10,7 +9,6 @@ import {
   type CallRecord,
   type Classification,
   type ContextPackage,
-  type EvidenceKind,
   type IntakeSource,
   type Locator,
   type ModelEntry,
@@ -72,8 +70,6 @@ export interface RecordedOperation {
   readonly results?: Readonly<Record<string, unknown>>;
   /** The excerpt each recorded call showed, keyed as `results` is; a call without one is answered as unrecorded (WP-8). */
   readonly excerpts?: Readonly<Record<string, string>>;
-  /** The kind the recording adapter registered its output as; a recording without one establishes no kind (Prompt 10). */
-  readonly evidence_kind?: EvidenceKind;
   /** What replaying this operation returns, for evidence verification. */
   readonly replay?:
     | { readonly outcome: 'OK'; readonly value: unknown; readonly excerpt: string }
@@ -317,10 +313,6 @@ function readAdapters(directory: string): RecordedAdapters {
         throw new FixtureError(directory, `adapters.json operations[${index}] must be an object`);
       }
       const op = entry as Record<string, unknown>;
-      const kind = op['evidence_kind'];
-      if (kind !== undefined && !EVIDENCE_KINDS.includes(kind as EvidenceKind)) {
-        throw new FixtureError(directory, `adapters.json operations[${index}].evidence_kind is not an evidence kind`);
-      }
       return {
         descriptor: validators.adapterOperationDescriptor.parse(
           op['descriptor'],
@@ -332,7 +324,6 @@ function readAdapters(directory: string): RecordedAdapters {
         ...(op['excerpts'] === undefined
           ? {}
           : { excerpts: op['excerpts'] as Readonly<Record<string, string>> }),
-        ...(kind === undefined ? {} : { evidence_kind: kind as EvidenceKind }),
         ...(op['replay'] === undefined
           ? {}
           : { replay: op['replay'] as RecordedOperation['replay'] }),

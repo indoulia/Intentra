@@ -34,6 +34,7 @@ import {
   type ToolSurfaceReport,
   type WorkItem,
 } from '@intentra/contracts';
+import { registeredEvidenceKind } from '@intentra/adapters';
 import { argsKey, recordedCall, type ReplayFixture } from './fixture.js';
 
 /**
@@ -184,10 +185,9 @@ export class RecordedAdapterRegistry implements AdapterRegistry {
     return this.descriptors().find((d) => d.adapter === adapter && d.op === op);
   }
 
+  /** The live registration's kind, never the recording's: a recording is untrusted input (Prompt 11). */
   evidenceKind(adapter: string, op: string): EvidenceKind | undefined {
-    return this.fixture.adapters.operations.find(
-      (entry) => entry.descriptor.adapter === adapter && entry.descriptor.op === op,
-    )?.evidence_kind;
+    return registeredEvidenceKind(adapter, op);
   }
 
   availability(): readonly AdapterAvailability[] {

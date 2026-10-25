@@ -1,11 +1,12 @@
 import type {
   BudgetPolicy,
   Clock,
+  EvidenceKind,
   EvidencePolicy,
   ExecutionPolicy,
   PathPolicy,
 } from '@intentra/contracts';
-import { DescriptorRegistry } from '../descriptors.js';
+import { DescriptorRegistry, type OperationRegistration } from '../descriptors.js';
 import { AdapterFramework } from '../framework.js';
 import type { ClassificationProbe } from '../classification.js';
 import type {
@@ -18,18 +19,28 @@ import type {
   ProcessRunner,
   RunLedgerReader,
 } from '../ports.js';
-import { NodeProcessRunner, SystemClock } from '../system.js';
-import { gitAvailability, gitOperations, branchProtectionProbe } from './git.js';
+import { NO_PROCESS_RUNNER, NodeProcessRunner, SystemClock } from '../system.js';
+import { gitAvailability, gitOperations, branchProtectionProbe, type GitOptions } from './git.js';
 import {
   hostAvailability,
   hostOperations,
   spawningProbe,
   type CliIntake,
   type HostInventory,
+  type HostOptions,
 } from './host.js';
-import { projectManagementAvailability, projectManagementOperations } from './project-management.js';
-import { repositoryAvailability, repositoryOperations } from './repo.js';
-import { environmentProbe, runtimeAvailability, runtimeOperations } from './runtime.js';
+import {
+  projectManagementAvailability,
+  projectManagementOperations,
+  type ProjectManagementOptions,
+} from './project-management.js';
+import { repositoryAvailability, repositoryOperations, type RepoOptions } from './repo.js';
+import {
+  environmentProbe,
+  runtimeAvailability,
+  runtimeOperations,
+  type RuntimeOptions,
+} from './runtime.js';
 
 /**
  * The five read-only adapter families, composed into one framework.
@@ -120,13 +131,9 @@ export async function createAdapterSuite(
     scratchRoots: options.paths.scratch_roots,
   });
 
-  for (const registration of [
-    ...repositoryOperations(repoOptions),
-    ...gitOperations(gitOptions),
-    ...hostOperations(hostOptions),
-    ...projectManagementOperations(pmOptions),
-    ...runtimeOperations(runtimeOptions),
-  ]) {
+  for (const registration of suiteOperations(
+    repoOptions, gitOptions, hostOptions, pmOptions, runtimeOptions,
+  )) {
     registry.register(registration);
   }
 
@@ -165,6 +172,42 @@ export async function createAdapterSuite(
 
   await framework.refreshAvailability();
   return { framework, registry };
+}
+
+/** The five families' registrations, as the suite registers them. */
+function suiteOperations(
+  repo: RepoOptions,
+  git: GitOptions,
+  host: HostOptions,
+  pm: ProjectManagementOptions,
+  runtime: RuntimeOptions,
+): readonly OperationRegistration[] {
+  return [
+    ...repositoryOperations(repo),
+    ...gitOperations(git),
+    ...hostOperations(host),
+    ...projectManagementOperations(pm),
+    ...runtimeOperations(runtime),
+  ];
+}
+
+let inertRegistrations: readonly OperationRegistration[] | undefined;
+
+/**
+ * The kind live execution registers `adapter.op` as, or `undefined` where no adapter registers
+ * it, for a replay that has no live suite (Prompt 11). Built from the suite's own registrations
+ * over inert options: a kind is a literal of its registration, and no handler runs.
+ */
+export function registeredEvidenceKind(adapter: string, op: string): EvidenceKind | undefined {
+  inertRegistrations ??= suiteOperations(
+    { worktreeRoot: '', paths: { version: 'inert', deny: [], scratch_roots: [] } },
+    { worktreeRoot: '', runner: NO_PROCESS_RUNNER, host: null },
+    { host: 'host.cli', worktreeRoot: '', principalId: null },
+    { connector: null },
+    { connector: null },
+  );
+  return inertRegistrations.find((r) => r.descriptor.adapter === adapter && r.descriptor.op === op)
+    ?.evidenceKind;
 }
 
 /**

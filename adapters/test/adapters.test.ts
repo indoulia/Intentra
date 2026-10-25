@@ -9,6 +9,7 @@ import {
   createAdapterSuite,
   hostIdentity,
   normalizeObservation,
+  registeredEvidenceKind,
   repositorySkills,
   type AdapterSuite,
 } from '../src/index.js';
@@ -146,6 +147,17 @@ describe('what is registered', () => {
       'the granted tool surface is an allowlist keyed by name, so two operations sharing one '
       + 'name would make one of them unreachable and the other ambiguous',
     );
+  });
+
+  test('the kind a replay is told an operation produces is the kind live execution registers (Prompt 11)', async () => {
+    const { framework } = await suite();
+    for (const { adapter, op } of framework.descriptors()) {
+      const live = framework.evidenceKind(adapter, op);
+      assert.ok(live !== undefined, `${adapter}.${op} registers a kind`);
+      assert.equal(registeredEvidenceKind(adapter, op), live, `${adapter}.${op}`);
+    }
+    assert.equal(registeredEvidenceKind('repo', 'run_tests'), undefined, 'no kind is assumed for an unregistered operation');
+    assert.equal(registeredEvidenceKind('elsewhere', 'read_file'), undefined);
   });
 
   test('a read whose re-execution consumes what it measured is not observation_safe', async () => {
