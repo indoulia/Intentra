@@ -177,6 +177,13 @@ describe('the brief renders the specification and nothing else', () => {
     assert.match(rendered, /verification block on evidence is written only by the kernel/);
   });
 
+  test('every dispatch is told its envelope_id must be new to the run and store-safe', () => {
+    const input = buildInputPackage(request());
+    const rendered = renderSystemSpecification(input, undefined);
+    assert.match(rendered, /envelope_id is new to this run: never one in prior_envelopes/);
+    assert.match(rendered, /at most 128 characters of letters, digits, _ \. and -, starting with a letter or digit/);
+  });
+
   test('every dispatch is shown the schema the kernel validates its answer against', () => {
     const input = buildInputPackage(request());
     const spec = MVP_ROLE_SPECS.find((candidate) => candidate.mandate_name === 'audit');

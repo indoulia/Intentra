@@ -115,6 +115,11 @@ export function renderSystemSpecification(
       + 'recommendations, blockers, coverage, outputs, dod_verdicts, proposals and '
       + 'next_action. work_item_id, run_id and dispatch_id echo this input package exactly.',
     ),
+    indent(
+      'envelope_id is new to this run: never one in prior_envelopes or any you sent before, and '
+      + 'at most 128 characters of letters, digits, _ . and -, starting with a letter or digit. '
+      + 'An envelope_id that is reused or not store-safe fails the dispatch.',
+    ),
   );
 
   if (spec?.proposal !== undefined) {

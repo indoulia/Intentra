@@ -136,7 +136,7 @@ export const RUN_SUBDIRECTORIES: readonly RunSubdirectory[] = [
  * never supplied by an agent — but a path built from an unchecked identifier is the kind of
  * thing that is safe until the day something else supplies one.
  */
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
+export const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
 
 export function assertSafeId(kind: string, id: string): void {
   if (!SAFE_ID.test(id)) {

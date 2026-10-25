@@ -11,7 +11,7 @@
  */
 export { NdjsonLog, LogError } from './ndjson.js';
 export type { AppendResult, ReadResult } from './ndjson.js';
-export { StateLayout, RUN_SUBDIRECTORIES, assertSafeId } from './layout.js';
+export { StateLayout, RUN_SUBDIRECTORIES, SAFE_ID, assertSafeId } from './layout.js';
 export type { RunSubdirectory } from './layout.js';
 export { RunStore, StoreError } from './store.js';
 export type { LeaseInfo, LeaseOutcome } from './store.js';

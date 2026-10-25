@@ -240,6 +240,7 @@ async function receive(
     knownObligations: new Set(['capability_graph', 'audit']),
     existingAssertions: new Map(),
     incomingAssertions: new Map(),
+    persistedEnvelopeIds: [],
     sampler: seededRandom(),
     ...overrides,
   });

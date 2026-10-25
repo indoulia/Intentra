@@ -2964,6 +2964,7 @@ export class Kernel {
       knownObligations: this.obligations(state.graph),
       existingAssertions: new Map(),
       incomingAssertions: new Map(),
+      persistedEnvelopeIds: store.listEnvelopes(state.workItem.work_item_id, runId),
       sampler: this.ports.random,
     });
 
@@ -3738,6 +3739,7 @@ export class Kernel {
       knownObligations: new Set(),
       existingAssertions: new Map(),
       incomingAssertions: new Map(),
+      persistedEnvelopeIds: store.listEnvelopes(workItem.work_item_id, runId),
       sampler: this.ports.random,
     });
 
@@ -4097,6 +4099,7 @@ export class Kernel {
       knownObligations: new Set(),
       existingAssertions: new Map(),
       incomingAssertions: new Map(),
+      persistedEnvelopeIds: store.listEnvelopes(workItem.work_item_id, runId),
       sampler: this.ports.random,
     });
 

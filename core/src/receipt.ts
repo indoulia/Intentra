@@ -18,6 +18,7 @@ import {
   type Violation,
 } from '@intentra/contracts';
 import type { AgentPolicy } from '@intentra/contracts';
+import { SAFE_ID } from '@intentra/state';
 import { checkCrossFields, type CrossFieldContext, type DispatchExpectation } from './crossfield.js';
 import { reconcile } from './reconciliation.js';
 import { verifyEvidence, type VerificationReport } from './evidence-verification.js';
@@ -70,6 +71,8 @@ export interface ReceiptInput {
   readonly existingAssertions: ReadonlyMap<string, { readonly assertion: Assertion; readonly source: string }>;
   /** Assertions the envelope makes, extracted by the caller from its proposals and outputs. */
   readonly incomingAssertions: ReadonlyMap<string, Assertion>;
+  /** Ids of the envelopes this run has already persisted, which a new envelope may not reuse. */
+  readonly persistedEnvelopeIds: readonly string[];
   readonly sampler?: () => number;
 }
 
@@ -130,6 +133,28 @@ export async function receiveEnvelope(input: ReceiptInput): Promise<ReceiptResul
     };
   }
   const envelope = input.raw as HandoffEnvelope;
+
+  /* Prompt 7A D2: the id names the file step 6 writes once, so one the store cannot hold is malformed. */
+  const idProblem = envelopeIdProblem(envelope.envelope_id, input.persistedEnvelopeIds);
+  if (idProblem !== null) {
+    steps.push({ check: 'schema', result: 'FAIL', detail: idProblem });
+    return {
+      outcome: 'REJECTED',
+      step: 'schema',
+      handleAs: 'FAILED',
+      steps,
+      violations: [{
+        code: 'SCHEMA_INVALID',
+        rule: 'AGENT_HANDOFF_CONTRACT, kernel enforcement steps 1 and 6',
+        message:
+          `${idProblem}. A malformed envelope is a FAILED dispatch, never a parse-and-repair: `
+          + 'the kernel does not pick another id for the agent',
+        path: '/envelope_id',
+        handled_as: 'FAILED',
+        subject: null,
+      }],
+    };
+  }
   steps.push({ check: 'schema', result: 'PASS', detail: 'conforms to HandoffEnvelope 1.2' });
 
   /* ------------------------------------------------------- 2. cross-field ---- */
@@ -315,6 +340,25 @@ export async function receiveEnvelope(input: ReceiptInput): Promise<ReceiptResul
     conflicts,
     downgrades: verification.violations,
   };
+}
+
+/**
+ * Why the store could not persist an envelope under this id, or `null` where it can.
+ *
+ * Reuse is compared without letter case: the store's filesystem may ignore it, and a second
+ * envelope that resolves to the first one's file is a reuse whatever its spelling.
+ */
+function envelopeIdProblem(id: string, persisted: readonly string[]): string | null {
+  if (!SAFE_ID.test(id)) {
+    return `envelope_id ${JSON.stringify(id)} is not store-safe: it names the file the envelope `
+      + `is persisted under, so it must match ${SAFE_ID.source}`;
+  }
+  const folded = id.toLowerCase();
+  if (persisted.some((used) => used.toLowerCase() === folded)) {
+    return `envelope_id ${JSON.stringify(id)} was already used in this run. Envelopes are `
+      + 'immutable, so the one already persisted under it is kept and this one cannot be';
+  }
+  return null;
 }
 
 /**
