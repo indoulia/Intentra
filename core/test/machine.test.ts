@@ -873,10 +873,11 @@ describe('DoD arithmetic', () => {
         fx.envelope({
           agent: 'validator',
           stage_in: 'VALIDATION',
-          /* Prompt 8: criterion 12 accepts only command evidence (test execution output). */
+          /* Prompt 8: criterion 12 accepts only command evidence (test execution output); Prompt 12: from a test-running op. */
           evidence: [...verified, fx.evidence({
             id: 'E-2',
             kind: 'command',
+            locator: { adapter: 'double', op: 'run_tests', args: {} },
             verification: { status: 'VERIFIED', at: fx.T2, by: 'kernel', matches: true, detail: 'replayed and matched' },
           })],
           dod_verdicts: [
@@ -889,6 +890,7 @@ describe('DoD arithmetic', () => {
       graphStages: ['IMPLEMENTATION', 'VALIDATION', 'COMPLETION'],
       sourceDrift: null,
       computedAt: fx.T2,
+      executesTests: (adapter, op) => adapter === 'double' && op === 'run_tests',
     });
     assert.equal(result.report.verdict, 'COMPLETE_WITH_GAPS');
     assert.ok(result.report.gaps.length > 0, 'the gap is named');

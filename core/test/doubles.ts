@@ -153,6 +153,8 @@ export interface FixtureAdapterOptions {
   readonly refuseReplay?: boolean;
   /** Evidence kinds keyed by `adapter.op`, beyond the defaults; an operation named nowhere has none (Prompt 10). */
   readonly kinds?: ReadonlyMap<string, EvidenceKind>;
+  /** Test-only doubles, keyed by `adapter.op`, registered as running tests; none by default (Prompt 12). */
+  readonly testExecution?: ReadonlySet<string>;
 }
 
 /** The kinds the real adapters register the default operations' output as (Prompt 10). */
@@ -215,6 +217,10 @@ export class FixtureAdapters implements AdapterRegistry {
   evidenceKind(adapter: string, op: string): EvidenceKind | undefined {
     const key = `${adapter}.${op}`;
     return this.options.kinds?.get(key) ?? DEFAULT_KINDS.get(key);
+  }
+
+  executesTests(adapter: string, op: string): boolean {
+    return this.options.testExecution?.has(`${adapter}.${op}`) === true;
   }
 
   availability(): readonly AdapterAvailability[] {

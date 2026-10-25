@@ -20,6 +20,8 @@ export interface ReadOnlyOperationInput {
   readonly args?: Readonly<Record<string, unknown>>;
   readonly required?: readonly string[];
   readonly evidenceKind: EvidenceKind;
+  /** Whether it runs tests (Prompt 12). False unless stated: see `OperationRegistration.executesTests`. */
+  readonly executesTests?: boolean;
   /**
    * Whether the kernel may replay this to verify evidence. Stated explicitly at every call
    * site: an operation whose observation safety cannot be established is `false`, and the way
@@ -63,10 +65,16 @@ export function readOnlyOperation(input: ReadOnlyOperationInput): OperationRegis
     args_schema: argsSchema(input.args, input.required),
     gates: [...(input.gates ?? [])],
   };
-  return { descriptor, evidenceKind: input.evidenceKind, handler: input.handler };
+  return {
+    descriptor,
+    evidenceKind: input.evidenceKind,
+    executesTests: input.executesTests === true,
+    handler: input.handler,
+  };
 }
 
-export interface MutatingOperationInput extends Omit<ReadOnlyOperationInput, 'observationSafe'> {
+/* A mutating operation is never observation_safe, so its output is never VERIFIED and cannot be test evidence. */
+export interface MutatingOperationInput extends Omit<ReadOnlyOperationInput, 'observationSafe' | 'executesTests'> {
   /** The operation that undoes it, or `null` for a genuinely non-reversible one. */
   readonly reversal: AdapterOperationDescriptor['reversal'];
   readonly idempotentByKey: boolean;

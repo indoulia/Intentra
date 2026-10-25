@@ -10,6 +10,7 @@ import {
   hostIdentity,
   normalizeObservation,
   registeredEvidenceKind,
+  registeredExecutesTests,
   repositorySkills,
   type AdapterSuite,
 } from '../src/index.js';
@@ -158,6 +159,20 @@ describe('what is registered', () => {
     }
     assert.equal(registeredEvidenceKind('repo', 'run_tests'), undefined, 'no kind is assumed for an unregistered operation');
     assert.equal(registeredEvidenceKind('elsewhere', 'read_file'), undefined);
+  });
+
+  test('no registered operation runs tests, host inventory included, live or for a replay (Prompt 12)', async () => {
+    const { framework } = await suite();
+    for (const { adapter, op } of framework.descriptors()) {
+      assert.equal(framework.executesTests(adapter, op), false, `${adapter}.${op}`);
+      assert.equal(registeredExecutesTests(adapter, op), false, `${adapter}.${op}`);
+    }
+    for (const op of ['identity', 'platform', 'list_skills', 'list_models', 'list_tools', 'list_plugins', 'list_mcp_servers', 'read_intake']) {
+      assert.equal(framework.evidenceKind('host', op), 'command', `host.${op} is command output`);
+      assert.equal(framework.executesTests('host', op), false, `host.${op} is not test execution output`);
+    }
+    assert.equal(registeredExecutesTests('repo', 'run_tests'), false, 'nothing is assumed for an unregistered operation');
+    assert.equal(registeredExecutesTests('elsewhere', 'read_file'), false);
   });
 
   test('a read whose re-execution consumes what it measured is not observation_safe', async () => {

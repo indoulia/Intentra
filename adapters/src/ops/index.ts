@@ -194,11 +194,10 @@ function suiteOperations(
 let inertRegistrations: readonly OperationRegistration[] | undefined;
 
 /**
- * The kind live execution registers `adapter.op` as, or `undefined` where no adapter registers
- * it, for a replay that has no live suite (Prompt 11). Built from the suite's own registrations
- * over inert options: a kind is a literal of its registration, and no handler runs.
+ * The suite's own registration of `adapter.op`, for a replay that has no live suite (Prompt 11).
+ * Built over inert options: what is read from it is a literal of its registration, and no handler runs.
  */
-export function registeredEvidenceKind(adapter: string, op: string): EvidenceKind | undefined {
+function inertRegistration(adapter: string, op: string): OperationRegistration | undefined {
   inertRegistrations ??= suiteOperations(
     { worktreeRoot: '', paths: { version: 'inert', deny: [], scratch_roots: [] } },
     { worktreeRoot: '', runner: NO_PROCESS_RUNNER, host: null },
@@ -206,8 +205,17 @@ export function registeredEvidenceKind(adapter: string, op: string): EvidenceKin
     { connector: null },
     { connector: null },
   );
-  return inertRegistrations.find((r) => r.descriptor.adapter === adapter && r.descriptor.op === op)
-    ?.evidenceKind;
+  return inertRegistrations.find((r) => r.descriptor.adapter === adapter && r.descriptor.op === op);
+}
+
+/** The kind live execution registers `adapter.op` as, or `undefined` where no adapter registers it. */
+export function registeredEvidenceKind(adapter: string, op: string): EvidenceKind | undefined {
+  return inertRegistration(adapter, op)?.evidenceKind;
+}
+
+/** Whether live execution registers `adapter.op` as running tests; false where no adapter registers it (Prompt 12). */
+export function registeredExecutesTests(adapter: string, op: string): boolean {
+  return inertRegistration(adapter, op)?.executesTests === true;
 }
 
 /**

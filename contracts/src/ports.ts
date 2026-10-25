@@ -163,6 +163,8 @@ export interface AdapterRegistry {
   descriptor(adapter: string, op: string): AdapterOperationDescriptor | undefined;
   /** The kind a registered operation's output is cited as, or `undefined` where nothing registered says (Prompt 10). */
   evidenceKind(adapter: string, op: string): EvidenceKind | undefined;
+  /** Whether a registered operation runs tests, so its output is test execution output; false where nothing registered says so (Prompt 12). */
+  executesTests(adapter: string, op: string): boolean;
   availability(): readonly AdapterAvailability[];
   call(
     adapter: string,

@@ -215,6 +215,56 @@ describe('the kind an operation\'s output is cited as (Prompt 10)', () => {
   });
 });
 
+describe('whether an operation\'s output is test execution output (Prompt 12)', () => {
+  test('only an operation registered as executing tests is reported as executing them', () => {
+    const registry = emptyRegistry();
+    const passing = () => Promise.resolve({ value: { failed: 0 }, excerpt: '# fail 0' });
+    registry.register(readOnlyOperation({
+      adapter: 'probe',
+      op: 'run_suite',
+      description: 'A test-only double registered as running tests: nothing like it ships.',
+      args: { suite: STRING_ARG },
+      required: ['suite'],
+      evidenceKind: 'command',
+      observationSafe: true,
+      executesTests: true,
+      handler: passing,
+    }));
+    registry.register(readOnlyOperation({
+      adapter: 'probe',
+      op: 'run_tests',
+      description: 'Named like a test runner, and registered as ordinary command output.',
+      args: { suite: STRING_ARG },
+      required: ['suite'],
+      evidenceKind: 'command',
+      observationSafe: true,
+      handler: passing,
+    }));
+    const instance = new AdapterFramework({
+      registry,
+      clock: new FixedClock(),
+      worktreeRoot: space.worktree,
+      installationRoot: join(space.root, 'installation'),
+      home: join(space.root, 'home'),
+      paths: PATHS,
+      evidence: EVIDENCE,
+      execution: READ_ONLY_EXECUTION,
+      budgets: BUDGETS,
+    });
+    assert.equal(instance.executesTests('probe', 'run_suite'), true);
+    assert.equal(instance.executesTests('probe', 'run_tests'), false, 'a name is not a registration');
+  });
+
+  test('is false for an operation registered without it, and for one nobody registered', () => {
+    const instance = framework();
+    for (const op of ['safe_read', 'tail_log', 'capture_screen']) {
+      assert.equal(instance.executesTests('probe', op), false, op);
+    }
+    assert.equal(instance.executesTests('probe', 'unheard_of'), false);
+    assert.equal(instance.executesTests('elsewhere', 'safe_read'), false);
+  });
+});
+
 describe('the comparators, one per evidence kind', () => {
   const exact: readonly EvidenceKind[] = ['file', 'git', 'command', 'query', 'http'];
 

@@ -148,6 +148,11 @@ export class FakeAdapters implements AdapterRegistry {
     return undefined;
   }
 
+  /** Nor does any operation in it run tests (Prompt 12). */
+  executesTests(): boolean {
+    return false;
+  }
+
   availability(): readonly AdapterAvailability[] {
     const declared = this.world.availability ?? {};
     const adapters = ['repo', 'git', 'pm', 'runtime', 'host'];

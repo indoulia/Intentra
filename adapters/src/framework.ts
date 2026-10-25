@@ -188,6 +188,10 @@ export class AdapterFramework implements AdapterRegistry {
     return this.#registry.get(adapter, op)?.evidenceKind;
   }
 
+  executesTests(adapter: string, op: string): boolean {
+    return this.#registry.get(adapter, op)?.executesTests === true;
+  }
+
   availability(): readonly AdapterAvailability[] {
     return this.#availability;
   }

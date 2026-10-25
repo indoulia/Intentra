@@ -41,7 +41,7 @@ const RESULTS_FILE = 'src/test-results.txt';
 const TEST_RUN = { adapter: 'host', op: 'run_tests', args: { suite: 'unit' } };
 const SCREENSHOT = { adapter: 'runtime.browser', op: 'screenshot', args: { url: '/empty' } };
 
-/** A registry whose test-run and screenshot operations are registered as the real ones would be. */
+/** A registry whose test-run and screenshot operations are registered as the real ones would be; host.run_tests is a test-only double (Prompt 12). */
 function adapters(replays: ReadonlyArray<readonly [string, ReplayResult]> = [], kinds: ReadonlyArray<readonly [string, EvidenceKind]> = []) {
   return new FixtureAdapters({
     files: [{ path: RESULTS_FILE, content: PASSING }, { path: 'src/a.ts', content: 'export const a = 1;' }],
@@ -55,6 +55,7 @@ function adapters(replays: ReadonlyArray<readonly [string, ReplayResult]> = [], 
       ['runtime.browser.screenshot', 'screenshot'],
       ...kinds,
     ]),
+    testExecution: new Set(['host.run_tests']),
   });
 }
 
@@ -123,7 +124,7 @@ function outcomeOf(report: Awaited<ReturnType<typeof receive>>['report'], id: st
   return found;
 }
 
-function verdictOf(persisted: HandoffEnvelope, criterion: number) {
+function verdictOf(persisted: HandoffEnvelope, criterion: number, registry: AdapterRegistry = adapters()) {
   const result = computeDod({
     workItemId: CONTEXT.workItemId,
     runId: CONTEXT.runId,
@@ -134,6 +135,7 @@ function verdictOf(persisted: HandoffEnvelope, criterion: number) {
     graphStages: ['IMPLEMENTATION', 'VALIDATION', 'COMPLETION'],
     sourceDrift: null,
     computedAt: fx.T2,
+    executesTests: (adapter, op) => registry.executesTests(adapter, op),
   });
   const found = result.report.criteria.find((c) => c.criterion === criterion);
   assert.ok(found !== undefined);
@@ -432,6 +434,7 @@ describe('a replay recording takes each operation\'s kind from its live registra
     const outcome = outcomeOf(report, 'R-03');
     assert.equal(outcome.status, 'UNREPLAYABLE');
     assert.match(outcome.detail, /host\.run_tests has no registered evidence kind/);
-    assert.equal(verdictOf(persisted, 12).verdict, 'NOT_VALIDATED');
+    assert.equal(registry.executesTests('host', 'run_tests'), false, 'nor where test execution comes from (Prompt 12)');
+    assert.equal(verdictOf(persisted, 12, registry).verdict, 'NOT_VALIDATED');
   });
 });

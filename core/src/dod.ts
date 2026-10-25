@@ -48,6 +48,8 @@ export interface DodInput {
   readonly graphStages: readonly TemplateStage[];
   readonly sourceDrift: SourceDrift | null;
   readonly computedAt: string;
+  /** Whether the adapter registry registers `adapter.op` as running tests (Prompt 12). Absent, none does. */
+  readonly executesTests?: (adapter: string, op: string) => boolean;
 }
 
 /**
@@ -88,6 +90,8 @@ function metDeficiency(
   /** Kinds whose content no comparator checks: their VERIFIED confirms only the producing call. */
   provenanceOnly: ReadonlySet<string>,
   profile: DodProfile,
+  /** For a behavioural criterion, whether a locator's operation is registered as running tests; `null` for any other (Prompt 12). */
+  runsTests: ((locator: Evidence['locator']) => boolean) | null,
 ): string | null {
   /* Prompt 8: the profile's kinds are the "required strength" of DEFINITION_OF_DONE section 4; none declared accepts none. */
   const accepted = profile.evidence_requirements[String(verdict.criterion)]?.kinds ?? [];
@@ -122,14 +126,19 @@ function metDeficiency(
         `${id} is ${item.kind} evidence, which profile ${profile.profile_id} does not accept for `
         + `criterion ${verdict.criterion} (accepted: ${accepted.join(', ')})`,
       );
+    } else if (runsTests !== null && !runsTests(item.locator)) {
+      problems.push(
+        `${id} is output of ${item.locator.adapter}.${String(item.locator.op)}, which is not registered `
+        + `as executing tests, and criterion ${verdict.criterion} needs test execution output`,
+      );
     } else {
       qualifying += 1;
     }
   }
   if (qualifying > 0 && !disqualified) return null;
   return `${reported}: ${problems.join('; ')}. MET needs at least one cited item of an accepted `
-    + 'kind whose content replayed VERIFIED and none MISMATCH or UNREPLAYABLE, so the verdict is '
-    + 'NOT_VALIDATED';
+    + `kind${runsTests === null ? '' : ' from an operation registered as executing tests'} whose `
+    + 'content replayed VERIFIED and none MISMATCH or UNREPLAYABLE, so the verdict is NOT_VALIDATED';
 }
 
 /** Which stage owes a criterion, from the stage descriptors. */
@@ -178,6 +187,10 @@ export function computeDod(input: DodInput): DodComputation {
   const provenanceOnly = new Set<string>(input.policies.evidence.comparators
     .filter((c) => c.comparator === 'not_kernel_verifiable')
     .map((c) => c.kind));
+  /* Prompt 12: behavioural criteria need test execution output (DEFINITION_OF_DONE section 4), which only a registration attests. */
+  const executesTests = input.executesTests ?? (() => false);
+  const runsTests = (locator: Evidence['locator']): boolean =>
+    locator.op !== null && executesTests(locator.adapter, locator.op);
 
   const criteria: CompletionReport['criteria'][number][] = [];
   const rationale: string[] = [];
@@ -188,7 +201,10 @@ export function computeDod(input: DodInput): DodComputation {
     const ownerRole = owner?.owner_role ?? 'validator';
 
     if (supplied !== undefined) {
-      const deficiency = supplied.verdict === 'MET' ? metDeficiency(supplied, provenanceOnly, profile) : null;
+      const behavioural = owner?.evidence_class === 'behavioural';
+      const deficiency = supplied.verdict === 'MET'
+        ? metDeficiency(supplied, provenanceOnly, profile, behavioural ? runsTests : null)
+        : null;
       criteria.push({
         criterion,
         verdict: deficiency === null ? supplied.verdict : 'NOT_VALIDATED',

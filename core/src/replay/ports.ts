@@ -34,7 +34,7 @@ import {
   type ToolSurfaceReport,
   type WorkItem,
 } from '@intentra/contracts';
-import { registeredEvidenceKind } from '@intentra/adapters';
+import { registeredEvidenceKind, registeredExecutesTests } from '@intentra/adapters';
 import { argsKey, recordedCall, type ReplayFixture } from './fixture.js';
 
 /**
@@ -188,6 +188,11 @@ export class RecordedAdapterRegistry implements AdapterRegistry {
   /** The live registration's kind, never the recording's: a recording is untrusted input (Prompt 11). */
   evidenceKind(adapter: string, op: string): EvidenceKind | undefined {
     return registeredEvidenceKind(adapter, op);
+  }
+
+  /** The live registration's, never the recording's (Prompt 12). */
+  executesTests(adapter: string, op: string): boolean {
+    return registeredExecutesTests(adapter, op);
   }
 
   availability(): readonly AdapterAvailability[] {

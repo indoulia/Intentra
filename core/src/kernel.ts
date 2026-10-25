@@ -2691,6 +2691,7 @@ export class Kernel {
       graphStages: state.graph.stages,
       sourceDrift: drift,
       computedAt: clock.now().toISOString(),
+      executesTests: (adapter, op) => this.ports.adapters.executesTests(adapter, op),
     });
 
     store.putNamed(
