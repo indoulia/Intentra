@@ -11,6 +11,8 @@ import type { ScriptedSubstrate } from '../doubles.js';
  */
 export class ScriptedTransport implements DispatchTransport {
   readonly name = 'scripted-transport';
+  /** What each dispatch was told, in the order the sessions opened (Prompt 9). */
+  readonly briefed: { readonly stage: string; readonly systemPrompt: string }[] = [];
 
   constructor(private readonly script: ScriptedSubstrate) {}
 
@@ -20,6 +22,7 @@ export class ScriptedTransport implements DispatchTransport {
 
   open(request: TransportRequest): TransportSession {
     const input = JSON.parse(request.prompt.slice(request.prompt.indexOf('\n\n') + 2)) as InputPackage;
+    this.briefed.push({ stage: input.stage, systemPrompt: request.systemPrompt });
     const tools = request.tools.map((tool) => this.qualify(tool.name));
     const script = this.script;
 

@@ -245,7 +245,7 @@ export async function buildKernel(options: KernelBuildOptions): Promise<BuiltKer
     registries: options.registries ?? new EnumeratedRegistries(skills, models, enumeratedAt),
     agents: options.agents ?? new MvpAgentCatalog(policies),
     substrate: options.substrate ?? new ClaudeAgentSdkSubstrate(
-      options.transport === undefined ? {} : { transport: options.transport },
+      options.transport === undefined ? { policies } : { transport: options.transport, policies },
     ),
     host: hostIdentity(hostOptions),
     human: options.human ?? new CliHumanChannel(options.operator ?? UNATTENDED_OPERATOR),

@@ -1,4 +1,12 @@
-import { SCHEMA_ID, SCHEMAS, type InputPackage, type JsonSchema } from '@intentra/contracts';
+import {
+  SCHEMA_ID,
+  SCHEMAS,
+  type DodCriterionId,
+  type DodProfile,
+  type InputPackage,
+  type JsonSchema,
+} from '@intentra/contracts';
+import type { PolicySet } from '@intentra/policies';
 import type { RoleSpec } from '../roles/specs.js';
 
 /**
@@ -64,6 +72,21 @@ const UNIVERSAL_OBLIGATIONS: readonly string[] = [
   + 'and no adapter consults it.',
 ];
 
+/** How a dod_verdicts MET is judged, for every dispatch that owes one; the kinds themselves come from the profile. */
+const EVIDENCE_RULES: readonly string[] = [
+  'An evidence item\'s kind says what the item is: the kind of source and operation that '
+  + 'produced it. Label every evidence item by what it actually represents, and never relabel '
+  + 'one to a kind a criterion accepts. The kind is your statement about the item, and it is '
+  + 'recorded with your envelope.',
+  'A MET stands only where at least one cited item is of a kind the criterion accepts and its '
+  + 'content replayed VERIFIED, and no cited item came back MISMATCH or UNREPLAYABLE. An '
+  + 'accepted kind does not excuse a failed replay, and a VERIFIED replay does not make an '
+  + 'unaccepted kind count. A MET that falls short of this is recorded as NOT_VALIDATED.',
+  'Where the evidence a criterion needs is unavailable or insufficient, say so: NOT_VALIDATED '
+  + 'with the reason, or NOT_MET where you established that the criterion is not met. Never '
+  + 'fabricate, relabel or stretch evidence to reach MET.',
+];
+
 /**
  * The system specification for one dispatch.
  *
@@ -72,10 +95,14 @@ const UNIVERSAL_OBLIGATIONS: readonly string[] = [
  *   package does not specify still gets the universal obligations and its own mandate — it
  *   is degraded, and being explicit about that is better than inventing limits for a role
  *   nobody wrote down.
+ * @param policies the policy set the Definition of Done is computed with, from which each owed
+ *   criterion's accepted evidence kinds are read. Without it the kinds are said to be unstated,
+ *   never guessed.
  */
 export function renderSystemSpecification(
   input: InputPackage,
   spec: RoleSpec | undefined,
+  policies?: PolicySet,
 ): string {
   const lines: string[] = [];
   lines.push(
@@ -98,6 +125,10 @@ export function renderSystemSpecification(
   }
 
   lines.push('', 'Obligations that hold for every dispatch', ...UNIVERSAL_OBLIGATIONS.map(bullet));
+
+  if (input.dod_criteria_owed.length > 0) {
+    lines.push('', 'Evidence each owed criterion accepts', ...evidenceRequirements(input, policies));
+  }
 
   lines.push(
     '',
@@ -215,6 +246,97 @@ export function renderDispatchBrief(input: InputPackage): string {
     '',
     JSON.stringify(input, null, 2),
   ].join('\n');
+}
+
+/**
+ * What each owed criterion accepts as evidence (Prompt 9).
+ *
+ * Read from the same profile and evidence policy `computeDod` judges against, rather than written
+ * down here, so what an agent is told and what completion enforces cannot drift apart.
+ */
+function evidenceRequirements(input: InputPackage, policies: PolicySet | undefined): string[] {
+  const unstated = (why: string): string => indent(
+    `The kinds each criterion accepts cannot be stated for this dispatch: ${why}. That relaxes `
+    + 'nothing below: a kind the profile does not accept still cannot carry a MET.',
+  );
+  if (policies === undefined) {
+    return [unstated('no policy set was supplied'), ...EVIDENCE_RULES.map(bullet)];
+  }
+
+  const provenanceOnly = policies.evidence.comparators
+    .filter((c) => c.comparator === 'not_kernel_verifiable')
+    .map((c) => c.kind as string);
+  const rules = [...EVIDENCE_RULES, ...provenanceRule(provenanceOnly)].map(bullet);
+  const named = (criterion: DodCriterionId): string => `criterion ${criterion} (`
+    + `${policies.dod.criteria.find((c) => c.criterion === criterion)?.name ?? 'unnamed'}): `;
+  const caveat = (kinds: readonly string[]): string => {
+    const alone = kinds.filter((kind) => provenanceOnly.includes(kind));
+    return alone.length === 0 ? '' : `; ${alone.join(' or ')} never carries a MET by itself`;
+  };
+
+  if (input.dod_profile_ref === null) {
+    return [
+      indent(
+        'No DoD profile is bound to this dispatch yet. The run selects one later and judges your '
+        + 'dod_verdicts against it, so each criterion shows what every profile that includes it '
+        + 'accepts.',
+      ),
+      ...input.dod_criteria_owed.map((criterion) => {
+        const groups = new Map<string, { kinds: readonly string[]; profiles: string[] }>();
+        for (const id of policies.dod.profiles.map((p) => p.profile_id).sort()) {
+          const profile = policies.profile(id);
+          if (!profile.criteria.includes(criterion)) continue;
+          const kinds = profile.evidence_requirements[String(criterion)]?.kinds ?? [];
+          const group = groups.get(kinds.join(', ')) ?? { kinds, profiles: [] };
+          group.profiles.push(id);
+          groups.set(kinds.join(', '), group);
+        }
+        const all = [...groups.values()];
+        if (all.length === 0) return bullet(`${named(criterion)}no profile includes it, so no verdict on it is counted.`);
+        const accepted = all.length === 1
+          ? `${all[0]?.kinds.join(', ')} in every profile that includes it`
+          : all.map((g) => `${g.kinds.length === 0 ? 'no kind' : g.kinds.join(', ')} in `
+            + `${g.profiles.length === 1 ? 'profile' : 'profiles'} ${g.profiles.join(', ')}`).join('; ');
+        return bullet(`${named(criterion)}accepts ${accepted}${caveat(all.flatMap((g) => g.kinds))}.`);
+      }),
+      ...rules,
+    ];
+  }
+
+  /* The kernel binds a stage dispatch to `policies/dod/<profile_id>.json` (core/src/kernel.ts). */
+  const bound = policies.dod.profiles.find((p) => input.dod_profile_ref === `policies/dod/${p.profile_id}.json`);
+  if (bound === undefined) {
+    return [unstated(`${input.dod_profile_ref} names no profile in the policy set`), ...rules];
+  }
+  const profile: DodProfile = policies.profile(bound.profile_id);
+  return [
+    indent(`Your dod_verdicts are judged against DoD profile ${profile.profile_id}, which accepts:`),
+    ...input.dod_criteria_owed.map((criterion) => {
+      const requirement = profile.evidence_requirements[String(criterion)];
+      if (!profile.criteria.includes(criterion)) {
+        return bullet(`${named(criterion)}not a criterion of profile ${profile.profile_id}, so no verdict on it is counted.`);
+      }
+      if (requirement === undefined) {
+        return bullet(`${named(criterion)}no kind is accepted by profile ${profile.profile_id}, so no MET can stand on it.`);
+      }
+      return bullet(
+        `${named(criterion)}accepts ${requirement.kinds.join(', ')}${caveat(requirement.kinds)}. `
+        + `Profile note: ${requirement.note}.`,
+      );
+    }),
+    ...rules,
+  ];
+}
+
+/** What VERIFIED means for kinds whose content no comparator checks: the producing call, not the content. */
+function provenanceRule(kinds: readonly string[]): string[] {
+  if (kinds.length === 0) return [];
+  return [
+    `${kinds.join(' and ')} evidence is VERIFIED when the call it cites is in this dispatch's call `
+    + 'log with the same adapter, operation and arguments, and succeeded. That confirms the call, '
+    + `not what the item shows, so ${kinds.join(' or ')} evidence never carries a MET by itself, `
+    + 'even for a criterion that accepts it.',
+  ];
 }
 
 function bullet(text: string): string {

@@ -6,6 +6,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fixtures as fx, type SubstrateResult } from '@intentra/contracts';
+import { loadPolicies } from '@intentra/policies';
 import {
   ClaudeAgentSdkSubstrate,
   ClaudeCodeTransport,
@@ -616,6 +617,19 @@ describe('session isolation', () => {
       Object.keys(opened).sort(),
       ['invoke', 'maxBudgetUsd', 'maxTurns', 'model', 'prompt', 'systemPrompt', 'tools'],
     );
+  });
+
+  test('the system prompt states the kinds each owed criterion accepts, from the policy set given (Prompt 9)', async () => {
+    const policies = loadPolicies();
+    const transport = new FakeTransport([[{ kind: 'surface' }, { kind: 'result', text: ENVELOPE_TEXT }]]);
+    const substrate = new ClaudeAgentSdkSubstrate({ transport, policies });
+    await substrate.dispatch(input(), new RecordingInvoker());
+    const prompt = transport.opened[0]?.systemPrompt ?? '';
+    for (const criterion of [3, 4]) {
+      const kinds = policies.profile('audit').evidence_requirements[String(criterion)]?.kinds ?? [];
+      assert.ok(kinds.length > 0);
+      assert.match(prompt, new RegExp(`- criterion ${criterion} \\([^)]*\\): accepts ${kinds.join(', ')}\\.`));
+    }
   });
 
   test('only the granted operations are advertised to the transport', async () => {

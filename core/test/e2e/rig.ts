@@ -84,6 +84,8 @@ export interface WorkOutcome {
   readonly built: BuiltKernel;
   readonly result: RunResult;
   readonly substrate: ScriptedSubstrate;
+  /** The fake wire under the Claude substrate, where `viaTransport` put one there. */
+  readonly transport: ScriptedTransport | null;
   /** The run log, or `[]` where no run was ever started. */
   readonly log: readonly Event[];
   readonly before: WorldFingerprint;
@@ -101,6 +103,7 @@ export interface WorkOutcome {
 export async function work(options: WorkOptions): Promise<WorkOutcome> {
   const source = options.source ?? 'NATURAL_LANGUAGE';
   const substrate = new ScriptedSubstrate(options.script);
+  const transport = options.viaTransport === true ? new ScriptedTransport(substrate) : null;
   const before = options.world.fingerprint();
 
   const built = await buildKernel({
@@ -108,7 +111,7 @@ export async function work(options: WorkOptions): Promise<WorkOutcome> {
     repositoryPath: options.world.repositoryPath,
     intake: { source, raw: options.raw, received_at: new Date().toISOString() },
     env: { AGENTOS_MODELS: JSON.stringify(options.models ?? [DECLARED_MODEL]) },
-    ...(options.viaTransport === true ? { transport: new ScriptedTransport(substrate) } : { substrate }),
+    ...(transport === null ? { substrate } : { transport }),
     projectManagement: options.projectManagement ?? null,
     runtime: options.runtime ?? null,
     ...(options.registries === undefined ? {} : { registries: options.registries }),
@@ -146,7 +149,7 @@ export async function work(options: WorkOptions): Promise<WorkOutcome> {
     ? built.store.readRunLog(result.workItemId, result.runId).records
     : [];
 
-  return { built, result, substrate, log, before, after, unresolvedIntake: admitted.unresolved };
+  return { built, result, substrate, transport, log, before, after, unresolvedIntake: admitted.unresolved };
 }
 
 /**

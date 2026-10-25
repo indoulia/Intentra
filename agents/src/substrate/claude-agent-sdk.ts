@@ -21,6 +21,7 @@ import {
   type ToolInvoker,
   type ToolSurfaceReport,
 } from '@intentra/contracts';
+import type { PolicySet } from '@intentra/policies';
 import { renderDispatchBrief, renderSystemSpecification } from '../dispatch/brief.js';
 import { parseEnvelope } from '../dispatch/envelope.js';
 import { isSpawningToolName } from '../dispatch/tool-grants.js';
@@ -150,16 +151,20 @@ export interface ClaudeAgentSdkSubstrateOptions {
   readonly transport?: DispatchTransport;
   /** The role specifications whose hard limits and declarations reach the agent. */
   readonly specs?: readonly RoleSpec[];
+  /** The kernel's policy set, whose DoD profiles tell each dispatch the evidence kinds its criteria accept. */
+  readonly policies?: PolicySet;
 }
 
 export class ClaudeAgentSdkSubstrate implements AgentSubstrate {
   readonly name: string;
   readonly #transport: DispatchTransport;
   readonly #specs: ReadonlyMap<string, RoleSpec>;
+  readonly #policies: PolicySet | undefined;
 
   constructor(options: ClaudeAgentSdkSubstrateOptions = {}) {
     this.#transport = options.transport ?? new ClaudeCodeTransport();
     this.name = this.#transport.name;
+    this.#policies = options.policies;
     this.#specs = new Map(
       (options.specs ?? MVP_ROLE_SPECS).map((spec) => [`${spec.role}/${spec.mandate_name}`, spec]),
     );
@@ -311,7 +316,7 @@ export class ClaudeAgentSdkSubstrate implements AgentSubstrate {
     try {
       session = this.#transport.open({
         model,
-        systemPrompt: renderSystemSpecification(input, spec),
+        systemPrompt: renderSystemSpecification(input, spec, this.#policies),
         prompt: renderDispatchBrief(input),
         tools: toolsOf(grants),
         maxTurns: input.budget.max_turns,

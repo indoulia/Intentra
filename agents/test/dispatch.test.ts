@@ -5,9 +5,13 @@ import {
   SCHEMA_ID,
   SCHEMAS,
   type ContextSectionName,
+  type DodCriterionId,
+  type DodProfile,
+  type DodProfileId,
+  type EvidenceKind,
   type InputPackage,
 } from '@intentra/contracts';
-import { loadPolicies } from '@intentra/policies';
+import { loadPolicies, type PolicySet } from '@intentra/policies';
 import {
   buildInputPackage,
   materializeSections,
@@ -289,6 +293,167 @@ describe('the brief renders the specification and nothing else', () => {
     }));
     assert.match(renderSystemSpecification(input, undefined), /advisory_notes[^\n]*untrusted/);
     assert.ok(renderDispatchBrief(input).includes('read whatever you like'));
+  });
+});
+
+/** The kinds the rendered specification says criterion `criterion` accepts, read as the agent reads them. */
+function shownKinds(rendered: string, criterion: DodCriterionId): readonly string[] | null {
+  const line = new RegExp(`- criterion ${criterion} \\([^)]*\\): accepts ([a-z, ]+?)(?: in |[.;])`).exec(rendered);
+  return line?.[1]?.split(', ') ?? null;
+}
+
+/** The audit dispatch's input, bound to `profile` and owing `owed`. */
+function owing(profile: DodProfileId | null, owed: readonly DodCriterionId[]): InputPackage {
+  return {
+    ...buildInputPackage(request({ dod_profile_ref: profile === null ? null : `policies/dod/${profile}.json` })),
+    dod_criteria_owed: [...owed],
+  };
+}
+
+/** `base` with one profile's requirement for one criterion replaced, or removed where `kinds` is null. */
+function withKinds(
+  base: PolicySet,
+  profileId: DodProfileId,
+  criterion: DodCriterionId,
+  kinds: readonly EvidenceKind[] | null,
+): PolicySet {
+  const change = (profile: DodProfile): DodProfile => {
+    if (profile.profile_id !== profileId) return profile;
+    const { [String(criterion)]: _replaced, ...rest } = profile.evidence_requirements;
+    return {
+      ...profile,
+      evidence_requirements: kinds === null
+        ? rest
+        : { ...rest, [String(criterion)]: { kinds, note: 'altered for this test' } },
+    };
+  };
+  return {
+    ...base,
+    dod: { ...base.dod, profiles: base.dod.profiles.map(change) },
+    profile: (id) => change(base.profile(id)),
+  };
+}
+
+describe('each owed criterion is shown the evidence kinds its profile accepts (Prompt 9)', () => {
+  test('the audit dispatch is shown, for criteria 3 and 4, exactly the kinds profile audit accepts', () => {
+    const input = buildInputPackage(request());
+    assert.deepEqual([...input.dod_criteria_owed], [3, 4]);
+    const rendered = renderSystemSpecification(input, undefined, policies);
+    assert.match(rendered, /judged against DoD profile audit/);
+    for (const criterion of input.dod_criteria_owed) {
+      assert.deepEqual(
+        shownKinds(rendered, criterion),
+        policies.profile('audit').evidence_requirements[String(criterion)]?.kinds,
+      );
+    }
+  });
+
+  test('another profile and other criteria are shown their own kinds, not one fixed list', () => {
+    const owed = [8, 12, 13];
+    const rendered = renderSystemSpecification(owing('fix', owed), undefined, policies);
+    assert.match(rendered, /judged against DoD profile fix/);
+    const shown = owed.map((criterion) => shownKinds(rendered, criterion));
+    assert.deepEqual(shown, owed.map((c) => policies.profile('fix').evidence_requirements[String(c)]?.kinds));
+    assert.notDeepEqual(shown[1], shown[2], 'criteria 12 and 13 accept different kinds');
+  });
+
+  test('the kinds come from the policy set given: a changed requirement changes what is shown', () => {
+    const rendered = renderSystemSpecification(
+      buildInputPackage(request()), undefined, withKinds(policies, 'audit', 3, ['git']),
+    );
+    assert.deepEqual(shownKinds(rendered, 3), ['git']);
+    assert.deepEqual(shownKinds(rendered, 4), policies.profile('audit').evidence_requirements['4']?.kinds);
+  });
+
+  test('a criterion the profile gives no accepted kind is shown that no MET can stand on it', () => {
+    const rendered = renderSystemSpecification(
+      buildInputPackage(request()), undefined, withKinds(policies, 'audit', 3, null),
+    );
+    assert.match(rendered, /- criterion 3 \([^)]*\): no kind is accepted by profile audit, so no MET can stand on it/);
+    assert.equal(shownKinds(rendered, 3), null);
+  });
+
+  test('a criterion the bound profile does not include is shown that a verdict on it is not counted', () => {
+    const rendered = renderSystemSpecification(owing('documentation', [3]), undefined, policies);
+    assert.match(rendered, /- criterion 3 \([^)]*\): not a criterion of profile documentation, so no verdict on it is counted/);
+    assert.equal(shownKinds(rendered, 3), null);
+  });
+
+  test('the context dispatch, before a profile is bound, is shown what every profile including criterion 1 accepts', () => {
+    const spec = catalog.spec('context-discovery', 'context');
+    assert.ok(spec !== undefined);
+    const input = buildInputPackage(request({ spec, stage: 'CONTEXT_DISCOVERY', dod_profile_ref: null }));
+    assert.deepEqual([...input.dod_criteria_owed], [1]);
+    const rendered = renderSystemSpecification(input, undefined, policies);
+    assert.match(rendered, /No DoD profile is bound to this dispatch yet/);
+    const lists = new Set(policies.dod.profiles
+      .filter((profile) => profile.criteria.includes(1))
+      .map((profile) => JSON.stringify(profile.evidence_requirements['1']?.kinds)));
+    assert.equal(lists.size, 1, 'every profile that includes criterion 1 accepts the same kinds today');
+    assert.deepEqual(shownKinds(rendered, 1), JSON.parse([...lists][0] ?? 'null'));
+    assert.match(rendered, /- criterion 1 \([^)]*\): accepts [a-z, ]+ in every profile that includes it\./);
+  });
+
+  test('where the profiles a run could select disagree, each list is shown with the profiles holding it', () => {
+    const rendered = renderSystemSpecification(owing(null, [1]), undefined, withKinds(policies, 'fix', 1, ['ticket']));
+    const others = policies.dod.profiles
+      .filter((profile) => profile.profile_id !== 'fix' && profile.criteria.includes(1))
+      .map((profile) => profile.profile_id)
+      .sort();
+    const kinds = policies.profile('documentation').evidence_requirements['1']?.kinds.join(', ');
+    assert.match(rendered, new RegExp(
+      `- criterion 1 \\([^)]*\\): accepts ${kinds} in profiles ${others.join(', ')}; ticket in profile fix\\.`,
+    ));
+  });
+
+  test('a dispatch that owes no criterion is given no evidence requirements', () => {
+    const spec = catalog.spec('context-discovery', 'resolution');
+    assert.ok(spec !== undefined);
+    const input = buildInputPackage(request({ spec, stage: 'RESOLUTION', workflow: null, dod_profile_ref: null }));
+    assert.deepEqual([...input.dod_criteria_owed], []);
+    assert.doesNotMatch(renderSystemSpecification(input, undefined, policies), /Evidence each owed criterion accepts/);
+  });
+
+  test('without the policy set, or with a profile it does not define, no kind is invented', () => {
+    const unsupplied = renderSystemSpecification(buildInputPackage(request()), undefined);
+    assert.match(unsupplied, /Evidence each owed criterion accepts/);
+    assert.match(unsupplied, /cannot be stated for this dispatch: no policy set was supplied/);
+    assert.equal(shownKinds(unsupplied, 3), null);
+    const unknown = renderSystemSpecification(
+      buildInputPackage(request({ dod_profile_ref: 'policies/dod/unheard-of.json' })), undefined, policies,
+    );
+    assert.match(unknown, /cannot be stated for this dispatch: policies\/dod\/unheard-of\.json names no profile in the policy set/);
+    assert.equal(shownKinds(unknown, 3), null);
+  });
+
+  test('the agent is told to label evidence by what it is and never to relabel it', () => {
+    const rendered = renderSystemSpecification(buildInputPackage(request()), undefined, policies);
+    assert.match(rendered, /Label every evidence item by what it actually represents/);
+    assert.match(rendered, /never relabel one to a kind a criterion accepts/);
+  });
+
+  test('the agent is told a MET needs an accepted kind and a VERIFIED replay, neither excusing the other', () => {
+    const rendered = renderSystemSpecification(buildInputPackage(request()), undefined, policies);
+    assert.match(rendered, /at least one cited item is of a kind the criterion accepts and its content replayed VERIFIED/);
+    assert.match(rendered, /no cited item came back MISMATCH or UNREPLAYABLE/);
+    assert.match(rendered, /An accepted kind does not excuse a failed replay, and a VERIFIED replay does not make an unaccepted kind count/);
+  });
+
+  test('screenshot VERIFIED is described as confirming the producing call, never the content', () => {
+    const provenanceOnly = policies.evidence.comparators
+      .filter((c) => c.comparator === 'not_kernel_verifiable')
+      .map((c) => c.kind);
+    assert.deepEqual(provenanceOnly, ['screenshot']);
+    const rendered = renderSystemSpecification(owing('fix', [8]), undefined, policies);
+    assert.match(rendered, /screenshot evidence is VERIFIED when [^\n]*That confirms the call, not what the item shows/);
+    assert.match(rendered, /- criterion 8 \([^)]*\): accepts screenshot, http, command; screenshot never carries a MET by itself/);
+  });
+
+  test('unavailable or insufficient evidence is to be reported honestly, never fabricated or relabelled', () => {
+    const rendered = renderSystemSpecification(buildInputPackage(request()), undefined, policies);
+    assert.match(rendered, /Where the evidence a criterion needs is unavailable or insufficient, say so/);
+    assert.match(rendered, /NOT_VALIDATED with the reason/);
+    assert.match(rendered, /Never fabricate, relabel or stretch evidence to reach MET/);
   });
 });
 
