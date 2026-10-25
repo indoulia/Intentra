@@ -346,6 +346,8 @@ interface ResolutionAnswer {
   /** The envelope the proposal arrived in, whose `evidence[]` is the pool it cites into. */
   readonly envelope: HandoffEnvelope | null;
   readonly detail: string;
+  /** The session that answered, whose calls alone its evidence replays against; `null` if none ran. */
+  readonly dispatchId: string | null;
 }
 
 /**
@@ -540,12 +542,13 @@ export class Kernel {
      * believed â€” the same disbelief step every other envelope gets, applied to the envelope
      * that decides what the work *is*.
      */
-    const verification = await this.verifyResolution(
-      resolution.envelope, resolution.proposal, record, prologue,
-    );
-    if (verification !== null && resolution.envelope !== null) {
+    const recordVerification = (
+      envelope: HandoffEnvelope | null,
+      verification: VerificationReport | null,
+    ): void => {
+      if (verification === null || envelope === null) return;
       logPrologue('evidence_verification', {
-        envelope_id: resolution.envelope.envelope_id,
+        envelope_id: envelope.envelope_id,
         results: verification.outcomes.map((o) => ({
           evidence_id: o.evidence_id,
           status: o.status,
@@ -554,7 +557,11 @@ export class Kernel {
         })),
         mismatch_count: verification.mismatchCount,
       }, 'RESOLUTION');
-    }
+    };
+    const verification = await this.verifyResolution(
+      resolution.envelope, resolution.proposal, record, prologue, resolution.dispatchId,
+    );
+    recordVerification(resolution.envelope, verification);
 
     const registry = this.capabilityRegistry();
     logPrologue('note', {
@@ -610,6 +617,7 @@ export class Kernel {
         logPrologue,
         prologueMeter,
         admission.violations,
+        resolution.lastAttempt + 1,
       );
       if (second.blockerKind !== null) {
         return this.block(
@@ -628,8 +636,9 @@ export class Kernel {
         );
       }
       const secondVerification = await this.verifyResolution(
-        second.envelope, second.proposal, record, prologue,
+        second.envelope, second.proposal, record, prologue, second.dispatchId,
       );
+      recordVerification(second.envelope, secondVerification);
       const retry = admitWorkItem({
         ...admissionInput,
         proposal: second.proposal,
@@ -701,11 +710,14 @@ export class Kernel {
     proposal: ProposedWorkItem,
     intake: IntakeRecord,
     prologue: readonly Event[],
+    /** The session that produced the envelope. Only its calls are this proposal's (Prompt 7A D4). */
+    dispatchId: string | null,
   ): Promise<VerificationReport | null> {
-    if (envelope === null) return null;
+    if (envelope === null || dispatchId === null) return null;
     const calls = prologue
       .filter((e): e is Extract<Event, { event: 'adapter_call' }> => e.event === 'adapter_call')
-      .map((e) => e.data);
+      .map((e) => e.data)
+      .filter((call) => call.dispatch_id === dispatchId);
     return verifyEvidence({
       envelope,
       policy: this.ports.policies.evidence,
@@ -713,7 +725,7 @@ export class Kernel {
       callContext: {
         workItemId: intake.intake_id,
         runId: intake.intake_id,
-        dispatchId: 'd_res',
+        dispatchId,
         mandate: { in_scope: proposal.scope.paths, out_of_scope: [] },
         grantsHeld: [],
         stageMutating: false,
@@ -2558,7 +2570,7 @@ export class Kernel {
         : String(resolution.proposal.external_identity.value),
     );
     const verification = await this.verifyResolution(
-      resolution.envelope, resolution.proposal, args.intake, events,
+      resolution.envelope, resolution.proposal, args.intake, events, resolution.dispatchId,
     );
     const registry = this.capabilityRegistry();
 
@@ -3248,25 +3260,38 @@ export class Kernel {
     log: PrologueLogger,
     meter: Meter,
     priorViolations: readonly Violation[] = [],
+    /* Prompt 7A D4: a re-dispatched proposal counts on from the attempts before it. */
+    firstAttempt = 1,
   ): Promise<ResolutionAnswer & {
       /** Set when every attempt the FAILED rule allows answered malformed: a block, not a refusal. */
       readonly blockerKind: BlockerKind | null;
+      readonly lastAttempt: number;
     }> {
     /* WP-8 smoke-2: a malformed answer is an agent-level failure (WORKFLOW_STATE_MACHINE 4.2), bounded by the graph's own rule. */
     let escalated = false;
     let failedModel: string | null = null;
-    for (let attempt = 1; ; attempt += 1) {
+    for (let attempt = firstAttempt; ; attempt += 1) {
       const outcome = await this.dispatchResolutionAttempt(
         intake, orientation, log, meter, priorViolations, attempt, escalated, failedModel,
       );
+      const { dispatchId } = outcome;
       if (outcome.denied) {
-        return { proposal: null, envelope: null, detail: outcome.detail, blockerKind: 'BUDGET_EXHAUSTED' };
+        return {
+          proposal: null, envelope: null, dispatchId, detail: outcome.detail, blockerKind: 'BUDGET_EXHAUSTED', lastAttempt: attempt,
+        };
       }
       if (!outcome.malformed) {
-        return { proposal: outcome.proposal, envelope: outcome.envelope, detail: outcome.detail, blockerKind: null };
+        return {
+          proposal: outcome.proposal, envelope: outcome.envelope, dispatchId, detail: outcome.detail, blockerKind: null, lastAttempt: attempt,
+        };
       }
       const action = afterFailure(
-        { budgets: this.ports.policies.budgets, dispatchAttempt: attempt, modelAlreadyEscalated: escalated },
+        {
+          budgets: this.ports.policies.budgets,
+          /* The retry allowance is this proposal's own, as it was before attempts counted on. */
+          dispatchAttempt: attempt - firstAttempt + 1,
+          modelAlreadyEscalated: escalated,
+        },
         'RESOLUTION',
         outcome.detail,
       );
@@ -3274,8 +3299,10 @@ export class Kernel {
         return {
           proposal: null,
           envelope: null,
+          dispatchId,
           detail: `${outcome.detail}. ${action.reason}`,
           blockerKind: action.blockerKind,
+          lastAttempt: attempt,
         };
       }
       if (action.escalateModel) escalated = true;
@@ -3303,6 +3330,7 @@ export class Kernel {
       return {
         proposal: null,
         envelope: null,
+        dispatchId: null,
         detail: 'no Context Discovery resolution mandate is registered',
         malformed: false,
         model: null,
@@ -3324,11 +3352,12 @@ export class Kernel {
         'RESOLUTION',
       );
       return {
-        proposal: null, envelope: null, detail: 'no model available for resolution', malformed: false, model, denied: false,
+        proposal: null, envelope: null, dispatchId: null, detail: 'no model available for resolution', malformed: false, model, denied: false,
       };
     }
 
-    const dispatchId = 'd_res';
+    /* Prompt 7A D4: one id per session, so a result, a call and a reservation each name their own attempt. */
+    const dispatchId = attempt === 1 ? 'd_res' : `d_res_${attempt}`;
     const inputPackage: InputPackage = {
       work_item_id: intake.intake_id,
       run_id: intake.intake_id,
@@ -3406,6 +3435,7 @@ export class Kernel {
       return {
         proposal: null,
         envelope: null,
+        dispatchId: null,
         detail: deniedDetail(metered.verdict, 'resolution'),
         malformed: false,
         model,
@@ -3433,6 +3463,7 @@ export class Kernel {
       return {
         proposal: null,
         envelope: null,
+        dispatchId,
         detail: result.detail,
         malformed: result.failure === 'MALFORMED_ENVELOPE',
         model,
@@ -3485,12 +3516,13 @@ export class Kernel {
 
     if (invalid !== null) {
       return {
-        proposal: null, envelope: null, detail: `the resolution envelope ${invalid}`, malformed: true, model, denied: false,
+        proposal: null, envelope: null, dispatchId, detail: `the resolution envelope ${invalid}`, malformed: true, model, denied: false,
       };
     }
     return {
       proposal,
       envelope,
+      dispatchId,
       detail: proposal === null ? 'the resolution envelope carried no work_item proposal' : '',
       malformed: false,
       model,
