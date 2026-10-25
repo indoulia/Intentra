@@ -873,10 +873,15 @@ describe('DoD arithmetic', () => {
         fx.envelope({
           agent: 'validator',
           stage_in: 'VALIDATION',
-          evidence: verified,
+          /* Prompt 8: criterion 12 accepts only command evidence (test execution output). */
+          evidence: [...verified, fx.evidence({
+            id: 'E-2',
+            kind: 'command',
+            verification: { status: 'VERIFIED', at: fx.T2, by: 'kernel', matches: true, detail: 'replayed and matched' },
+          })],
           dod_verdicts: [
             fx.criterionVerdict({ criterion: 5, evidence: ['E-1'] }),
-            fx.criterionVerdict({ criterion: 12, evidence: ['E-1'] }),
+            fx.criterionVerdict({ criterion: 12, evidence: ['E-2'] }),
           ],
         }),
       ],

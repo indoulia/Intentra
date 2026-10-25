@@ -87,7 +87,10 @@ function metDeficiency(
   verdict: CollectedVerdict,
   /** Kinds whose content no comparator checks: their VERIFIED confirms only the producing call. */
   provenanceOnly: ReadonlySet<string>,
+  profile: DodProfile,
 ): string | null {
+  /* Prompt 8: the profile's kinds are the "required strength" of DEFINITION_OF_DONE section 4; none declared accepts none. */
+  const accepted = profile.evidence_requirements[String(verdict.criterion)]?.kinds ?? [];
   const reported = `the agent reported MET on evidence ${verdict.supplied_by_envelope} cannot carry`;
   if (verdict.evidence.length === 0) return `the agent reported MET and cites no evidence`;
 
@@ -114,13 +117,19 @@ function metDeficiency(
         `${id} is ${item.kind} evidence, whose content is not kernel-verifiable: its VERIFIED `
         + 'confirms the call that produced it, not what it shows',
       );
+    } else if (!accepted.includes(item.kind)) {
+      problems.push(
+        `${id} is ${item.kind} evidence, which profile ${profile.profile_id} does not accept for `
+        + `criterion ${verdict.criterion} (accepted: ${accepted.join(', ')})`,
+      );
     } else {
       qualifying += 1;
     }
   }
   if (qualifying > 0 && !disqualified) return null;
-  return `${reported}: ${problems.join('; ')}. MET needs at least one cited item whose content `
-    + 'replayed VERIFIED and none MISMATCH or UNREPLAYABLE, so the verdict is NOT_VALIDATED';
+  return `${reported}: ${problems.join('; ')}. MET needs at least one cited item of an accepted `
+    + 'kind whose content replayed VERIFIED and none MISMATCH or UNREPLAYABLE, so the verdict is '
+    + 'NOT_VALIDATED';
 }
 
 /** Which stage owes a criterion, from the stage descriptors. */
@@ -179,7 +188,7 @@ export function computeDod(input: DodInput): DodComputation {
     const ownerRole = owner?.owner_role ?? 'validator';
 
     if (supplied !== undefined) {
-      const deficiency = supplied.verdict === 'MET' ? metDeficiency(supplied, provenanceOnly) : null;
+      const deficiency = supplied.verdict === 'MET' ? metDeficiency(supplied, provenanceOnly, profile) : null;
       criteria.push({
         criterion,
         verdict: deficiency === null ? supplied.verdict : 'NOT_VALIDATED',

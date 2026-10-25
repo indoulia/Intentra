@@ -168,3 +168,62 @@ describe('screenshot evidence cannot independently support MET', () => {
     assert.match(criterion3(result).reason ?? '', /E-01 came back MISMATCH/);
   });
 });
+
+/**
+ * Prompt 8, item 1: a profile's `evidence_requirements[criterion].kinds` is the required
+ * strength DEFINITION_OF_DONE section 4 makes MET conditional on. The audit profile accepts
+ * `file`, `git` and `command` for criteria 3 and 4.
+ */
+describe('MET stands only on evidence of a kind the profile accepts for the criterion', () => {
+  test('content-verified evidence of a kind the profile does not accept cannot carry MET', () => {
+    const result = dod([audit([checked('E-01', 'VERIFIED', { kind: 'document' })])]);
+    const verdict = criterion3(result);
+    assert.equal(verdict.verdict, 'NOT_VALIDATED');
+    assert.match(verdict.reason ?? '', /E-01 is document evidence, which profile audit does not accept for criterion 3 \(accepted: file, git, command\)/);
+    assert.deepEqual(verdict.evidence, ['E-01'], 'the cited ids are kept as supplied');
+    assert.equal(result.report.verdict, 'INCOMPLETE');
+  });
+
+  test('content-verified evidence of an accepted kind carries MET', () => {
+    const result = dod([audit([checked('E-01', 'VERIFIED', { kind: 'git' })])]);
+    assert.equal(criterion3(result).verdict, 'MET');
+    assert.equal(result.report.verdict, 'COMPLETE');
+  });
+
+  test('an accepted verified item carries MET beside a verified item of a kind not accepted', () => {
+    const result = dod([audit([checked('E-01', 'VERIFIED', { kind: 'document' }), checked('E-02', 'VERIFIED')])]);
+    assert.equal(criterion3(result).verdict, 'MET');
+    assert.equal(result.report.verdict, 'COMPLETE');
+  });
+
+  test('a verified item of a kind not accepted does not rescue an accepted item that was not verified', () => {
+    const result = dod([audit([checked('E-01', 'VERIFIED', { kind: 'document' }), checked('E-02', 'UNVERIFIED')])]);
+    const verdict = criterion3(result);
+    assert.equal(verdict.verdict, 'NOT_VALIDATED');
+    assert.match(verdict.reason ?? '', /E-01 is document evidence, which profile audit does not accept/);
+    assert.match(verdict.reason ?? '', /E-02 came back UNVERIFIED/);
+  });
+
+  test('screenshot-only evidence cannot carry a UX criterion even where the profile accepts screenshots', () => {
+    const result = computeDod({
+      workItemId: 'wi_c_subject',
+      runId: 'run_20260904T100000Z_000001',
+      profileId: 'ui-capability',
+      policies,
+      envelopes: [fx.envelope({
+        envelope_id: 'env_ux',
+        agent: 'product-ux',
+        stage_in: 'UX_REVIEW',
+        evidence: [screenshot('E-01')],
+        dod_verdicts: [fx.criterionVerdict({ criterion: 14, evidence: ['E-01'] })],
+      })],
+      completedPriorStages: [],
+      graphStages: ['UX_REVIEW', 'COMPLETION'],
+      sourceDrift: null,
+      computedAt: fx.T2,
+    });
+    const verdict = result.report.criteria.find((c) => c.criterion === 14);
+    assert.equal(verdict?.verdict, 'NOT_VALIDATED');
+    assert.match(verdict?.reason ?? '', /E-01 is screenshot evidence, whose content is not kernel-verifiable/);
+  });
+});
