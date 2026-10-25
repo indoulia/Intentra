@@ -21,6 +21,7 @@ import {
   type DiscoveryPort,
   type DodProfileId,
   type Event,
+  type Finding,
   type FrozenGraph,
   type HandoffEnvelope,
   type HostIdentity,
@@ -261,6 +262,41 @@ type DispatchWriter = <K extends 'dispatch_intent' | 'budget' | 'gate_fired'>(
   kind: K,
   data: Extract<Event, { event: K }>['data'],
 ) => void;
+
+type IntegrityWriter = <K extends 'evidence_integrity' | 'contract_violation'>(
+  kind: K,
+  data: Extract<Event, { event: K }>['data'],
+) => void;
+
+/**
+ * What receipt found fabricated, demoted or downgraded, in events the contract already has.
+ *
+ * Prompt 7A D3. The envelope is persisted as the agent sent it plus the kernel's verification
+ * results; these events are the kernel's decisions about it. A rejected envelope's threshold
+ * violation is already in its `envelope_rejected`, so only its integrity records are written.
+ */
+function journalIntegrity(
+  write: IntegrityWriter,
+  envelopeId: string,
+  model: string,
+  verification: VerificationReport,
+  rejected: boolean,
+): void {
+  for (const outcome of verification.outcomes) {
+    if (outcome.status !== 'MISMATCH' && outcome.status !== 'UNREPLAYABLE') continue;
+    write('evidence_integrity', {
+      envelope_id: envelopeId,
+      evidence_id: outcome.evidence_id,
+      model,
+      status: outcome.status,
+      downgraded_assertions: verification.downgrades.map((d) => d.evidence_id),
+      demoted_findings: verification.demotedFindings,
+      envelope_rejected: rejected,
+    });
+  }
+  if (rejected) return;
+  for (const violation of verification.violations) write('contract_violation', violation);
+}
 
 type MeteredOutcome =
   | { readonly outcome: 'DENIED'; readonly verdict: Extract<BudgetVerdict, { readonly within: false }> }
@@ -2776,7 +2812,7 @@ export class Kernel {
         cost: { input_tokens: 0, output_tokens: 0 },
       }, { stage, dispatchId, agent: role });
       const action = await this.decide(
-        null, args, 'NO_MODEL',
+        null, args, 'NO_MODEL', [],
       );
       return { envelope: null, action, failed: true, detail: 'no model available' };
     }
@@ -2902,7 +2938,7 @@ export class Kernel {
         detail: result.detail,
         cost: { input_tokens: result.cost.input_tokens, output_tokens: result.cost.output_tokens, usd: result.cost.usd },
       }, { stage, dispatchId, agent: role });
-      const action = await this.decide(null, args, result.failure);
+      const action = await this.decide(null, args, result.failure, []);
       return { envelope: null, action, failed: true, detail: result.detail };
     }
 
@@ -2969,12 +3005,21 @@ export class Kernel {
       sampler: this.ports.random,
     });
 
+    const integrity: IntegrityWriter = (kind, data) => {
+      journal.run(kind, data as never, { stage, dispatchId, agent: role });
+    };
+
     if (receipt.outcome === 'REJECTED') {
       journal.run('envelope_rejected', {
         envelope_id: null,
         step: receipt.step,
         violations: receipt.violations,
       }, { stage, dispatchId, agent: role });
+      if (receipt.verification !== null) {
+        /* Verification ran only on an envelope past the schema, so its id is the agent's own. */
+        const { envelope_id: envelopeId } = result.envelope as HandoffEnvelope;
+        journalIntegrity(integrity, envelopeId, model, receipt.verification, true);
+      }
       journal.run('dispatch_result', {
         outcome: receipt.handleAs === 'FAILED' ? 'FAILED' : 'ABORTED',
         envelope_id: null,
@@ -2984,7 +3029,7 @@ export class Kernel {
       }, { stage, dispatchId, agent: role });
 
       if (receipt.handleAs === 'FAILED') {
-        const action = await this.decide(null, args, 'MALFORMED_ENVELOPE');
+        const action = await this.decide(null, args, 'MALFORMED_ENVELOPE', []);
         return { envelope: null, action, failed: true, detail: 'the envelope was malformed' };
       }
       return {
@@ -3019,19 +3064,7 @@ export class Kernel {
       })),
       mismatch_count: receipt.verification.mismatchCount,
     }, { stage, dispatchId, agent: role });
-
-    for (const outcome of receipt.verification.outcomes) {
-      if (outcome.status !== 'MISMATCH' && outcome.status !== 'UNREPLAYABLE') continue;
-      journal.run('evidence_integrity', {
-        envelope_id: persisted.envelope_id,
-        evidence_id: outcome.evidence_id,
-        model,
-        status: outcome.status,
-        downgraded_assertions: receipt.verification.downgrades.map((d) => d.evidence_id),
-        demoted_findings: receipt.verification.demotedFindings,
-        envelope_rejected: false,
-      }, { stage, dispatchId, agent: role });
-    }
+    journalIntegrity(integrity, persisted.envelope_id, model, receipt.verification, false);
 
     for (const { conflict, resolution } of receipt.conflicts) {
       journal.run('conflict', {
@@ -3058,7 +3091,7 @@ export class Kernel {
       },
     }, { stage, dispatchId, agent: role });
 
-    const action = await this.decide(persisted, args, null);
+    const action = await this.decide(persisted, args, null, receipt.findings);
     return { envelope: persisted, action, failed: false, detail: '' };
   }
 
@@ -3080,6 +3113,8 @@ export class Kernel {
       readonly budget: { readonly workItem: WorkItem['consumed_budget'] };
     },
     failure: string | null,
+    /** What receipt left of the envelope's findings once demotion ran. */
+    findings: readonly Finding[],
   ): Promise<KernelAction> {
     const { policies } = this.ports;
     args.state.evaluator.freshen();
@@ -3095,6 +3130,7 @@ export class Kernel {
       modelAlreadyEscalated: args.escalatedThisStage,
       requiredForExit: args.descriptor.required_outputs,
       evaluate: async (when) => args.state.evaluator.evaluate(when, args.state.predicateInputs),
+      findings,
     };
 
     if (envelope === null) {
@@ -3744,12 +3780,20 @@ export class Kernel {
       sampler: this.ports.random,
     });
 
+    const integrity: IntegrityWriter = (kind, data) => {
+      journal.run(kind, data as never, { stage, dispatchId, agent: role });
+    };
+
     if (receipt.outcome === 'REJECTED') {
       journal.run('envelope_rejected', {
         envelope_id: null,
         step: receipt.step,
         violations: receipt.violations,
       }, { stage, dispatchId, agent: role });
+      if (receipt.verification !== null) {
+        const { envelope_id: envelopeId } = result.envelope as HandoffEnvelope;
+        journalIntegrity(integrity, envelopeId, model, receipt.verification, true);
+      }
       journal.run('dispatch_result', {
         outcome: receipt.handleAs === 'FAILED' ? 'FAILED' : 'ABORTED',
         envelope_id: null,
@@ -3795,19 +3839,7 @@ export class Kernel {
       })),
       mismatch_count: receipt.verification.mismatchCount,
     }, { stage, dispatchId, agent: role });
-
-    for (const outcome of receipt.verification.outcomes) {
-      if (outcome.status !== 'MISMATCH' && outcome.status !== 'UNREPLAYABLE') continue;
-      journal.run('evidence_integrity', {
-        envelope_id: persisted.envelope_id,
-        evidence_id: outcome.evidence_id,
-        model,
-        status: outcome.status,
-        downgraded_assertions: receipt.verification.downgrades.map((d) => d.evidence_id),
-        demoted_findings: receipt.verification.demotedFindings,
-        envelope_rejected: false,
-      }, { stage, dispatchId, agent: role });
-    }
+    journalIntegrity(integrity, persisted.envelope_id, model, receipt.verification, false);
 
     for (const { conflict, resolution } of receipt.conflicts) {
       journal.run('conflict', {
@@ -4104,12 +4136,20 @@ export class Kernel {
       sampler: this.ports.random,
     });
 
+    const integrity: IntegrityWriter = (kind, data) => {
+      journal.run(kind, data as never, { stage, dispatchId, agent: role });
+    };
+
     if (receipt.outcome === 'REJECTED') {
       journal.run('envelope_rejected', {
         envelope_id: null,
         step: receipt.step,
         violations: receipt.violations,
       }, { stage, dispatchId, agent: role });
+      if (receipt.verification !== null) {
+        const { envelope_id: envelopeId } = result.envelope as HandoffEnvelope;
+        journalIntegrity(integrity, envelopeId, model, receipt.verification, true);
+      }
       journal.run('dispatch_result', {
         outcome: receipt.handleAs === 'FAILED' ? 'FAILED' : 'ABORTED',
         envelope_id: null,
@@ -4146,6 +4186,7 @@ export class Kernel {
       })),
       mismatch_count: receipt.verification.mismatchCount,
     }, { stage, dispatchId, agent: role });
+    journalIntegrity(integrity, persisted.envelope_id, model, receipt.verification, false);
 
     journal.run('dispatch_result', {
       outcome: 'ENVELOPE',

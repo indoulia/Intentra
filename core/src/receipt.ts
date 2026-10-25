@@ -88,6 +88,8 @@ export type ReceiptResult =
      * rejection is a contract violation handled as `BLOCKED`.
      */
     readonly handleAs: 'FAILED' | 'BLOCKED';
+    /** The verification pass that rejected it, where step 4 did; `null` for an earlier step. */
+    readonly verification: VerificationReport | null;
   }
   | {
     readonly outcome: 'ACCEPTED';
@@ -119,6 +121,7 @@ export async function receiveEnvelope(input: ReceiptInput): Promise<ReceiptResul
       step: 'schema',
       handleAs: 'FAILED',
       steps,
+      verification: null,
       violations: [{
         code: 'SCHEMA_INVALID',
         rule: 'AGENT_HANDOFF_CONTRACT, kernel enforcement step 1',
@@ -143,6 +146,7 @@ export async function receiveEnvelope(input: ReceiptInput): Promise<ReceiptResul
       step: 'schema',
       handleAs: 'FAILED',
       steps,
+      verification: null,
       violations: [{
         code: 'SCHEMA_INVALID',
         rule: 'AGENT_HANDOFF_CONTRACT, kernel enforcement steps 1 and 6',
@@ -177,6 +181,7 @@ export async function receiveEnvelope(input: ReceiptInput): Promise<ReceiptResul
       step: 'cross_field',
       handleAs: 'BLOCKED',
       steps,
+      verification: null,
       violations: crossField,
     };
   }
@@ -205,6 +210,7 @@ export async function receiveEnvelope(input: ReceiptInput): Promise<ReceiptResul
       step: 'reconciliation',
       handleAs: 'BLOCKED',
       steps,
+      verification: null,
       violations: reconciliation.violations,
     };
   }
@@ -280,6 +286,7 @@ export async function receiveEnvelope(input: ReceiptInput): Promise<ReceiptResul
       step: 'evidence_verification',
       handleAs: 'FAILED',
       steps,
+      verification,
       violations: verification.violations,
     };
   }

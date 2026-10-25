@@ -100,6 +100,7 @@ function context(overrides: Partial<TransitionContext> = {}): TransitionContext 
       reprobed: false,
       reason: 'fixture',
     }),
+    findings: [],
     ...overrides,
   };
 }
@@ -369,6 +370,24 @@ describe('every envelope status maps to exactly one kernel action', () => {
     if (action.kind !== 'BLOCK') throw new Error('unreachable');
     assert.equal(action.blockerKind, 'BUDGET_EXHAUSTED');
     assert.ok(action.report.length > 0, 'the block report states what was tried');
+  });
+
+  test('a block report lists the findings that survived verification, not the envelope\'s own list', async () => {
+    const kept = fx.finding({ id: 'F-kept', title: 'a writer nothing reads' });
+    const demoted = fx.finding({ id: 'F-demoted', title: 'an orphan the replay did not find' });
+    const envelope = fx.envelope({
+      status: 'REJECTED', agent: 'validator', stage_in: 'VALIDATION', findings: [kept, demoted],
+    });
+    for (const ctx of [
+      context({ loopCounters: { rework: policies.budgets.loops.rework.per_run }, findings: [kept] }),
+      context({ graph: defectGraph({ edges: [] }), findings: [kept] }),
+    ]) {
+      const action = await decideAction(envelope, ctx);
+      assert.equal(action.kind, 'BLOCK');
+      if (action.kind !== 'BLOCK') throw new Error('unreachable');
+      assert.ok(action.report.includes('HIGH: a writer nothing reads'));
+      assert.ok(!action.report.some((line) => line.includes('an orphan the replay did not find')));
+    }
   });
 
   test('the per-work-item cap bites even when the per-run cap has room', () => {

@@ -1677,6 +1677,7 @@ describe('the invariant suite', () => {
         predicate: when, value: 'TRUE', claim: null, inputs: [], reprobed: false,
         reason: 'no model was consulted to answer this',
       }),
+      findings: [],
     });
     assert.equal(action.kind, 'BLOCK', 'the state machine decides with no model in the loop');
 

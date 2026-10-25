@@ -2,6 +2,7 @@ import {
   assertNever,
   type BlockerKind,
   type EnvelopeStatus,
+  type Finding,
   type FrozenGraph,
   type HandoffEnvelope,
   type PredicateValue,
@@ -90,6 +91,8 @@ export interface TransitionContext {
   readonly evaluate: (when: string) => Promise<PredicateEvaluation>;
   /** Outputs the current stage's exit condition requires. */
   readonly requiredForExit: readonly string[];
+  /** The envelope's findings that survived verification: receipt's, never the envelope's own list. */
+  readonly findings: readonly Finding[];
 }
 
 /** Edges out of a stage whose condition is an envelope status rather than a predicate. */
@@ -379,7 +382,7 @@ export async function decideAction(
           preBlockStage: currentStage,
           report: [
             envelope.summary,
-            ...envelope.findings.map((f) => `${f.severity}: ${f.title}`),
+            ...context.findings.map((f) => `${f.severity}: ${f.title}`),
           ],
         };
       }
@@ -394,7 +397,7 @@ export async function decideAction(
           preBlockStage: currentStage,
           report: [
             `${String(edge.counter)} loop: ${exhaustion.value} of ${String(exhaustion.cap)} per ${exhaustion.scope ?? 'run'}`,
-            ...envelope.findings.map((f) => `${f.severity}: ${f.title}`),
+            ...context.findings.map((f) => `${f.severity}: ${f.title}`),
             'what was tried each time, and what a human must decide, is in the run narrative',
           ],
         };

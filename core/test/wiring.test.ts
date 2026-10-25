@@ -653,6 +653,7 @@ describe('C8 — a PARTIAL that proceeds records the gap', () => {
       evaluate: async (when) => ({
         predicate: when, value: 'TRUE', claim: null, inputs: [], reprobed: false, reason: '',
       }),
+      findings: [],
     };
   }
 
