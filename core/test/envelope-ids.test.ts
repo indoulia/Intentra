@@ -199,14 +199,15 @@ describe('a rejected envelope\'s cost is recorded as the substrate reported it',
 
   test('an unknown cost keeps the dispatch\'s whole reservation', async () => {
     const h = rig({ script: rootCauseRetried(rootCauseEnvelope({ envelope_id: 'env:1' })) });
-    let rejectedAt: string | null = null;
+    const first: { id: string | null } = { id: null };
     const costed = new Costed(h.ports.substrate as ScriptedSubstrate, (input) => {
-      if (input.stage !== 'ROOT_CAUSE' || rejectedAt !== null) return undefined;
-      rejectedAt = input.dispatch_id;
+      if (input.stage !== 'ROOT_CAUSE' || first.id !== null) return undefined;
+      first.id = input.dispatch_id;
       return null;
     });
     const result = await new Kernel({ ...h.ports, substrate: costed }).work(start());
     const log = runLog(h, result.workItemId, result.runId);
+    const rejectedAt = first.id;
     assert.ok(rejectedAt !== null);
     assert.equal(at(log, 'dispatch_result', rejectedAt)[0]?.data.cost.usd, null);
     const spend = spendOf(log.filter((e) => e.dispatch_id !== null));
