@@ -1,9 +1,10 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { fixtures as fx, type CallRecord, type MutationEvent, type ReplayResult } from '@intentra/contracts';
+import { digest, fixtures as fx, type CallRecord, type MutationEvent, type ReplayResult } from '@intentra/contracts';
 import { loadPolicies } from '@intentra/policies';
 import { reconcile, blastRadius, hasNonReversibleMutation, globToRegExp } from '../src/reconciliation.js';
 import { verifyEvidence, selectForVerification, normalizeExcerpt, evaluatePredicate } from '../src/evidence-verification.js';
+import { recordedCall } from '../src/replay/fixture.js';
 import { FixtureAdapters, HELD_TOOLS, seededRandom, FixedClock } from './doubles.js';
 
 /**
@@ -510,7 +511,7 @@ describe('evidence verification and its consequences', () => {
       adapters,
       callContext: CONTEXT,
       clock: new FixedClock(),
-      calls: [call({ adapter: 'runtime.browser', op: 'screenshot' })],
+      calls: [call({ adapter: 'runtime.browser', op: 'screenshot', args_digest: digest({ url: '/empty' }) })],
     });
     assert.equal(withCall.outcomes[0]?.status, 'VERIFIED');
     assert.match(withCall.outcomes[0]?.detail ?? '', /confirmed in the call log/);
@@ -587,5 +588,80 @@ describe('evidence verification and its consequences', () => {
       report.violations.some((v) => v.code === 'FACT_FINDING_WITHOUT_VERIFIED_EVIDENCE'),
       'an unverified item cannot carry a FACT, because nothing checked it',
     );
+  });
+});
+
+/**
+ * Prompt 8, item 2: a screenshot's provenance is the call that produced it "against that
+ * locator" (AGENT_HANDOFF_CONTRACT, evidence that cannot be content-verified) — the same
+ * adapter, operation and arguments, on a call that actually ran. Neither says anything about
+ * what the screenshot shows.
+ */
+describe('a screenshot binds only to a successful call made with its own locator', () => {
+  const LOCATOR = { adapter: 'runtime.browser', op: 'screenshot', args: { url: '/empty', viewport: 'mobile' } };
+
+  async function provenance(calls: readonly CallRecord[], excerpt = 'the empty state renders') {
+    const report = await verifyEvidence({
+      envelope: fx.envelope({
+        findings: [fx.finding({ severity: 'CRITICAL', evidence: ['E-1'] })],
+        evidence: [fx.evidence({ id: 'E-1', kind: 'screenshot', locator: LOCATOR, excerpt })],
+      }),
+      policy: policies.evidence,
+      adapters: new FixtureAdapters(),
+      callContext: CONTEXT,
+      clock: new FixedClock(),
+      calls,
+    });
+    const [outcome] = report.outcomes;
+    assert.ok(outcome !== undefined);
+    return outcome;
+  }
+
+  function producing(overrides: Partial<CallRecord> = {}): CallRecord {
+    return call({ adapter: 'runtime.browser', op: 'screenshot', args_digest: digest(LOCATOR.args), ...overrides });
+  }
+
+  test('a successful call with its arguments confirms provenance and says nothing of content', async () => {
+    const outcome = await provenance([producing()], 'every state renders, as the agent describes it');
+    assert.equal(outcome.status, 'VERIFIED');
+    assert.match(outcome.detail, /confirmed in the call log/);
+    assert.match(outcome.detail, /what it shows is not verified/i);
+  });
+
+  test('the same adapter and operation with other arguments did not produce it', async () => {
+    const outcome = await provenance([producing({ args_digest: digest({ url: '/settings', viewport: 'mobile' }) })]);
+    assert.equal(outcome.status, 'MISMATCH');
+    assert.match(outcome.detail, /no call in this dispatch had its arguments/);
+  });
+
+  for (const failed of ['REFUSED', 'ERROR', 'BLOCKED', 'DEDUPLICATED'] as const) {
+    test(`a ${failed} call with its arguments did not produce it`, async () => {
+      const outcome = await provenance([
+        producing({ outcome: failed, refusal: failed === 'REFUSED' ? 'scope_violation' : null }),
+      ]);
+      assert.equal(outcome.status, 'MISMATCH');
+      assert.match(outcome.detail, new RegExp(`ended ${failed}`));
+    });
+  }
+
+  test('no call at all did not produce it', async () => {
+    const outcome = await provenance([]);
+    assert.equal(outcome.status, 'MISMATCH');
+    assert.match(outcome.detail, /no adapter call in this dispatch produced it/);
+  });
+
+  test('a fabricated quote citing a real call of another operation is not confirmed by it', async () => {
+    const outcome = await provenance(
+      [call({ adapter: 'runtime.browser', op: 'navigate', args_digest: digest(LOCATOR.args) })],
+      'the settings page shows the restored namespace',
+    );
+    assert.equal(outcome.status, 'MISMATCH');
+  });
+
+  test('a call the replay port recorded binds as a live call does', async () => {
+    const replayed = recordedCall(
+      1, LOCATOR.adapter, LOCATOR.op, LOCATOR.args, { runId: CONTEXT.runId, dispatchId: CONTEXT.dispatchId }, 'OK', fx.T1,
+    );
+    assert.equal((await provenance([replayed])).status, 'VERIFIED');
   });
 });

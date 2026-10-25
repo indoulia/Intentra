@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  digest,
   validators,
   type AdapterAvailability,
   type AdapterOperationDescriptor,
@@ -409,7 +410,8 @@ export function recordedCall(
     dispatch_id: context.dispatchId,
     adapter,
     op,
-    args_digest: argsKey(args),
+    /* Prompt 8: the live call log's digest, so a replayed screenshot binds to its call as a live one does. */
+    args_digest: digest(args),
     paths_touched: typeof args['path'] === 'string' ? [args['path']] : [],
     capabilities_touched: [],
     outcome,

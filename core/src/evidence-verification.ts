@@ -1,3 +1,4 @@
+import { digest } from '@intentra/contracts';
 import type {
   AdapterRegistry,
   AdapterCallContext,
@@ -273,16 +274,12 @@ export async function verifyEvidence(input: VerifyInput): Promise<VerificationRe
        * that produced it is confirmed to have happened, against that locator, from the call
        * log. The observation's provenance is verifiable even when its content is not.
        */
-      const produced = calls.some(
-        (call) => call.adapter === evidence.locator.adapter && call.op === evidence.locator.op,
-      );
+      const { produced, detail } = provenance(evidence, calls);
       outcomes.push({
         evidence_id: evidence.id,
         status: produced ? 'VERIFIED' : 'MISMATCH',
         selected_because: reason,
-        detail: produced
-          ? 'content is not kernel-verifiable; the call that produced it is confirmed in the call log'
-          : 'content is not kernel-verifiable and no adapter call in this dispatch produced it',
+        detail,
       });
       if (!produced) {
         mismatchCount += 1;
@@ -408,6 +405,46 @@ export async function verifyEvidence(input: VerifyInput): Promise<VerificationRe
   }
 
   return { outcomes, mismatchCount, rejectEnvelope, violations, demotedFindings, downgrades };
+}
+
+/**
+ * Whether the dispatch's call log holds the call that produced content-unverifiable evidence
+ * (Prompt 8): same adapter, operation and argument digest, and an outcome of `OK`. A refused,
+ * failed, blocked or deduplicated call observed nothing. Confirming the call says nothing about
+ * what the evidence shows.
+ */
+function provenance(
+  evidence: Evidence,
+  calls: readonly CallRecord[],
+): { readonly produced: boolean; readonly detail: string } {
+  const prefix = 'content is not kernel-verifiable and ';
+  const sameOp = calls.filter(
+    (call) => call.adapter === evidence.locator.adapter && call.op === evidence.locator.op,
+  );
+  if (sameOp.length === 0) {
+    return { produced: false, detail: `${prefix}no adapter call in this dispatch produced it` };
+  }
+  const argsDigest = digest(evidence.locator.args);
+  const sameArgs = sameOp.filter((call) => call.args_digest === argsDigest);
+  if (sameArgs.length === 0) {
+    return {
+      produced: false,
+      detail: `${prefix}no call in this dispatch had its arguments: ${evidence.locator.adapter}.`
+        + `${String(evidence.locator.op)} ran only with others`,
+    };
+  }
+  if (!sameArgs.some((call) => call.outcome === 'OK')) {
+    return {
+      produced: false,
+      detail: `${prefix}every call with its locator ended `
+        + `${[...new Set(sameArgs.map((call) => call.outcome))].join(', ')}, so none observed anything`,
+    };
+  }
+  return {
+    produced: true,
+    detail: 'content is not kernel-verifiable; a successful call with its adapter, operation and '
+      + 'arguments is confirmed in the call log. What it shows is not verified',
+  };
 }
 
 function compare(
