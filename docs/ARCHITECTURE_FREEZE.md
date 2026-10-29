@@ -238,21 +238,58 @@ how a plan stalls.
   adapter-side check are still built in the MVP — see the plan's WP-4 — so that the channel
   is the only thing left to decide later.
 - **Multi-repository capability graphs** (phase 7). Sketched, not specified.
-- **Test execution** (phase 5; recorded 2026-10-29, after the freeze). Criteria 9 and 12 accept
-  only output of an operation registered `executesTests`, and none is, so neither can be `MET`
-  in any run. Registering one needs four answers no frozen document gives: which roles may
-  call it (`permitted_adapters` grants whole adapter families, and no existing family is the
-  Validator's alone); what isolates untrusted test code (`NodeProcessRunner` passes the whole
-  parent environment and bounds only time and output size, and the security floor forbids
-  exposing a secret, which test output can); whether the kernel may re-run tests to verify
-  them (AGENT_HANDOFF_CONTRACT "Evidence verification" says test execution qualifies, and
-  `computeDod` counts only `VERIFIED` evidence, so forbidding live re-execution needs an
-  amendment and another provenance rule, or 9 and 12 can never be `MET`); and what
-  authenticates a recorded test result, since fixture replay returns the recording's own
-  answer. **May not block milestone 1**, which runs no tests: a read-only run
-  judged against any profile but `audit` ends `INDETERMINATE` or `INCOMPLETE`, never
-  `COMPLETE`. **May not be settled by registration alone:** no operation sets `executesTests`
-  until all four are approved.
+- **Test execution** (phase 5; recorded 2026-10-29, after the freeze; directions set by the
+  owner 2026-10-30). Criteria 9 and 12 accept only output of an operation registered
+  `executesTests`, and none is, so neither can be `MET` in any run. Registering one needs four
+  answers no frozen document gives. The owner has set a direction for each, and for what V1.0
+  means. A direction is not a design: each below still needs one approved, and none
+  authorizes implementation.
+  - **Who may run tests.** An adapter family only the Validator holds, disabled by default and
+    enforced by trusted runtime code. `executesTests` stays set by registration code alone; no
+    agent, envelope, recording, policy override or registration request confers it. Open: the
+    design, its negative tests (denied to every other role, denied while disabled, unmoved by
+    forged evidence or configuration), and the frozen text. `permitted_adapters` grants whole
+    families and the policy schema does not enumerate them, but AGENTOS_ARCHITECTURE 3.7 names
+    five adapters, AGENT_ROLES section 6 gives the Validator repository, git and runtime, and
+    REPOSITORY_ADAPTER section 6 runs commands through the host adapter, so a sixth family must
+    be reconciled with all three, by amendment under section 3, before any code.
+  - **Isolation.** These are release gates for any test-running operation: an isolation
+    boundary; an environment allowlist empty by default, since `NodeProcessRunner` passes the
+    whole parent environment and the security floor forbids exposing a secret, which test
+    output can; writes only inside the worktree and declared by-products; network off by
+    default; limits on CPU, memory, process count, time and output; the whole process tree
+    killed and cleaned up; and no unsandboxed fallback, so without isolation the criteria stay
+    `NOT_VALIDATED`. Hostile fixtures must show each escape (reading a secret or credential
+    store, writing outside, reaching the network, overrunning a limit, leaving a process)
+    prevented and recorded, with no secret reaching a log or evidence. Open: the technology,
+    proof on Windows, macOS and Linux, and how a sandbox failure reaches the DoD.
+  - **Recorded results.** Fixture replay returns the recording's own answer, so an
+    unauthenticated recording never supports 9 or 12. Playback never runs test code; the
+    trusted registration, not a recorded name, descriptor or result, stays authoritative; test
+    evidence carries verifiable provenance and integrity, the code revision it was observed on,
+    and the registration's identity and version; anything missing or unverifiable fails closed.
+    Open: the mechanism, the fields, registration-version semantics, existing recordings, the
+    replay negative tests, and whether new evidence fields are an amendment with a version bump,
+    as A-1 to A-3 were, or the envelope change section 3 reserves for v0.4.
+  - **Live re-check.** AGENT_HANDOFF_CONTRACT "Evidence verification" stands: test execution
+    qualifies for replay, and `computeDod` counts only `VERIFIED` evidence, so tests are re-run
+    to verify them, only inside the isolation above and through the same authorization path;
+    without both, the criteria are not `MET`. Open: every profile accepts only `command`
+    evidence for 9 and 12, compared by normalized exact match, which output that varies between
+    runs, such as timings, can fail, and the frozen predicate match covers only `log` and
+    `metric`. So the comparison, how a re-check establishes trusted execution and the code
+    revision, and proof that no failure becomes `VERIFIED` are all undecided.
+  - **V1.0** is a later milestone capable of verified engineering execution: the Validator, a
+    test-running operation meeting all four directions above, and the DoD's validation gates
+    passed. Milestone 1's read-only audit is not V1.0, and the pilot's prerequisites and pass
+    criteria are unchanged. No schedule, scope or architecture version follows from this.
+
+  **May not block milestone 1**, which runs no tests and stays read-only as frozen: a read-only
+  run judged against any profile but `audit` ends `INDETERMINATE` or `INCOMPLETE`, never
+  `COMPLETE`, and no workaround (`VALIDATION` in the read-only template, a test-only mutation
+  policy, a criterion made non-critical) may change that. **May not be settled by registration
+  alone:** no operation sets `executesTests` until every design above is approved and the
+  amendments it needs are made.
 
 ## 6. What this freeze does not claim
 
