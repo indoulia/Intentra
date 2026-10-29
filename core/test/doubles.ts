@@ -108,6 +108,29 @@ export function policiesAllowingMutation(): PolicySet {
   return loadPolicies(work);
 }
 
+/**
+ * The real policy set with the non-mutating `VALIDATION` stage added to `investigation.readonly`.
+ *
+ * Every shipped template reaching `VALIDATION` passes mutating stages first, so no milestone-1
+ * run dispatches the Validator. This copy lets a read-only run carry Validator verdicts to
+ * `COMPLETION`, for tests of what the kernel judges them with (Prompt 13).
+ */
+export function policiesWithReadOnlyValidation(): PolicySet {
+  const work = mkdtempSync(join(tmpdir(), 'intentra-policies-'));
+  cpSync(policyDataRoot(), work, { recursive: true });
+  const file = join(work, 'workflows', 'investigation.readonly.json');
+  const template = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+  template['stages'] = ['AUDIT', 'ROOT_CAUSE', 'VALIDATION', 'COMPLETION'];
+  template['edges'] = [
+    { from: 'AUDIT', to: 'ROOT_CAUSE', when: 'always', kind: 'advance' },
+    { from: 'ROOT_CAUSE', to: 'VALIDATION', when: 'always', kind: 'advance' },
+    { from: 'VALIDATION', to: 'COMPLETION', when: 'always', kind: 'advance' },
+    { from: 'COMPLETION', to: 'COMPLETE', when: 'always', kind: 'terminal' },
+  ];
+  writeFileSync(file, `${JSON.stringify(template, null, 2)}\n`, 'utf8');
+  return loadPolicies(work);
+}
+
 /** Where `policies/data` is, found by walking up from this file. */
 function policyDataRoot(): string {
   let dir = dirname(fileURLToPath(import.meta.url));

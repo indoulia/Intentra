@@ -17,7 +17,21 @@ import { verifyEvidence } from '../src/evidence-verification.js';
 import { withVerification } from '../src/receipt.js';
 import { computeDod } from '../src/dod.js';
 import { buildKernel } from '../src/composition/build.js';
-import { FixtureAdapters, FixedClock, ScriptedSubstrate } from './doubles.js';
+import { Kernel } from '../src/kernel.js';
+import {
+  README_CONTENT,
+  FixtureAdapters,
+  FixedClock,
+  ScriptedSubstrate,
+  auditEnvelope,
+  harness,
+  policiesWithReadOnlyValidation,
+  resolutionEnvelope,
+  rootCauseEnvelope,
+  workflowEnvelope,
+  type FixtureAdapterOptions,
+  type ScriptedResponse,
+} from './doubles.js';
 import { scratchWorld, type ScratchWorld } from './e2e/world.js';
 
 /**
@@ -46,7 +60,14 @@ const HOST_INVENTORY = ['identity', 'platform', 'list_skills', 'list_models', 'l
 
 /** Host inventory as the real adapters register it, the double, and a runner-named op registered as plain command output. */
 function adapters(replays: ReadonlyArray<readonly [string, ReplayResult]> = []) {
-  return new FixtureAdapters({
+  return new FixtureAdapters(registrations(replays));
+}
+
+function registrations(
+  replays: ReadonlyArray<readonly [string, ReplayResult]> = [],
+  testExecution: ReadonlySet<string> = new Set(['double.run_tests']),
+): FixtureAdapterOptions {
+  return {
     replays: new Map<string, ReplayResult>([
       ['double.run_tests', { outcome: 'OK', value: PASSING, excerpt: PASSING }],
       ['host.run_tests', { outcome: 'OK', value: PASSING, excerpt: PASSING }],
@@ -58,8 +79,8 @@ function adapters(replays: ReadonlyArray<readonly [string, ReplayResult]> = []) 
       ['host.run_tests', 'command'],
       ...HOST_INVENTORY.map((op): [string, EvidenceKind] => [`host.${op}`, 'command']),
     ]),
-    testExecution: new Set(['double.run_tests']),
-  });
+    testExecution,
+  };
 }
 
 function testRun(id: string, overrides: Partial<Evidence> = {}): Evidence {
@@ -311,5 +332,100 @@ describe('the model-free probe: the real composed adapters, host.platform, the f
     assert.equal(statusOf(report, 'P-01'), 'VERIFIED');
     assert.equal(verdictOf(persisted, 9, registry).verdict, 'NOT_VALIDATED');
     assert.equal(verdictOf(persisted, 12, registry).verdict, 'NOT_VALIDATED');
+  });
+});
+
+describe('the kernel judges 9 and 12 with its adapter registry\'s test-execution registration (Prompt 13)', () => {
+  const kernelPolicies = policiesWithReadOnlyValidation();
+  const destroy: (() => void)[] = [];
+  after(() => { for (const fn of destroy) fn(); });
+
+  const readme = fx.evidence({
+    id: 'E-01',
+    locator: { adapter: 'repo', op: 'read_file', args: { path: 'README.md' } },
+    ref: 'README.md',
+    excerpt: README_CONTENT,
+  });
+
+  function withCall(envelope: HandoffEnvelope): ScriptedResponse {
+    return { kind: 'CALLS_THEN_ENVELOPE', calls: [{ tool: 'repo__read_file', args: { path: 'README.md' } }], envelope: () => envelope };
+  }
+
+  /**
+   * A read-only STORY run whose Validator cites `cited` for 9 and 12, and what COMPLETION first computed.
+   * With repository and git access a STORY binds to internal-capability, which includes both; the
+   * route-back that follows (criterion 5 is critical and unsupplied) is not followed.
+   */
+  async function completed(cited: Evidence, registered: FixtureAdapterOptions) {
+    const h = harness({
+      policies: kernelPolicies,
+      adapters: { files: [{ path: 'README.md', content: README_CONTENT }], ...registered },
+      script: [
+        { kind: 'ENVELOPE', envelope: resolutionEnvelope({ type: fx.factAssertion('STORY', { evidence: [readme], probe: 'resolution' }) }) },
+        { kind: 'ENVELOPE', envelope: workflowEnvelope() },
+        withCall(auditEnvelope()),
+        withCall(rootCauseEnvelope({ next_action: { proposed_stage: 'VALIDATION', proposed_agent: 'validator', rationale: 'the cause is established' } })),
+        withCall(fx.envelope({
+          envelope_id: 'env_validation',
+          agent: 'validator',
+          stage_in: 'VALIDATION',
+          outputs: { layer_verdicts: 'inline', not_validated_statement: 'inline', capability_trace: 'inline' },
+          coverage: fx.coverage({ scope_examined: ['README.md'] }),
+          evidence: [cited],
+          dod_verdicts: [9, 12].map((criterion) => fx.criterionVerdict({ criterion: criterion as DodCriterionId, evidence: [cited.id] })),
+          next_action: { proposed_stage: 'COMPLETION', proposed_agent: 'orchestrator', rationale: 'validated' },
+        })),
+      ],
+    });
+    destroy.push(() => { h.destroy(); });
+    const result = await new Kernel(h.ports).work({
+      source: 'NATURAL_LANGUAGE',
+      sourceLocator: { adapter: 'host.cli', op: 'read_invocation', args: { argv_index: 1 } },
+      raw: 'Fix typo in README.',
+      resolveIdentity: async () => ({ outcome: 'NOT_NAMED' }),
+      rereadIntake: async () => ({ outcome: 'OK', raw: 'Fix typo in README.' }),
+    });
+    assert.ok(result.workItemId !== null && result.runId !== null);
+    const computed = h.store.readRunLog(result.workItemId, result.runId).records.find((e) => e.event === 'dod_computed');
+    assert.ok(computed !== undefined && computed.event === 'dod_computed', 'the run reached COMPLETION');
+    assert.equal(computed.data.profile_id, 'internal-capability');
+    const criterion = (id: number) => {
+      const found = computed.data.criteria.find((c) => c.criterion === id);
+      assert.ok(found !== undefined);
+      assert.equal(found.supplied_by_envelope, 'env_validation', 'the Validator\'s verdict reached COMPLETION');
+      return found;
+    };
+    return [criterion(9), criterion(12)] as const;
+  }
+
+  test('host inventory, VERIFIED, leaves 9 and 12 NOT_VALIDATED', async () => {
+    for (const found of await completed(inventory('K-01'), registrations())) {
+      assert.equal(found.verdict, 'NOT_VALIDATED');
+      assert.match(found.reason ?? '', /K-01 is output of host\.platform, which is not registered as executing tests/);
+    }
+  });
+
+  test('an operation no adapter registers cannot carry 9 or 12', async () => {
+    const unknown = testRun('K-02', { locator: { adapter: 'ci', op: 'run_suite', args: {} } });
+    for (const found of await completed(unknown, registrations())) assert.equal(found.verdict, 'NOT_VALIDATED');
+  });
+
+  test('a runner-named operation registered only as command output cannot carry 9 or 12', async () => {
+    const named = testRun('K-03', { locator: { adapter: 'host', op: 'run_tests', args: { suite: 'unit' } } });
+    for (const found of await completed(named, registrations())) {
+      assert.equal(found.verdict, 'NOT_VALIDATED');
+      assert.match(found.reason ?? '', /K-03 is output of host\.run_tests, which is not registered as executing tests/);
+    }
+  });
+
+  test('the double registered as executing tests carries 9 and 12', async () => {
+    for (const found of await completed(testRun('K-04'), registrations())) assert.equal(found.verdict, 'MET');
+  });
+
+  test('the same double, with the registry not attesting test execution, fails closed', async () => {
+    for (const found of await completed(testRun('K-05'), registrations([], new Set()))) {
+      assert.equal(found.verdict, 'NOT_VALIDATED');
+      assert.match(found.reason ?? '', /K-05 is output of double\.run_tests, which is not registered as executing tests/);
+    }
   });
 });
