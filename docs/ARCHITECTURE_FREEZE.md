@@ -218,8 +218,9 @@ hand-verified ground truth in the pilot repository.
 
 ## 5. Decisions deliberately left open
 
-Five, none of which blocks milestone 1. Each carries what it may not be allowed to block,
-because an open decision that quietly becomes a dependency is how a plan stalls.
+Five at the freeze and one recorded since, none of which blocks milestone 1. Each carries what
+it may not be allowed to block, because an open decision that quietly becomes a dependency is
+how a plan stalls.
 
 - **Capability identity across runs** (phase 3). How a capability keeps a stable identity as
   code changes. **May not block the MVP:** the MVP builds a single-run registry, and
@@ -237,6 +238,21 @@ because an open decision that quietly becomes a dependency is how a plan stalls.
   adapter-side check are still built in the MVP — see the plan's WP-4 — so that the channel
   is the only thing left to decide later.
 - **Multi-repository capability graphs** (phase 7). Sketched, not specified.
+- **Test execution** (phase 5; recorded 2026-10-29, after the freeze). Criteria 9 and 12 accept
+  only output of an operation registered `executesTests`, and none is, so neither can be `MET`
+  in any run. Registering one needs four answers no frozen document gives: which roles may
+  call it (`permitted_adapters` grants whole adapter families, and no existing family is the
+  Validator's alone); what isolates untrusted test code (`NodeProcessRunner` passes the whole
+  parent environment and bounds only time and output size, and the security floor forbids
+  exposing a secret, which test output can); whether the kernel may re-run tests to verify
+  them (AGENT_HANDOFF_CONTRACT "Evidence verification" says test execution qualifies, and
+  `computeDod` counts only `VERIFIED` evidence, so forbidding live re-execution needs an
+  amendment and another provenance rule, or 9 and 12 can never be `MET`); and what
+  authenticates a recorded test result, since fixture replay returns the recording's own
+  answer. **May not block milestone 1**, which runs no tests: a read-only run
+  judged against any profile but `audit` ends `INDETERMINATE` or `INCOMPLETE`, never
+  `COMPLETE`. **May not be settled by registration alone:** no operation sets `executesTests`
+  until all four are approved.
 
 ## 6. What this freeze does not claim
 
