@@ -266,12 +266,20 @@ function evidenceRequirements(input: InputPackage, policies: PolicySet | undefin
   const provenanceOnly = policies.evidence.comparators
     .filter((c) => c.comparator === 'not_kernel_verifiable')
     .map((c) => c.kind as string);
-  const rules = [...EVIDENCE_RULES, ...provenanceRule(provenanceOnly)].map(bullet);
+  /* Prompt 13: the same evidence_class computeDod keys the test-execution requirement on. */
+  const behavioural = (criterion: DodCriterionId): boolean =>
+    policies.dod.criteria.find((c) => c.criterion === criterion)?.evidence_class === 'behavioural';
+  const rules = [
+    ...EVIDENCE_RULES,
+    ...provenanceRule(provenanceOnly),
+    ...testExecutionRule(input.dod_criteria_owed.filter(behavioural)),
+  ].map(bullet);
   const named = (criterion: DodCriterionId): string => `criterion ${criterion} (`
     + `${policies.dod.criteria.find((c) => c.criterion === criterion)?.name ?? 'unnamed'}): `;
-  const caveat = (kinds: readonly string[]): string => {
+  const caveat = (kinds: readonly string[], criterion: DodCriterionId): string => {
     const alone = kinds.filter((kind) => provenanceOnly.includes(kind));
-    return alone.length === 0 ? '' : `; ${alone.join(' or ')} never carries a MET by itself`;
+    return (alone.length === 0 ? '' : `; ${alone.join(' or ')} never carries a MET by itself`)
+      + (behavioural(criterion) ? '; only output of an operation registered as executing tests carries a MET' : '');
   };
 
   if (input.dod_profile_ref === null) {
@@ -297,7 +305,7 @@ function evidenceRequirements(input: InputPackage, policies: PolicySet | undefin
           ? `${all[0]?.kinds.join(', ')} in every profile that includes it`
           : all.map((g) => `${g.kinds.length === 0 ? 'no kind' : g.kinds.join(', ')} in `
             + `${g.profiles.length === 1 ? 'profile' : 'profiles'} ${g.profiles.join(', ')}`).join('; ');
-        return bullet(`${named(criterion)}accepts ${accepted}${caveat(all.flatMap((g) => g.kinds))}.`);
+        return bullet(`${named(criterion)}accepts ${accepted}${caveat(all.flatMap((g) => g.kinds), criterion)}.`);
       }),
       ...rules,
     ];
@@ -320,7 +328,7 @@ function evidenceRequirements(input: InputPackage, policies: PolicySet | undefin
         return bullet(`${named(criterion)}no kind is accepted by profile ${profile.profile_id}, so no MET can stand on it.`);
       }
       return bullet(
-        `${named(criterion)}accepts ${requirement.kinds.join(', ')}${caveat(requirement.kinds)}. `
+        `${named(criterion)}accepts ${requirement.kinds.join(', ')}${caveat(requirement.kinds, criterion)}. `
         + `Profile note: ${requirement.note}.`,
       );
     }),
@@ -336,6 +344,27 @@ function provenanceRule(kinds: readonly string[]): string[] {
     + 'log with the same adapter, operation and arguments, and succeeded. That confirms the call, '
     + `not what the item shows, so ${kinds.join(' or ')} evidence never carries a MET by itself, `
     + 'even for a criterion that accepts it.',
+  ];
+}
+
+/** What behavioural criteria need: output of an operation registered as executing tests, which nothing else becomes (Prompt 13). */
+function testExecutionRule(criteria: readonly DodCriterionId[]): string[] {
+  if (criteria.length === 0) return [];
+  const named = criteria.length === 1
+    ? `Criterion ${criteria[0]} needs`
+    : `Criteria ${criteria.slice(0, -1).join(', ')} and ${criteria[criteria.length - 1]} need`;
+  return [
+    `${named} test execution output: the output of an operation its adapter registers as `
+    + 'executing tests. Whether an operation executes tests is fixed by that registration, never '
+    + 'by the operation\'s name, its kind or anything written in an envelope. None of these is '
+    + 'test execution output, whatever kind it carries and however it replays: host inventory and '
+    + 'environment discovery, such as the host identity, platform, intake or listings of tools, '
+    + 'skills, models or plugins; the output of any other command; and your own statements or '
+    + 'descriptions of tests, in a reason, ref or excerpt.',
+    'Where you ran no operation registered as executing tests, or none is available to you, the '
+    + 'evidence these criteria need is missing: report NOT_VALIDATED and name the missing test '
+    + 'execution as the reason. Citing host inventory or other command output again does not '
+    + 'change that.',
   ];
 }
 

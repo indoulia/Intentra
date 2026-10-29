@@ -457,6 +457,46 @@ describe('each owed criterion is shown the evidence kinds its profile accepts (P
   });
 });
 
+describe('behavioural criteria are told they need output of an operation registered as executing tests (Prompt 13)', () => {
+  const behavioural = policies.dod.criteria.filter((c) => c.evidence_class === 'behavioural').map((c) => c.criterion);
+
+  test('criteria 9 and 12 are the behavioural ones, and each says only a test-running operation carries a MET', () => {
+    assert.deepEqual(behavioural, [9, 12]);
+    const rendered = renderSystemSpecification(owing('fix', [5, 9, 12, 13]), undefined, policies);
+    for (const criterion of [9, 12]) {
+      assert.match(rendered, new RegExp(
+        `- criterion ${criterion} \\([^)]*\\): accepts command; only output of an operation registered as executing tests carries a MET\\.`,
+      ));
+      assert.deepEqual(shownKinds(rendered, criterion), ['command'], 'the kinds still read as before');
+    }
+    for (const criterion of [5, 13]) {
+      assert.doesNotMatch(rendered, new RegExp(`- criterion ${criterion} \\([^\\n]*registered as executing tests`));
+    }
+  });
+
+  test('host inventory, other command output and the agent\'s own account of tests are each named as not qualifying', () => {
+    const rendered = renderSystemSpecification(owing('fix', [9, 12]), undefined, policies);
+    assert.match(rendered, /Criteria 9 and 12 need test execution output: the output of an operation its adapter registers as executing tests/);
+    assert.match(rendered, /fixed by that registration, never by the operation's name, its kind or anything written in an envelope/);
+    assert.match(rendered, /host inventory and environment discovery/);
+    assert.match(rendered, /the output of any other command/);
+    assert.match(rendered, /your own statements or descriptions of tests/);
+    assert.match(rendered, /whatever kind it carries and however it replays/);
+  });
+
+  test('without a test-running operation the agent reports the missing capability rather than re-citing other output', () => {
+    const rendered = renderSystemSpecification(owing('fix', [12]), undefined, policies);
+    assert.match(rendered, /Criterion 12 needs test execution output/);
+    assert.match(rendered, /report NOT_VALIDATED and name the missing test execution as the reason/);
+    assert.match(rendered, /Citing host inventory or other command output again does not change that/);
+  });
+
+  test('a dispatch owing no behavioural criterion is not given the rule', () => {
+    const rendered = renderSystemSpecification(owing('fix', [5, 8, 13]), undefined, policies);
+    assert.doesNotMatch(rendered, /registered as executing tests|test execution output:/);
+  });
+});
+
 describe('parsing an envelope is parsing, and nothing more', () => {
   const cases: readonly (readonly [string, string])[] = [
     ['prose', 'I found three orphan writers.'],
